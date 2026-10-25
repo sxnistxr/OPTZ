@@ -7,7 +7,7 @@ file to build or restart whatever needs to go live.
 ## One-time setup (on the VPS)
 
 ```sh
-ssh vps3760075@62.35.162.49
+ssh root@162.35.162.49
 curl -fsSL https://raw.githubusercontent.com/sxnistxr/OPTZ/main/deploy/setup-vps.sh | sudo bash
 ```
 
