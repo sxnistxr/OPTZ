@@ -269,3 +269,83 @@ pub fn spawn(path: &str, capacity: usize, notify: impl Fn() + Send + 'static) ->
     tx.send(signal.clone()).unwrap();
     Ok((Handle { signal, jobs, replies }, join))
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    const SCHEMA: &str = include_str!("../../tests/schema.sql");
+
+    fn fresh(extra: &str) -> (String, Writer) {
+        let dir = std::env::temp_dir().join(format!("twelve-writer-{}-{}", std::process::id(), extra.len()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("t.db").to_string_lossy().into_owned();
+        let db = Db::create(&path).unwrap();
+        db.exec("PRAGMA journal_mode=WAL").unwrap();
+        db.exec(SCHEMA).unwrap();
+        db.exec("INSERT INTO users(id, username) VALUES (1, 'ann'); INSERT INTO posts(id, user_id, body) VALUES (1, 1, 'p1');").unwrap();
+        db.exec(extra).unwrap();
+        drop(db);
+        let w = Writer::open(&path).unwrap();
+        (path, w)
+    }
+
+    fn create(body: &[u8]) -> Job {
+        Job { conn: 0, kind: Kind::Create { user: 1, body: body.to_vec(), username: b"ann".to_vec() } }
+    }
+
+    fn count(path: &str, sql: &str) -> i64 {
+        let db = Db::open(path).unwrap();
+        let mut s = db.prepare(sql).unwrap();
+        assert!(s.step().unwrap());
+        let n = s.int(0);
+        s.reset();
+        n
+    }
+
+    #[test]
+    fn likes_and_creates() {
+        let (path, mut w) = fresh("");
+        let jobs = [
+            Job { conn: 0, kind: Kind::Like { user: 1, post: 1 } },
+            Job { conn: 0, kind: Kind::Like { user: 1, post: 1 } },
+            Job { conn: 0, kind: Kind::Like { user: 1, post: 99 } },
+            create(b"hello"),
+        ];
+        let out = w.batch(&jobs);
+        assert!(matches!(out[0], Outcome::Liked { post: 1, already: false }));
+        assert!(matches!(out[1], Outcome::Liked { post: 1, already: true }));
+        assert!(matches!(out[2], Outcome::NoPost));
+        assert!(matches!(out[3], Outcome::Created { id: 2, created_len: 24, .. }));
+        assert_eq!(count(&path, "SELECT count(*) FROM likes"), 1);
+        assert_eq!(count(&path, "SELECT count(*) FROM posts WHERE body = 'hello'"), 1);
+    }
+
+    #[test]
+    fn check_violation_fails_only_its_job() {
+        let (path, mut w) = fresh(" ");
+        // SQLite's length() stops at the first NUL, so this body fails the schema's CHECK.
+        let out = w.batch(&[create(b"ok1"), create(b"\0x"), create(b"ok2")]);
+        assert!(matches!(out[0], Outcome::Created { .. }));
+        assert!(matches!(out[1], Outcome::BadBody));
+        assert!(matches!(out[2], Outcome::Created { .. }));
+        assert_eq!(count(&path, "SELECT count(*) FROM posts WHERE body IN ('ok1','ok2')"), 2);
+    }
+
+    #[test]
+    fn transaction_abort_replays_batch_without_the_poisoned_job() {
+        // A test-only trigger (never on the real schema) that aborts the whole transaction.
+        let (path, mut w) = fresh(
+            "CREATE TRIGGER boom BEFORE INSERT ON posts WHEN NEW.body = 'abort' BEGIN SELECT RAISE(ROLLBACK, 'boom'); END;",
+        );
+        let out = w.batch(&[create(b"a1"), create(b"abort"), create(b"a2")]);
+        assert!(matches!(out[0], Outcome::Created { .. }));
+        assert!(matches!(out[1], Outcome::Failed));
+        assert!(matches!(out[2], Outcome::Created { .. }));
+        assert_eq!(count(&path, "SELECT count(*) FROM posts WHERE body IN ('a1','a2')"), 2);
+        assert_eq!(count(&path, "SELECT count(*) FROM posts WHERE body = 'abort'"), 0);
+        // The connection is usable afterwards.
+        assert!(matches!(w.batch(&[create(b"after")])[0], Outcome::Created { .. }));
+    }
+}

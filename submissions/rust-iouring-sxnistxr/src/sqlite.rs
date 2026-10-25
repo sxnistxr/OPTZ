@@ -101,12 +101,23 @@ pub struct Db {
 unsafe impl Send for Db {}
 
 impl Db {
+    /// Opens an existing database. Never creates one: a wrong SQLITE_PATH must fail loudly,
+    /// not serve an empty database.
     pub fn open(path: &str) -> Result<Db> {
+        Self::open_flags(path, OPEN_READWRITE | OPEN_NOMUTEX | OPEN_EXRESCODE)
+    }
+
+    #[cfg(test)]
+    pub fn create(path: &str) -> Result<Db> {
+        Self::open_flags(path, OPEN_READWRITE | OPEN_NOMUTEX | OPEN_EXRESCODE | 0x04)
+    }
+
+    fn open_flags(path: &str, flags: c_int) -> Result<Db> {
         let c = CString::new(path).map_err(|_| Error { code: 1, msg: "path contains NUL".into() })?;
         let mut raw = ptr::null_mut();
         unsafe {
             sqlite3_initialize();
-            let rc = sqlite3_open_v2(c.as_ptr(), &mut raw, OPEN_READWRITE | OPEN_NOMUTEX | OPEN_EXRESCODE, ptr::null());
+            let rc = sqlite3_open_v2(c.as_ptr(), &mut raw, flags, ptr::null());
             let db = Db { raw, wal_frames: Box::new(0) };
             if rc != OK {
                 return Err(db.error(rc));

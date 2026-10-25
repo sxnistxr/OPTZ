@@ -434,6 +434,62 @@ mod tests {
         assert_eq!(&o, b"-12345678901230");
     }
 
+    /// Differential test against serde_json on generated and mutated documents: both must agree
+    /// on validity, on whether the document is an object, and on the extracted `body` string.
+    #[test]
+    fn differential_vs_serde_json() {
+        let mut rng = 0x9E3779B97F4A7C15u64;
+        let mut next = move || {
+            rng ^= rng << 13;
+            rng ^= rng >> 7;
+            rng ^= rng << 17;
+            rng
+        };
+        let atoms: &[&str] = &[
+            "{", "}", "[", "]", ",", ":", "\"", "\"body\"", "\"b\\u006fdy\"", "\"x\"", "1", "-0", "0.5e-3", "01",
+            "1.", "true", "false", "null", "nul", " ", "\n", "\\", "\\u00e9", "\\ud83d\\ude00", "\\ud800",
+            "\\udc00", "\\n", "\\/", "\\x", "é", "✓", "\u{1}", "\t", "\"body\":", "{\"body\":\"", "\"}",
+        ];
+        let (mut agree, mut valid, mut bodies) = (0, 0, 0);
+        for _ in 0..300_000 {
+            let n = (next() % 12) as usize;
+            let mut doc = String::new();
+            if next() % 2 == 0 {
+                doc.push_str("{\"body\":\"");
+            }
+            for _ in 0..n {
+                doc.push_str(atoms[(next() % atoms.len() as u64) as usize]);
+            }
+            if next() % 2 == 0 {
+                doc.push_str("\"}");
+            }
+            let ours = parse_object(doc.as_bytes(), [b"body"]);
+            let theirs = serde_json::from_slice::<serde_json::Value>(doc.as_bytes());
+            match (&ours, &theirs) {
+                (Err(_), Err(_)) => {}
+                (Ok(None), Ok(v)) => {
+                    valid += 1;
+                    assert!(!v.is_object(), "{doc:?}")
+                }
+                (Ok(Some([b])), Ok(v)) => {
+                    let want = v.get("body").and_then(|b| b.as_str()).map(|s| s.as_bytes().to_vec());
+                    let got = match b {
+                        Some(Val::Str(s)) => Some(s.to_vec()),
+                        _ => None,
+                    };
+                    valid += 1;
+                    bodies += got.is_some() as u32;
+                    assert_eq!(got, want, "{doc:?}");
+                }
+                _ => panic!("disagree on {doc:?}: ours {ours:?}, serde {theirs:?}"),
+            }
+            agree += 1;
+        }
+        assert_eq!(agree, 300_000);
+        // Make sure the generator reaches the interesting cases, not just errors.
+        assert!(valid > 5_000 && bodies > 2_000, "valid {valid}, with body {bodies}");
+    }
+
     #[test]
     fn trims_like_js() {
         assert_eq!(trim_js("  \t\u{3000}x y\u{FEFF}\n".as_bytes()), b"x y");
