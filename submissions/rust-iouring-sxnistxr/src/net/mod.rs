@@ -32,6 +32,8 @@ const CQ_ENTRIES: u32 = 16384;
 const RECV_BUFS: u16 = 2048;
 const RECV_BUF_SIZE: usize = 2048;
 const CQE_BATCH: usize = 1024;
+/// Single-shot accepts kept in flight.
+const ACCEPT_DEPTH: u32 = 16;
 /// Shut down connections stalled mid-request or mid-send for this long.
 const STALL_SECS: u32 = 120;
 /// Reusable response buffers kept around; bigger or extra ones are freed.
@@ -108,6 +110,8 @@ struct Io {
     ring: IoUring,
     conns: Vec<Conn>,
     live: u32,
+    /// Accepts in flight on this shard; each has a slot reserved.
+    accepts: u32,
     slots: u32,
     sweep_at: usize,
 }
@@ -201,7 +205,8 @@ pub struct Server {
     cfg: Config,
     replies: crate::spsc::Consumer<writer::Reply>,
     signal: std::sync::Arc<writer::Signal>,
-    accept_shard: Option<usize>,
+    /// Accepts in flight, across all shards.
+    accepts: u32,
     /// Accept stopped because every shard is full or accept failed; retried on close/tick.
     accept_paused: bool,
     total_conns: u64,
@@ -261,7 +266,7 @@ impl Server {
             cfg,
             replies,
             signal,
-            accept_shard: None,
+            accepts: 0,
             accept_paused: false,
             total_conns: 0,
             pressure: Pressure { low: false },
@@ -278,7 +283,7 @@ impl Server {
         s.arm_timer();
         s.arm_eventfd();
         s.arm_signal();
-        s.arm_accept(0);
+        s.fill_accepts();
         Ok(s)
     }
 
@@ -288,7 +293,7 @@ impl Server {
         ring.submitter().register_files_sparse(self.cfg.shard_slots)?;
         let bufs = BufRing::new(&ring.submitter(), 0, RECV_BUFS, RECV_BUF_SIZE)?;
         let fd = ring.as_raw_fd_compat();
-        self.shards.push(Shard { io: Io { ring, conns: Vec::new(), live: 0, slots: self.cfg.shard_slots, sweep_at: 0 }, bufs });
+        self.shards.push(Shard { io: Io { ring, conns: Vec::new(), live: 0, accepts: 0, slots: self.cfg.shard_slots, sweep_at: 0 }, bufs });
         if idx > 0 {
             self.arm_poll(idx, fd);
         }
@@ -318,37 +323,41 @@ impl Server {
         push(&mut self.shards[0].io.ring, &e);
     }
 
-    fn arm_accept(&mut self, shard: usize) {
-        let e = opcode::AcceptMulti::new(Fd(self.cfg.listen_fd))
-            .allocate_file_index(true)
+    /// Keeps `ACCEPT_DEPTH` single-shot accepts in flight, each on a shard with a free slot
+    /// reserved for it.
+    ///
+    /// Not multishot: when a fixed-file table is full the kernel has already accepted the TCP
+    /// connection and then drops it, and a multishot accept can't be stopped at an exact count
+    /// (it drains the whole backlog per wakeup). Counting single-shot accepts against free slots
+    /// means a table never overflows. Accepts are per connection, not per request, so the extra
+    /// SQEs cost little.
+    fn fill_accepts(&mut self) {
+        if self.draining.is_some() || self.accept_paused {
+            return;
+        }
+        while self.accepts < ACCEPT_DEPTH {
+            let shard = match self.shards.iter().position(|s| s.io.live + s.io.accepts < s.io.slots) {
+                Some(i) => i,
+                None if self.shards.len() < self.cfg.max_shards => match self.add_shard() {
+                    Ok(i) => i,
+                    Err(e) => {
+                        eprintln!("net: can't add shard: {e}");
+                        self.accept_paused = true;
+                        return;
+                    }
+                },
+                // Every slot is taken: resume when a connection closes.
+                None => return,
+            };
             // No SOCK_CLOEXEC: direct descriptors aren't process fds (the kernel rejects it).
-            .build()
-            .user_data(ud(OP_ACCEPT, shard, 0, 0));
-        push(&mut self.shards[shard].io.ring, &e);
-        self.accept_shard = Some(shard);
-        self.accept_paused = false;
-    }
-
-    /// Re-arms accept on the first shard with free slots, adding a shard if allowed.
-    fn resume_accept(&mut self) {
-        if self.draining.is_some() || self.accept_shard.is_some() {
-            return;
+            let e = opcode::Accept::new(Fd(self.cfg.listen_fd), std::ptr::null_mut(), std::ptr::null_mut())
+                .file_index(Some(io_uring::types::DestinationSlot::auto_target()))
+                .build()
+                .user_data(ud(OP_ACCEPT, shard, 0, 0));
+            push(&mut self.shards[shard].io.ring, &e);
+            self.shards[shard].io.accepts += 1;
+            self.accepts += 1;
         }
-        if let Some(i) = self.shards.iter().position(|s| s.io.live < s.io.slots) {
-            self.arm_accept(i);
-            return;
-        }
-        if self.shards.len() < self.cfg.max_shards {
-            match self.add_shard() {
-                Ok(i) => self.arm_accept(i),
-                Err(e) => {
-                    eprintln!("net: can't add shard: {e}");
-                    self.accept_paused = true;
-                }
-            }
-            return;
-        }
-        self.accept_paused = true;
     }
 
     pub fn requests(&self) -> u64 {
@@ -415,7 +424,7 @@ impl Server {
     fn on_cqe(&mut self, u: u64, res: i32, flags: u32) {
         let (op, s, slot, gen_) = split(u);
         match op {
-            OP_ACCEPT => self.on_accept(s, res, flags),
+            OP_ACCEPT => self.on_accept(s, res),
             OP_RECV => self.on_recv(s, slot, gen_, res, flags),
             OP_SEND => self.on_send(s, slot, gen_, res),
             OP_CLOSE => self.on_closed(s, slot),
@@ -453,29 +462,29 @@ impl Server {
         }
         eprintln!("shutting down: draining in-flight requests");
         self.draining = Some(Instant::now());
-        if let Some(s) = self.accept_shard.take() {
-            let e = opcode::AsyncCancel::new(ud(OP_ACCEPT, s, 0, 0)).build().user_data(ud(OP_CANCEL, s, 0, 0));
-            push(&mut self.shards[s].io.ring, &e);
+        for s in 0..self.shards.len() {
+            if self.shards[s].io.accepts > 0 {
+                let e = opcode::AsyncCancel2::new(CancelBuilder::user_data(ud(OP_ACCEPT, s, 0, 0)).all())
+                    .build()
+                    .user_data(ud(OP_CANCEL, s, 0, 0));
+                push(&mut self.shards[s].io.ring, &e);
+            }
         }
     }
 
-    fn on_accept(&mut self, s: usize, res: i32, flags: u32) {
-        let more = cqueue::more(flags);
+    fn on_accept(&mut self, s: usize, res: i32) {
+        self.shards[s].io.accepts -= 1;
+        self.accepts -= 1;
         if res < 0 {
-            if !more && self.accept_shard == Some(s) {
-                self.accept_shard = None;
-                match -res {
-                    // This shard's table is full: move on to the next one.
-                    libc::ENFILE => self.resume_accept(),
-                    libc::ECANCELED => {}
-                    // Anything else (EMFILE, ENOMEM, ...): retry on the next tick, never spin.
-                    e => {
-                        if self.stats.accept_errors < 10 {
-                            eprintln!("net: accept failed: {}", io::Error::from_raw_os_error(e));
-                        }
-                        self.stats.accept_errors += 1;
-                        self.accept_paused = true;
+            match -res {
+                libc::ECANCELED => {}
+                // Anything else (ENFILE, EMFILE, ENOMEM, ...): retry on the next tick, never spin.
+                e => {
+                    if self.stats.accept_errors < 10 {
+                        eprintln!("net: accept failed: {}", io::Error::from_raw_os_error(e));
                     }
+                    self.stats.accept_errors += 1;
+                    self.accept_paused = true;
                 }
             }
             return;
@@ -505,10 +514,7 @@ impl Server {
             self.stats.refused += 1;
             start_close(sh, &mut self.env, s, slot);
         }
-        if !more && self.accept_shard == Some(s) {
-            self.accept_shard = None;
-            self.resume_accept();
-        }
+        self.fill_accepts();
     }
 
     fn on_recv(&mut self, s: usize, slot: u32, gen_: u32, res: i32, flags: u32) {
@@ -585,9 +591,7 @@ impl Server {
         c.state = State::Free;
         sh.live -= 1;
         self.total_conns -= 1;
-        if self.accept_paused {
-            self.resume_accept();
-        }
+        self.fill_accepts();
     }
 
     fn on_replies(&mut self) {
@@ -616,9 +620,8 @@ impl Server {
         } else if was_low && !self.pressure.low {
             eprintln!("net: memory recovered: accepting connections");
         }
-        if self.accept_paused && self.accept_shard.is_none() {
-            self.resume_accept();
-        }
+        self.accept_paused = false;
+        self.fill_accepts();
         // Incremental sweep: each tick checks 1/16 of every shard's table for stalled partial
         // requests or sends, so idle connections cost nothing and the scan stays sub-millisecond.
         let now = self.env.now_coarse;
