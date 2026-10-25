@@ -273,4 +273,91 @@ mod tests {
         }
         assert_eq!(r.post.reprepares() + r.feed_ids.reprepares(), 0);
     }
+
+    /// In-process comparison of feed strategies (SQL cost only, no network):
+    /// TWELVE_SEED=... cargo test --release feed_variants -- --ignored --nocapture
+    #[test]
+    #[ignore]
+    fn feed_variants() {
+        let path = std::env::var("TWELVE_SEED").expect("TWELVE_SEED");
+        let mut r = Reader::open(&path).unwrap();
+        let mut group = r.db.prepare("SELECT post_id, count(*) FROM likes WHERE post_id BETWEEN ?1 AND ?2 GROUP BY post_id").unwrap();
+        let mut point = r.db.prepare("SELECT count(*) FROM likes WHERE post_id = ?1").unwrap();
+        let mut ordered = r.db.prepare(
+            "SELECT p.id, p.body, p.created_at, u.username FROM posts p JOIN users u ON u.id = p.user_id \
+             ORDER BY p.created_at DESC, p.id DESC LIMIT 20").unwrap();
+        let n = 20_000;
+        let mut out = Vec::with_capacity(8192);
+        let mut want = Vec::new();
+        r.feed_exact(&mut want).unwrap();
+        r.end_batch();
+        let mut time = |name: &str, f: &mut dyn FnMut(&mut Reader, &mut Vec<u8>)| {
+            let t = std::time::Instant::now();
+            for _ in 0..n {
+                out.clear();
+                f(&mut r, &mut out);
+                r.end_batch();
+            }
+            let us = t.elapsed().as_secs_f64() * 1e6 / n as f64;
+            eprintln!("{name:<36} {us:6.2} us/feed");
+        };
+        time("exact (20 correlated counts)", &mut |r, o| { r.txn().unwrap(); r.feed_exact(o).unwrap() });
+        time("range + likes scan counted in Rust", &mut |r, o| r.feed(o).unwrap());
+        time("ids only (F1)", &mut |r, _| {
+            r.txn().unwrap();
+            while r.feed_ids.step().unwrap() {}
+            r.feed_ids.reset();
+        });
+        let (lo, hi) = (499_981, 500_000);
+        time("likes: range scan counted in Rust", &mut |r, _| {
+            r.txn().unwrap();
+            let s = &mut r.feed_likes;
+            s.bind_i64(1, lo);
+            s.bind_i64(2, hi);
+            let mut c = 0;
+            while s.step().unwrap() { c += s.int(0); }
+            s.reset();
+            std::hint::black_box(c);
+        });
+        time("likes: GROUP BY post_id", &mut |r, _| {
+            r.txn().unwrap();
+            group.bind_i64(1, lo);
+            group.bind_i64(2, hi);
+            let mut c = 0;
+            while group.step().unwrap() { c += group.int(1); }
+            group.reset();
+            std::hint::black_box(c);
+        });
+        time("likes: 20 point count(*)", &mut |r, _| {
+            r.txn().unwrap();
+            let mut c = 0;
+            for id in lo..=hi {
+                point.bind_i64(1, id);
+                point.step().unwrap();
+                c += point.int(0);
+                point.reset();
+            }
+            std::hint::black_box(c);
+        });
+        time("rows: range scan + user join", &mut |r, _| {
+            r.txn().unwrap();
+            let s = &mut r.feed_rows;
+            s.bind_i64(1, lo);
+            s.bind_i64(2, hi);
+            let mut c = 0;
+            while s.step().unwrap() { c += s.text(1).len(); }
+            s.reset();
+            std::hint::black_box(c);
+        });
+        time("rows: index walk + join (no F1)", &mut |r, _| {
+            r.txn().unwrap();
+            let mut c = 0;
+            while ordered.step().unwrap() { c += ordered.text(1).len(); }
+            ordered.reset();
+            std::hint::black_box(c);
+        });
+        out.clear();
+        r.feed(&mut out).unwrap();
+        assert_eq!(out, want, "range path must equal the exact query");
+    }
 }

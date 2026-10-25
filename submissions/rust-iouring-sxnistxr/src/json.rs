@@ -311,36 +311,71 @@ static NEEDS_ESCAPE: [u8; 256] = {
     t
 };
 
+/// True if any byte of the 8-byte word needs escaping: < 0x20, `"` or `\\`.
+/// `(x - n*LO) & !x & HI` is non-zero exactly when some byte of x is below n (n <= 0x80);
+/// XOR-ing with a repeated byte turns "equals c" into "is zero".
+#[inline]
+fn word_needs_escape(w: u64) -> bool {
+    const LO: u64 = 0x0101_0101_0101_0101;
+    const HI: u64 = 0x8080_8080_8080_8080;
+    let ctrl = w.wrapping_sub(LO * 0x20) & !w;
+    let q = w ^ (LO * b'"' as u64);
+    let quote = q.wrapping_sub(LO) & !q;
+    let b = w ^ (LO * b'\\' as u64);
+    let backslash = b.wrapping_sub(LO) & !b;
+    (ctrl | quote | backslash) & HI != 0
+}
+
 /// Appends `s` as a quoted JSON string. `s` must be valid UTF-8 (all our text is: it came from
 /// SQLite TEXT written by us, or from a validated JSON string).
+///
+/// Post bodies almost never need escaping, so the scan checks 8 bytes per step and only looks
+/// at individual bytes in a word that contains something to escape.
 pub fn write_str(out: &mut Vec<u8>, s: &[u8]) {
     out.reserve(s.len() + 2);
     out.push(b'"');
     let mut start = 0;
-    for (i, &c) in s.iter().enumerate() {
-        if NEEDS_ESCAPE[c as usize] == 0 {
-            continue;
-        }
-        out.extend_from_slice(&s[start..i]);
-        match c {
-            b'"' => out.extend_from_slice(b"\\\""),
-            b'\\' => out.extend_from_slice(b"\\\\"),
-            b'\n' => out.extend_from_slice(b"\\n"),
-            b'\r' => out.extend_from_slice(b"\\r"),
-            b'\t' => out.extend_from_slice(b"\\t"),
-            8 => out.extend_from_slice(b"\\b"),
-            12 => out.extend_from_slice(b"\\f"),
-            _ => {
-                const HEX: &[u8; 16] = b"0123456789abcdef";
-                out.extend_from_slice(b"\\u00");
-                out.push(HEX[(c >> 4) as usize]);
-                out.push(HEX[(c & 15) as usize]);
+    let mut i = 0;
+    while i < s.len() {
+        if i + 8 <= s.len() {
+            let w = u64::from_le_bytes(s[i..i + 8].try_into().unwrap());
+            if !word_needs_escape(w) {
+                i += 8;
+                continue;
             }
         }
-        start = i + 1;
+        let end = (i + 8).min(s.len());
+        while i < end {
+            let c = s[i];
+            if NEEDS_ESCAPE[c as usize] != 0 {
+                out.extend_from_slice(&s[start..i]);
+                escape_byte(out, c);
+                start = i + 1;
+            }
+            i += 1;
+        }
     }
     out.extend_from_slice(&s[start..]);
     out.push(b'"');
+}
+
+#[cold]
+fn escape_byte(out: &mut Vec<u8>, c: u8) {
+    match c {
+        b'"' => out.extend_from_slice(b"\\\""),
+        b'\\' => out.extend_from_slice(b"\\\\"),
+        b'\n' => out.extend_from_slice(b"\\n"),
+        b'\r' => out.extend_from_slice(b"\\r"),
+        b'\t' => out.extend_from_slice(b"\\t"),
+        8 => out.extend_from_slice(b"\\b"),
+        12 => out.extend_from_slice(b"\\f"),
+        _ => {
+            const HEX: &[u8; 16] = b"0123456789abcdef";
+            out.extend_from_slice(b"\\u00");
+            out.push(HEX[(c >> 4) as usize]);
+            out.push(HEX[(c & 15) as usize]);
+        }
+    }
 }
 
 /// Appends a decimal integer.
@@ -488,6 +523,32 @@ mod tests {
         assert_eq!(agree, 300_000);
         // Make sure the generator reaches the interesting cases, not just errors.
         assert!(valid > 5_000 && bodies > 2_000, "valid {valid}, with body {bodies}");
+    }
+
+    #[test]
+    fn write_str_matches_serde_json() {
+        let mut rng = 12345u64;
+        let alphabet: Vec<char> = "ab\"\\\n\t\u{1}\u{1f}\u{7f} é✓😀/<>".chars().collect();
+        for len in 0..40 {
+            for _ in 0..200 {
+                let s: String = (0..len)
+                    .map(|_| {
+                        rng ^= rng << 13;
+                        rng ^= rng >> 7;
+                        rng ^= rng << 17;
+                        alphabet[(rng % alphabet.len() as u64) as usize]
+                    })
+                    .collect();
+                let mut o = Vec::new();
+                write_str(&mut o, s.as_bytes());
+                let back: String = serde_json::from_slice(&o).unwrap();
+                assert_eq!(back, s);
+            }
+        }
+        for c in 0u8..=127 {
+            let w = u64::from_le_bytes([b'a', b'a', b'a', c, b'a', b'a', b'a', b'a']);
+            assert_eq!(word_needs_escape(w), NEEDS_ESCAPE[c as usize] != 0, "{c}");
+        }
     }
 
     #[test]
