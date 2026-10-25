@@ -248,3 +248,29 @@ pub fn write_post(out: &mut Vec<u8>, id: i64, body: &[u8], created_at: &[u8], au
     write_int(out, likes);
     out.push(b'}');
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Needs a seed copy: TWELVE_SEED=/path/to/copy/of/feed.db cargo test -- --ignored
+    #[test]
+    #[ignore]
+    fn statements_are_not_reprepared() {
+        let path = std::env::var("TWELVE_SEED").expect("TWELVE_SEED");
+        let mut r = Reader::open(&path).unwrap();
+        let mut out = Vec::new();
+        for i in 0..200 {
+            out.clear();
+            assert!(r.post(1 + i, &mut out).unwrap());
+            out.clear();
+            r.feed(&mut out).unwrap();
+            r.end_batch();
+        }
+        for (name, s) in [("begin", &r.begin), ("commit", &r.commit), ("post", &r.post), ("feed_ids", &r.feed_ids),
+                          ("feed_rows", &r.feed_rows), ("feed_likes", &r.feed_likes)] {
+            eprintln!("{name}: {} reprepares", s.reprepares());
+        }
+        assert_eq!(r.post.reprepares() + r.feed_ids.reprepares(), 0);
+    }
+}

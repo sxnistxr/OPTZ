@@ -27,6 +27,10 @@ fn main() {
         "SQLITE_LIKE_DOESNT_MATCH_BLOBS",
         "SQLITE_USE_ALLOCA",
         "SQLITE_OMIT_AUTOINIT",
+        // Query planner stability: plans never depend on bound values. Without it SQLite marks
+        // the single-post statement for re-planning whenever ?1 changes, i.e. on every request,
+        // and re-parses its SQL each time (measured: 200 reprepares in 200 calls).
+        "SQLITE_ENABLE_QPSG",
     ] {
         b.define(k, None);
     }
