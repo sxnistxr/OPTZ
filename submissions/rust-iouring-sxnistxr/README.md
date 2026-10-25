@@ -67,7 +67,10 @@ one CPU, over loopback. They're for before/after comparisons, not capacity claim
    reserved, means a table never overflows.
 6. **Group commit + one statement per like.** `INSERT … SELECT … WHERE EXISTS … ON CONFLICT DO
    NOTHING` handles the common case in one statement; `changes()` tells 201 from 200/404.
-7. **Memory-budget admission control.** The connection ceiling comes from MemTotal and the
+7. **SQLite PGO on synthetic data.** `build.sh` profiles SQLite on a randomly generated
+   database (never the seed) and rebuilds it: feed −7 %, mixed −5 to −12 % in every A/B pair.
+   It falls back to the plain build if any step fails; `bash build.sh --no-pgo` skips it.
+8. **Memory-budget admission control.** The connection ceiling comes from MemTotal and the
    *measured* cost per idle connection (~3.6–4.9 KB of kernel + app memory), plus a
    once-a-second MemAvailable floor read with `pread` on an fd opened at startup. Past either,
    new connections are closed at once. A refused connection costs one request; an OOM kill costs

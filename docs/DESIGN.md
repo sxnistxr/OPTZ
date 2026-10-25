@@ -330,6 +330,6 @@ Small commits, each one passing its tests.
 | HMAC library comparison | RustCrypto `sha2`/`hmac` without comparison | Auth is 7.8 % of requests (~0.08 µs of the average request) |
 | SO_RCVBUF/SO_SNDBUF tuning | Kernel defaults | No measurable CPU difference; idle sockets hold no buffers either way |
 | Completion batching | Not shipped | No gain under saturation, and it can't be exercised in its target regime locally |
-| SQLite PGO | Not done | Not attempted yet; the remaining measured hotspots are VDBE and B-tree code, which PGO might help. Listed as future work |
+| SQLite PGO | Done, trained on a synthetic DB generated at build time | feed −7 %, mixed −5 to −12 % (BENCHMARKS.md §8) |
 | (unplanned) `SQLITE_ENABLE_QPSG` | Added | The single-post statement was re-prepared on every request; 2.3× faster single-post reads |
 | (unplanned) single-step backups | Backup API in one step | A batched backup restarts on every write and never finished under steady writes |

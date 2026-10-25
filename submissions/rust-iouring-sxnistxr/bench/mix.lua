@@ -16,9 +16,10 @@ local function auth()
 end
 
 local function feed() return wrk.format("GET", "/feed") end
-local function post() return wrk.format("GET", "/posts/" .. math.random(495000, 500000)) end
+local post_max = tonumber(os.getenv("POST_MAX") or "500000")
+local function post() return wrk.format("GET", "/posts/" .. math.random(post_max - 5000, post_max)) end
 local function like()
-  return wrk.format("POST", "/posts/" .. math.random(1, 500000) .. "/like", auth(), "")
+  return wrk.format("POST", "/posts/" .. math.random(1, post_max) .. "/like", auth(), "")
 end
 local function create()
   counter = counter + 1

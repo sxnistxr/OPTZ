@@ -133,3 +133,24 @@ load generator, where the regime it targets actually exists.
 p95 2.02 ms, p99 5.91 ms, 0 failed out of 162,306 requests, server RSS peak 34 MB. The server
 ran at ~10 % CPU (k6 at 12k users produces only ~1.3k req/s). This shows correctness under the
 real user model with keep-alive connections, not capacity.
+
+### 8. SQLite PGO trained on synthetic data: accepted
+
+`build.sh` instruments SQLite (`-fprofile-generate`) and runs `bench/pgo_train.py`. That script
+generates a random database with the same schema (20k users, 100k posts, ~400k likes; **no
+challenge seed data**), drives the load.js mix over keep-alive connections for 12 s, and stops
+the server with SIGTERM to write the profile. SQLite is then rebuilt with `-fprofile-use`. Only
+the SQLite C code is profiled; the Rust side is unchanged. If any step fails, the plain build
+is kept.
+
+A/B on the seed, three interleaved pairs (µs/req):
+
+| workload | plain | PGO |
+|---|---|---|
+| feed | 18.93 / 18.74 / 19.65 | **17.77 / 17.52 / 17.62** |
+| post | 8.37 / 8.61 / 8.41 | 8.62 / 8.56 / 8.49 |
+| mixed | 19.69 / 20.01 / 19.87 | **17.41 / 18.49 / 18.89** |
+
+Feed −7 % (every pair), mixed −5 to −12 % (every pair), single post neutral. Through `build.sh`
+end to end: feed 17.44, mixed 18.83. The official suite passes 42/42 on the PGO build. The
+build takes ~2 m 50 s on this 4-core box; expect several minutes on 1 vCPU.

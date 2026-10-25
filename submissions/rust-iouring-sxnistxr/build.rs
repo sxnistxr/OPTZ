@@ -34,5 +34,18 @@ fn main() {
     ] {
         b.define(k, None);
     }
+    // Optional SQLite PGO (build-time only): TWELVE_SQLITE_PGO=gen:<dir> instruments, then
+    // TWELVE_SQLITE_PGO=use:<dir> rebuilds with the collected profile. build.sh drives it.
+    println!("cargo:rerun-if-env-changed=TWELVE_SQLITE_PGO");
+    match std::env::var("TWELVE_SQLITE_PGO").ok().as_deref().and_then(|v| v.split_once(':')) {
+        Some(("gen", dir)) => {
+            b.flag(format!("-fprofile-generate={dir}")).flag("-fprofile-update=atomic");
+            println!("cargo:rustc-link-lib=gcov");
+        }
+        Some(("use", dir)) => {
+            b.flag(format!("-fprofile-use={dir}")).flag("-fprofile-partial-training").flag("-Wno-missing-profile");
+        }
+        _ => {}
+    }
     b.compile("sqlite3");
 }
