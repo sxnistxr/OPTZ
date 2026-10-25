@@ -81,6 +81,8 @@ def main():
     ap.add_argument("--seed", required=True)
     ap.add_argument("--conns", type=int, default=18000)
     ap.add_argument("--sources", type=int, default=64)
+    ap.add_argument("--server-nofile", type=int, default=65535,
+                    help="run the server with this RLIMIT_NOFILE, as the scoring box's systemd unit does")
     a = ap.parse_args()
     hard = resource.getrlimit(resource.RLIMIT_NOFILE)[1]
     resource.setrlimit(resource.RLIMIT_NOFILE, (hard, hard))
@@ -93,7 +95,8 @@ def main():
     plain.wait()
     time.sleep(2)
 
-    srv = Server(a.seed, 3602).start()
+    lim = a.server_nofile
+    srv = Server(a.seed, 3602, wrap=["prlimit", f"--nofile={lim}:{lim}", "--"]).start()
     o = measure(srv.proc.pid, 3602, n, a.sources)
     srv.stop()
 
@@ -107,6 +110,7 @@ def main():
         "our_extra_vs_plain_bytes": round(ours_extra),
         "our_server_bytes_per_conn": round(plain_socket + ours_extra),
         "our_rss_bytes_per_conn": round(o["rss"] / n),
+        "kernel": os.uname().release,
     }, indent=1))
 
 

@@ -20,18 +20,18 @@ def token(sub="1", username="golden_ember_1", exp_in=3600):
 
 
 class Server:
-    def __init__(self, seed, port=3100, args=(), db=None):
+    def __init__(self, seed, port=3100, args=(), db=None, wrap=()):
         self.dir = tempfile.mkdtemp(prefix="twelve-")
         self.db = db or os.path.join(self.dir, "feed.db")
         if db is None:
             shutil.copy(seed, self.db)
-        self.port, self.args = port, list(args)
+        self.port, self.args, self.wrap = port, list(args), list(wrap)
         self.proc = None
 
     def start(self):
         env = dict(os.environ, SQLITE_PATH=self.db, JWT_SECRET=SECRET.decode(), HOST="127.0.0.1", PORT=str(self.port))
         self.log = open(os.path.join(self.dir, "server.log"), "ab")
-        self.proc = subprocess.Popen([BINARY, *self.args], env=env, stdout=self.log, stderr=self.log)
+        self.proc = subprocess.Popen([*self.wrap, BINARY, *self.args], env=env, stdout=self.log, stderr=self.log)
         for _ in range(200):
             try:
                 s, b = request(self.port, "GET", "/health")

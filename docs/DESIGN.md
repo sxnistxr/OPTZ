@@ -1,6 +1,7 @@
 # Design: rust-iouring-sxnistxr
 
-Status: **draft for approval** (sections 4a–4d of the prompt, plus the implementation plan).
+Status: **implemented.** The decisions below were made without further sign-off, as instructed.
+See "What changed during implementation" at the end.
 Sections 1–3 of the prompt are approved and not repeated here, except where reading the repo changed a detail.
 
 ## 0. What reading the repo changed
@@ -314,3 +315,21 @@ Small commits, each one passing its tests.
 3. **500k expectations:** on the kernel measured so far, 500k sockets don't fit in 2 GB. I'll design for it and set
    the admission ceiling from the 6.8 measurement, but the honest target may be ~330–450k, and I'll report what's
    actually measured.
+
+
+---
+
+## What changed during implementation
+
+| Planned | Done | Why |
+|---|---|---|
+| SAVEPOINT per write job | No savepoints. A job that aborts the transaction is dropped and the batch replayed | Each job is one statement, which SQLite already makes atomic. The replay path is unit-tested with a test-only trigger |
+| Multishot direct accept | 16 single-shot accepts in flight, each counted against a shard's free slots | With multishot, a full fixed-file table made the kernel accept and then drop a connection (4 of 5,000 lost) |
+| Feed F3 variants to benchmark | Range scan counted in Rust (5.7 µs) beat `GROUP BY` (8.0) and point counts (10.2) | `feed_variants` test, BENCHMARKS.md §4 |
+| Create: RETURNING vs separate SELECT | RETURNING kept | Creates are 0.9 % of traffic; not worth a second statement |
+| HMAC library comparison | RustCrypto `sha2`/`hmac` without comparison | Auth is 7.8 % of requests (~0.08 µs of the average request) |
+| SO_RCVBUF/SO_SNDBUF tuning | Kernel defaults | No measurable CPU difference; idle sockets hold no buffers either way |
+| Completion batching | Not shipped | No gain under saturation, and it can't be exercised in its target regime locally |
+| SQLite PGO | Not done | Not attempted yet; the remaining measured hotspots are VDBE and B-tree code, which PGO might help. Listed as future work |
+| (unplanned) `SQLITE_ENABLE_QPSG` | Added | The single-post statement was re-prepared on every request; 2.3× faster single-post reads |
+| (unplanned) single-step backups | Backup API in one step | A batched backup restarts on every write and never finished under steady writes |
