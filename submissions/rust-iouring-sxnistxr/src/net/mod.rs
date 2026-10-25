@@ -37,7 +37,8 @@ const ACCEPT_DEPTH: u32 = 16;
 /// Shut down connections stalled mid-request or mid-send for this long.
 const STALL_SECS: u32 = 120;
 /// Reusable response buffers kept around; bigger or extra ones are freed.
-const OUT_POOL_MAX: usize = 4096;
+/// Bounds the pool at 8 MiB of 8 KiB buffers; sends in flight at once are far fewer.
+const OUT_POOL_MAX: usize = 1024;
 const OUT_KEEP_CAPACITY: usize = 16 * 1024;
 /// Close a connection whose unprocessed (pipelined or partial) input exceeds this.
 const STASH_MAX: usize = http::MAX_REQUEST + RECV_BUF_SIZE;
@@ -793,5 +794,23 @@ impl RawFdCompat for IoUring {
     fn as_raw_fd_compat(&self) -> RawFd {
         use std::os::fd::AsRawFd;
         self.as_raw_fd()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn idle_connection_fits_in_64_bytes() {
+        // An idle connection owns only its slot: no receive or send buffer.
+        assert!(std::mem::size_of::<Conn>() <= 64, "Conn is {} bytes", std::mem::size_of::<Conn>());
+        eprintln!("Conn: {} bytes", std::mem::size_of::<Conn>());
+    }
+
+    #[test]
+    fn user_data_round_trips() {
+        assert_eq!(split(ud(OP_SEND, 7, 65534, u32::MAX)), (OP_SEND, 7, 65534, u32::MAX));
+        assert_eq!(split(ud(OP_RECV, 0, 0, 1)), (OP_RECV, 0, 0, 1));
     }
 }

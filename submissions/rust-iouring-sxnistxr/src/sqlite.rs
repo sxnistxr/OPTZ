@@ -62,6 +62,7 @@ unsafe extern "C" {
     fn sqlite3_column_text(s: *mut RawStmt, i: c_int) -> *const u8;
     fn sqlite3_column_bytes(s: *mut RawStmt, i: c_int) -> c_int;
     fn sqlite3_changes(db: *mut RawDb) -> c_int;
+    #[cfg(test)]
     fn sqlite3_stmt_status(s: *mut RawStmt, op: c_int, reset: c_int) -> c_int;
     fn sqlite3_get_autocommit(db: *mut RawDb) -> c_int;
     fn sqlite3_errmsg(db: *mut RawDb) -> *const c_char;
@@ -261,6 +262,7 @@ impl Stmt {
     }
 
     /// How many times SQLite has re-prepared this statement (SQLITE_STMTSTATUS_REPREPARE).
+    #[cfg(test)]
     pub fn reprepares(&self) -> i32 {
         unsafe { sqlite3_stmt_status(self.raw, 5, 0) }
     }
