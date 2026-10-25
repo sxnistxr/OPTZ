@@ -1,0 +1,17 @@
+[Unit]
+Description=OPTZ verified SQLite backup
+After=optz.service
+
+[Service]
+Type=oneshot
+User=optz
+Group=optz
+ExecStart=/usr/bin/python3 /opt/optz/current/ops/backup/optz-backup.py --db /var/lib/optz/feed.db --dest /var/backups/optz
+# Optional off-box copy, e.g.: ExecStartPost=/usr/bin/rclone copy /var/backups/optz remote:optz-backups
+Nice=10
+IOSchedulingClass=idle
+ProtectSystem=strict
+ReadWritePaths=/var/backups/optz /var/lib/optz
+ProtectHome=yes
+PrivateTmp=yes
+NoNewPrivileges=yes
