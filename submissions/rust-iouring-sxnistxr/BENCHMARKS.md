@@ -98,3 +98,38 @@ Fixing the buffers turns autotuning off.
 
 All four are within the ±3 % spread of the two controls. Idle sockets hold no buffer memory
 either way (the cost per idle socket is fixed slab), so I'm keeping kernel defaults.
+
+### 6. Adaptive completion batching (wait for 32 CQEs or 250 µs when busy): rejected
+
+The idea: under sustained load, wait for several completions per `io_uring_enter` rather than
+waking for each one, as the leader does. Two measurements:
+
+**Open-loop rate (`bench/rate.py`, k6 `constant-arrival-rate`, 2,000 connections, load.js mix):**
+
+| build | 5,000 req/s: µs/req | p95 |
+|---|---:|---:|
+| no batching | 61.93 | 18.2 ms |
+| batching | 62.00 / 60.67 | 15.7 / 9.8 ms |
+
+Batching never engaged at 5k req/s: an iteration rarely sees ≥4 completions, which is the busy
+threshold. Above ~13k req/s k6 on three cores is the bottleneck (dropped iterations with the
+server at ~50 % CPU), so this box can't produce the high-rate, unsaturated regime the scoring
+hold runs in. Note that the high µs/req at low rates here is mostly loopback cost: each send
+wakes a k6 thread on another CPU (IPI and wakeup in the server's profile), which a real NIC
+doesn't charge to the server.
+
+**Saturated (wrk mixed, closed loop):**
+
+| build | 64 conns: req/s, µs/req | 1,024 conns: req/s, µs/req |
+|---|---:|---:|
+| no batching | 45,687 / 19.94; 44,177 / 20.48 | 47,521 / 18.80; 44,838 / 19.81 |
+| batching | 45,342 / 20.26; 42,978 / 21.44 | 45,556 / 19.67; 44,509 / 20.04 |
+
+No gain, slightly worse. Rejected; it can be re-tested on a 1 vCPU box with an external
+load generator, where the regime it targets actually exists.
+
+### 7. Official `bench/load.js` at 12,000 users (local, 30 s ramp + 90 s hold)
+
+p95 2.02 ms, p99 5.91 ms, 0 failed out of 162,306 requests, server RSS peak 34 MB. The server
+ran at ~10 % CPU (k6 at 12k users produces only ~1.3k req/s). This shows correctness under the
+real user model with keep-alive connections, not capacity.
