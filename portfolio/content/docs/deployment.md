@@ -39,16 +39,19 @@ the server needs outbound HTTPS while building (not while serving).
 
 ## The domain and TLS
 
-Point `dihlabs.lol` (and `www`) at the server with A records, then:
+Point `dihlabs.lol` (and `www`) at the server with A records, then get a certificate. Use
+`certonly`: the nginx config is generated on every deploy, so certbot shouldn't edit it.
 
 ```sh
 sudo apt install certbot python3-certbot-nginx
-sudo certbot --nginx -d dihlabs.lol -d www.dihlabs.lol
+sudo certbot certonly --nginx -d dihlabs.lol -d www.dihlabs.lol --deploy-hook "systemctl reload nginx"
+sudo bash /srv/optz/ops/deploy.sh        # regenerates nginx with HTTPS; "already live" is fine
 ```
 
-certbot adds the `:443` server and renews by itself. The site's absolute URLs (canonical links,
-Open Graph, sitemap) come from `url` in `portfolio/content/site.json`, or the `SITE_URL`
-environment variable.
+Once `/etc/letsencrypt/live/<domain>/` exists, every deploy generates the config with HTTPS
+(HTTP/2, HSTS) and a redirect from port 80. certbot renews the certificate by itself and the
+deploy hook reloads nginx. The site's absolute URLs (canonical links, Open Graph, sitemap) come
+from `url` in `portfolio/content/site.json`, or the `SITE_URL` environment variable.
 
 ## nginx
 

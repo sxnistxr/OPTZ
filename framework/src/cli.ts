@@ -6,7 +6,8 @@
 //   start          serve dist/ (PORT and HOST env vars override optz.config.ts)
 //   export         static site in dist/static for any static host (no server features)
 //   check          generate route types and type-check the project (tsc)
-//   nginx [dir]    print an nginx config for this app (dir: where dist/ is deployed)
+//   nginx [dir] [--tls certdir]   print an nginx config (dir: where dist/ is deployed; --tls: HTTPS
+//                  with fullchain.pem/privkey.pem from certdir)
 //   create <dir>   start a new app
 import { existsSync, watch } from "node:fs";
 import { join, resolve } from "node:path";
@@ -76,7 +77,10 @@ switch (cmd) {
   }
   case "nginx": {
     const { nginxConfig } = await import("./nginx");
-    process.stdout.write(nginxConfig(await loadConfig(), { distDir: args[0] ?? join(root, "dist") }));
+    const tls = args.indexOf("--tls");
+    const certDir = tls >= 0 ? args[tls + 1] : undefined;
+    const positional = args.filter((a, i) => !a.startsWith("--") && args[i - 1] !== "--tls");
+    process.stdout.write(nginxConfig(await loadConfig(), { distDir: positional[0] ?? join(root, "dist"), tls: certDir ? { certDir } : undefined }));
     break;
   }
   case "__dev-child": {
@@ -136,7 +140,7 @@ switch (cmd) {
   optz start          serve the build (PORT/HOST env vars override optz.config.ts)
   optz export         static site in dist/static (no server features)
   optz check          generate route types and type-check (tsc)
-  optz nginx [dir]    print an nginx config (dir: deployed dist/ path)
+  optz nginx [dir] [--tls certdir]   print an nginx config (dir: deployed dist/ path)
   optz create <dir>   start a new app`);
     if (cmd) process.exit(2);
 }

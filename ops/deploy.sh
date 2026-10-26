@@ -35,10 +35,22 @@ if [ ! -x "$REL/bin/twelve-iouring" ]; then
     cp -a "$src/package.json" "$src/bunfig.toml" "$src/bun.lock" "$src/framework" "$src/node_modules" "$REL/web/"
     # The site without the engine's sources (the engine runs from $REL/bin).
     mkdir -p "$REL/web/portfolio" && (cd "$src/portfolio" && tar --exclude=./engine -cf - .) | tar -xf - -C "$REL/web/portfolio"
-    # nginx config generated from optz.config.ts, so proxies and caching can't drift apart.
-    (cd "$REL/web/portfolio" && /opt/bun/bin/bun ../framework/src/cli.ts nginx /opt/optz/current/web/portfolio/dist) > "$REL/nginx.conf"
   fi
   echo "$SHA" > "$REL/REVISION"
+fi
+
+# nginx config generated from optz.config.ts, so proxies and caching can't drift apart. Checked on
+# every run, not just new builds: once a Let's Encrypt certificate exists (certbot certonly), the
+# config gains HTTPS and an http -> https redirect without waiting for the next commit.
+if [ -d "$REL/web/portfolio" ]; then
+  CERT_DIR="$(ls -d /etc/letsencrypt/live/*/ 2>/dev/null | head -n 1 || true)"
+  (cd "$REL/web/portfolio" && /opt/bun/bin/bun ../framework/src/cli.ts nginx /opt/optz/current/web/portfolio/dist ${CERT_DIR:+--tls "$CERT_DIR"}) > "$REL/nginx.conf.new"
+  mv "$REL/nginx.conf.new" "$REL/nginx.conf"
+  if ! cmp -s "$REL/nginx.conf" /etc/nginx/sites-available/optz; then
+    install -m 0644 "$REL/nginx.conf" /etc/nginx/sites-available/optz
+    install -d -o www-data -g www-data /var/cache/nginx/optz   # nginx workers write the micro-cache
+    if nginx -t; then systemctl reload nginx; else echo "deploy: nginx rejected the new config" >&2; fi
+  fi
 fi
 
 prev="$(readlink -f /opt/optz/current 2>/dev/null || true)"
@@ -54,17 +66,12 @@ for u in optz.service optz-web.service optz-backup.service optz-backup.timer; do
   if [ -n "$src_unit" ] && ! cmp -s "$src_unit" "/etc/systemd/system/$u"; then install -m 0644 "$src_unit" "/etc/systemd/system/$u"; changed=1; fi
 done
 [ "$changed" = 1 ] && systemctl daemon-reload
-if [ -f "$REL/nginx.conf" ] && ! cmp -s "$REL/nginx.conf" /etc/nginx/sites-available/optz; then
-  install -m 0644 "$REL/nginx.conf" /etc/nginx/sites-available/optz
-  install -d -o www-data -g www-data /var/cache/nginx/optz   # nginx workers write the micro-cache
-  nginx -t && systemctl reload nginx
-fi
 systemctl restart optz
 if [ -d "$REL/web" ]; then systemctl restart optz-web; fi
 for _ in $(seq 30); do
   if curl -fsS --max-time 2 "http://127.0.0.1:$PORT/health" >/dev/null 2>&1 \
      && { [ ! -d "$REL/web" ] || curl -fsS --max-time 2 -o /dev/null http://127.0.0.1:3001/; }; then
-    if systemctl is-active --quiet nginx && ! curl -fsS --max-time 2 -o /dev/null http://127.0.0.1/; then
+    if systemctl is-active --quiet nginx && ! curl -fsSk --max-time 2 -o /dev/null -L http://127.0.0.1/; then
       echo "deploy: warning: nginx isn't serving the site" >&2
     fi
     echo "deploy: $SHA is live"
