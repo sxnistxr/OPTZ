@@ -3,7 +3,7 @@
   "title": "dihlabs.lol",
   "author": "sxnistxr",
   "tagline": "A dev lab by sxnistxr",
-  "about": "A dev lab where I build and break things for fun: diffusion models like SDXL, image and video generation, LLMs, and fast software on small machines. This site runs on its own framework, on a $12 server.",
+  "about": "A dev lab where I build and break things for fun: diffusion models like SDXL, image and video generation, LLMs, and fast software on small machines. This site runs on its own framework, on a $1.50 server.",
   "links": [
     { "label": "GitHub", "href": "https://github.com/sxnistxr" },
     { "label": "Source", "href": "https://github.com/sxnistxr/OPTZ" }

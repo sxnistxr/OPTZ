@@ -60,5 +60,5 @@ worker. [Feature by feature](/docs/vs-nextjs#features).
 - You want managed hosting that integrates with the framework (Vercel, Netlify).
 - You can't run Bun (the edge worker covers many cases, but the framework is built around Bun).
 
-For a lab like this one, on a $12 server, the trade is easy: the whole site costs a few MB of
+For a lab like this one, on a $1.50 server, the trade is easy: the whole site costs a few MB of
 memory and a fraction of one core, leaving the box for the experiments.

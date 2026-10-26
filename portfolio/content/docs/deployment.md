@@ -1,6 +1,6 @@
 # Deployment
 
-dihlabs.lol runs on one $12 VPS: 1 vCPU, 2 GB of memory, Ubuntu 24.04. nginx in front, the site
+dihlabs.lol runs on one $1.50 VPS: 1 vCPU, 2 GB of memory, Ubuntu 24.04. nginx in front, the site
 on Bun, the Rust engine next to it, all under systemd, updated from this repository
 automatically.
 

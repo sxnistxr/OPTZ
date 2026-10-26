@@ -43,7 +43,7 @@ export default function Home({ data }: PageProps<{ posts: PostMeta[] }, "/">) {
           The code behind it
         </h2>
         <p className="text-lg leading-relaxed">
-          This site runs on optz, a React framework for Bun built in this lab, on a $12 server. The docs cover how to build on it, how it's made, and how
+          This site runs on optz, a React framework for Bun built in this lab, on a $1.50 server. The docs cover how to build on it, how it's made, and how
           fast it is.
         </p>
         <p className="mt-4 flex flex-wrap gap-x-5 gap-y-2">

@@ -19,7 +19,7 @@ Raw numbers: [`bench/results.json`](../bench/results.json).
 ## Speed
 
 A 4-vCPU Linux VM. Each server is **pinned to one core** with `taskset -c 0`, the same budget as
-the $12 VPS. wrk runs on the other three cores: 3 threads, 64 connections, 10 s per URL,
+the VPS the site runs on. wrk runs on the other three cores: 3 threads, 64 connections, 10 s per URL,
 `Accept-Encoding: br, gzip` like a browser. Both are in production mode (`optz start`,
 `next start`), with no nginx in front of either. Measured 2026-10-26, after adding all the
 features below.
@@ -71,7 +71,7 @@ Next ships React, its router and the RSC runtime on every page, including pages 
 components. optz pages are HTML; only islands hydrate, with Preact (`client.runtime: "preact"`).
 The 2.9 KB on blog pages is the HTML-swap navigation with hover prefetch.
 
-### What this means on the $12 VPS
+### What this means on the VPS
 
 At ~400 req/s per core, Next needs a CDN or nginx cache in front of it to survive a spike. optz
 handles ~55k req/s on the same core, and 52 MB peak memory leaves the rest of the 2 GB for the

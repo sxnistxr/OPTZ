@@ -14,7 +14,7 @@ export default function DocsHome({ data }: PageProps<{ sections: { section: stri
       <h1 className="text-4xl font-semibold tracking-[-0.02em] md:text-5xl">Docs</h1>
       <p className="mt-4 max-w-[40rem] text-lg leading-relaxed">
         Everything in this repository: the optz framework this site runs on, how it's built and with what, how fast it is and why, the Rust engine, and how
-        it all deploys to a $12 server. Start with the{" "}
+        it all deploys to a $1.50 server. Start with the{" "}
         <Link href="/docs/introduction" className="underline decoration-rule underline-offset-4 hover:decoration-ink">
           introduction
         </Link>

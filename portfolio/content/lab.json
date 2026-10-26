@@ -33,7 +33,7 @@
   },
   {
     "slug": "twelve",
-    "name": "The $12 server",
+    "name": "The $12 Server Challenge",
     "area": "Systems",
     "status": "shipped",
     "summary": "A social network backend in Rust on raw io_uring and SQLite, built for the $12 Server Challenge: one CPU, 2 GB of memory, as many users as it can hold.",

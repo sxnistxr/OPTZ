@@ -27,7 +27,7 @@ and everything that deploys them.
 - It still has what an app needs: streaming, Server Actions, incremental static regeneration,
   typed routes and APIs, i18n, image and font optimization, Open Graph images, and it deploys as
   a Bun server, a single executable or an edge worker.
-- The whole thing runs on a **$12 VPS** (one CPU, 2 GB of memory) that pulls this repository
+- The whole thing runs on a **$1.50 VPS** (one CPU, 2 GB of memory) that pulls this repository
   every 30 seconds, builds it, and rolls back by itself if a release isn't healthy.
 
 ## Where to go next
