@@ -111,6 +111,14 @@ reader against serde_json; `kill -9` ×10 under write load, with **0 of 110,768 
 posts and 0 of 55,062 acknowledged likes lost**; official `load.js` at 12,000 users locally:
 p95 2.0 ms, p99 5.9 ms, 0 errors, 34 MB RSS.
 
-**Not yet measured:** capacity on a 1 vCPU / 2 GB box with an external load generator, and
-per-socket memory on Ubuntu's 6.8 kernel. Those decide whether anything near 500k users fits.
-At the ~5 KB per connection measured on 6.18, 2 GB holds roughly 320k connections.
+**Validated on an Ubuntu 24.04 VPS (1 vCPU Cascade Lake without SHA-NI, 2 GB, kernel 6.8,
+like the scoring box):** 42/42, all unit/protocol/shard tests, `kill -9` ×5 with 0 acknowledged
+writes lost, and **4.5–4.6 KB of kernel + app memory per idle connection**. That puts the memory
+ceiling near 320–330k connections on a 2 GB box; 500k would need ~2.3 GB for sockets alone.
+
+The VPS found two kernel-6.8 behaviours the 6.18 dev box hides, both fixed: completions on extra
+rings didn't wake a thread blocked on ring 0 (now a bounded 1 ms wait when several rings are
+live), and closing a direct descriptor is deferred while older requests are in flight (now a
+hard-linked `shutdown` precedes every close).
+
+**Not yet measured:** capacity under load.js with an external load generator.

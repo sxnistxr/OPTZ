@@ -11,15 +11,22 @@ plain Python accept-and-hold server, so the client sockets cancel out.
 | where | kernel | plain socket | io_uring extra | our RSS | server total per connection |
 |---|---|---:|---:|---:|---:|
 | dev container (4 vCPU Xeon 2.1 GHz) | 6.18 | 3,063 B (MemAvailable) / ~4,040 B (Slab) | 557 B (MemAvailable) / 894 B (Slab) | 510 B | **3.6–4.9 KB** |
-| Ubuntu 24.04 VPS (1 vCPU / 2 GB) | 6.8 | *pending* | *pending* | *pending* | *pending* |
+| Ubuntu 24.04 VPS (1 vCPU / 2 GB), 40k conns | 6.8 | 4,031 B (Slab) / 3,434 B (MemAvailable) | 340 B (Slab) | 164 B | **~4.5 KB** |
+| Ubuntu 24.04 VPS, 80k conns (2 rings) | 6.8 | 4,001 B (Slab) / 3,544 B (MemAvailable) | 467 B (Slab) | 147 B | **~4.6 KB** |
 
 `docs/tools/sockmem.py` (raw loopback socket pairs, no server) agrees: 4.1 KB of slab per socket
 on 6.18.
 
-**What this means for capacity (estimate, not measured):** the scoring box has 1,967 MB. With
-~350 MB for the OS, page cache and app, ~1.6 GB is left for connections, which is ~320k at
-5 KB or ~440k at 3.6 KB. 500k connections would need 1.8–2.5 GB for sockets alone. The server's
-admission control uses 5,000 B per connection (`src/limits.rs`) until the 6.8 numbers are in.
+On 6.8 the MemAvailable-based numbers are noisy (page cache moves under them; one run
+gave a negative difference), so the slab figures are the ones used.
+
+**What this means for capacity (estimate from measured parts):** the scoring box has 1,967 MB
+and no swap. Our VPS (same OS) uses ~330 MB idle. Leaving ~150 MB for SQLite's hot pages,
+buffers and slack, ~1.49 GB remains for connections: **~320–330k connections at 4.5–4.6 KB**.
+500k connections would need ~2.3 GB for sockets alone, more than the box has. So with one
+keep-alive socket per user (which load.js uses), **500k is not reachable on this box from memory
+alone**, whatever the CPU cost per request. The admission ceiling uses 4,800 B per connection
+(`src/limits.rs`): (1,967 − 320) MB / 4,800 B ≈ 360k, with the MemAvailable floor as backstop.
 
 ## Throughput and CPU
 

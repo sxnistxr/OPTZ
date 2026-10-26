@@ -13,12 +13,12 @@
 
 use std::os::fd::{AsRawFd, OwnedFd};
 
-/// Kernel + application memory per idle keep-alive connection, in bytes, measured with
-/// tests/connmem.py on kernel 6.18: ~4.0 KB of socket slab, ~0.9 KB of io_uring request state
-/// (the armed multishot recv) and ~0.5 KB of our RSS. Uses the larger, slab-based figure; to be
-/// re-measured on Ubuntu 24.04's 6.8 kernel (docs/MEASUREMENTS.md). The dynamic floor below
-/// is the real safety net if this is off.
-pub const PER_CONN: u64 = 5_000;
+/// Kernel + application memory per idle keep-alive connection, in bytes. Measured with
+/// tests/connmem.py on Ubuntu 24.04 (kernel 6.8, 1 vCPU / 2 GB VPS), 40k and 80k connections:
+/// ~4.0 KB of socket slab + 0.34-0.47 KB of io_uring request state (the armed multishot recv)
+/// + ~0.15 KB of our RSS = 4.5-4.6 KB. Rounded up for slack; see docs/MEASUREMENTS.md.
+/// The dynamic floor below is the real safety net if this is off.
+pub const PER_CONN: u64 = 4_800;
 /// Memory kept back for the OS, page cache for SQLite's hot pages, our buffers and slack.
 pub const RESERVE: u64 = 320 << 20;
 pub const FLOOR: u64 = 96 << 20;
