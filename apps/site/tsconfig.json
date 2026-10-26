@@ -1,0 +1,18 @@
+{
+  "compilerOptions": {
+    "target": "ESNext",
+    "module": "ESNext",
+    "moduleResolution": "bundler",
+    "jsx": "react-jsx",
+    "strict": true,
+    "skipLibCheck": true,
+    "noEmit": true,
+    "resolveJsonModule": true,
+    "types": ["bun"],
+    "paths": {
+      "$lib/*": ["./app/lib/*"],
+      "$content/*": ["./content/*"]
+    }
+  },
+  "include": ["app", "optz.config.ts"]
+}

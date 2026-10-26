@@ -1,0 +1,4 @@
+[install]
+# One shared node_modules at the workspace root, so apps can resolve the framework's
+# dependencies (React, Tailwind) without listing them again.
+linker = "hoisted"

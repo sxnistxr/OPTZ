@@ -1,0 +1,5 @@
+{
+  "name": "optz-workspace",
+  "private": true,
+  "workspaces": ["framework", "apps/*"]
+}

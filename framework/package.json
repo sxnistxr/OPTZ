@@ -1,0 +1,19 @@
+{
+  "name": "optz",
+  "version": "0.1.0",
+  "description": "A small, fast React framework for Bun: file routes, layouts, loaders, middleware, static-first rendering.",
+  "type": "module",
+  "bin": { "optz": "./src/cli.ts" },
+  "exports": {
+    ".": "./src/index.ts",
+    "./runtime": "./src/runtime.tsx"
+  },
+  "peerDependencies": {
+    "react": "^19",
+    "react-dom": "^19"
+  },
+  "dependencies": {
+    "@tailwindcss/cli": "4.3.3",
+    "tailwindcss": "4.3.3"
+  }
+}
