@@ -1,5 +1,5 @@
-# The portfolio, served by the optz framework on Bun (nginx proxies pages and /api here;
-# /api/social and /assets never reach it). Installed by ops/install-prod.sh.
+# The site (portfolio/, dihlabs.lol), served by the optz framework on Bun. nginx proxies pages
+# and /api here; /assets come from disk. The framework is at ../framework (web/framework). Installed by ops/install-prod.sh.
 [Unit]
 Description=OPTZ site (optz on Bun)
 After=network-online.target optz.service
@@ -11,7 +11,7 @@ User=optz
 Group=optz
 WorkingDirectory=/opt/optz/current/web/portfolio
 Environment=PORT=3001 HOST=127.0.0.1 NODE_ENV=production
-ExecStart=/opt/bun/bin/bun ../../framework/src/cli.ts start
+ExecStart=/opt/bun/bin/bun ../framework/src/cli.ts start
 Restart=on-failure
 RestartSec=1
 TimeoutStopSec=10
