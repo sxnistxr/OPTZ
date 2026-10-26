@@ -3,20 +3,22 @@
 //   dev            develop with live reload (http://127.0.0.1:3001)
 //   build          production build into dist/
 //   start          serve dist/ (PORT and HOST env vars override optz.config.ts)
-//   export         build a static site into dist/static for any static host (no server features)
+//   export         static site in dist/static for any static host (no server features)
+//   check          generate route types and type-check the project (tsc)
+//   nginx [dir]    print an nginx config for this app (dir: where dist/ is deployed)
 //   create <dir>   start a new app
 import { existsSync, watch } from "node:fs";
 import { join, resolve } from "node:path";
 import type { Subprocess } from "bun";
-import type { Config } from "./types";
+import { resolveConfig, type Config, type ResolvedConfig } from "./types";
 
 const root = process.cwd();
 
-async function loadConfig(): Promise<Config> {
+async function loadConfig(): Promise<ResolvedConfig> {
   for (const f of ["optz.config.ts", "optz.config.js"]) {
-    if (existsSync(join(root, f))) return ((await import(join(root, f))).default ?? {}) as Config;
+    if (existsSync(join(root, f))) return resolveConfig(((await import(join(root, f))).default ?? {}) as Config);
   }
-  return {};
+  return resolveConfig({});
 }
 
 const [cmd, ...args] = process.argv.slice(2);
@@ -35,8 +37,8 @@ switch (cmd) {
     if (shells.length) {
       console.log("Client-rendered routes need a rewrite on the static host, e.g. nginx:");
       for (const r of shells) {
-        const re = "^" + r.segments.map((s) => (s.kind === "static" ? s.value : s.kind === "param" ? "[^/]+" : ".+")).join("/") + "$";
-        console.log(`  location ~ ^/${re.slice(1)} { try_files ${r.shell} =404; }`);
+        const re = r.segments.map((s) => (s.kind === "static" ? s.value : s.kind === "param" ? "[^/]+" : ".+")).join("/");
+        console.log(`  location ~ ^/${re}$ { try_files ${r.shell} =404; }`);
       }
     }
     break;
@@ -50,6 +52,22 @@ switch (cmd) {
     await serve({ root, config: await loadConfig() });
     break;
   }
+  case "check": {
+    const { writeTypes } = await import("./codegen");
+    const { scanApi, scanRoutes } = await import("./routes");
+    const config = await loadConfig();
+    writeTypes(root, scanRoutes(join(root, "app/routes")).routes, config.features.api ? scanApi(join(root, "app/api")) : []);
+    const tsPkg = Bun.resolveSync("typescript/package.json", import.meta.dir);
+    const tsc = join(tsPkg, "..", (JSON.parse(await Bun.file(tsPkg).text()) as { bin: { tsc: string } }).bin.tsc);
+    const p = Bun.spawnSync([process.execPath, tsc, "--noEmit", "-p", "tsconfig.json"], { cwd: root, stdio: ["inherit", "inherit", "inherit"] });
+    if (p.exitCode === 0) console.log("optz: types ok");
+    process.exit(p.exitCode ?? 1);
+  }
+  case "nginx": {
+    const { nginxConfig } = await import("./nginx");
+    process.stdout.write(nginxConfig(await loadConfig(), { distDir: args[0] ?? join(root, "dist") }));
+    break;
+  }
   case "__dev-child": {
     const { build } = await import("./build");
     const { serve } = await import("./server");
@@ -58,7 +76,6 @@ switch (cmd) {
       await build({ root, config, dev: true });
     } catch (e) {
       console.error("optz: build failed:\n", e);
-      // Keep a server up so the browser can reconnect after the next save.
     }
     await serve({ root, config, dev: true, port: Number(process.env.PORT ?? config.port ?? 3001) });
     break;
@@ -71,7 +88,7 @@ switch (cmd) {
     };
     spawn();
     let timer: Timer | undefined;
-    const ignored = /(^|[/\\])(node_modules|dist|\.optz|\.git)([/\\]|$)/;
+    const ignored = /(^|[/\\])(node_modules|dist|\.optz|\.git|target)([/\\]|$)/;
     watch(root, { recursive: true }, (_e, file) => {
       if (!file || ignored.test(file)) return;
       clearTimeout(timer);
@@ -105,6 +122,8 @@ switch (cmd) {
   optz build          production build into dist/
   optz start          serve the build (PORT/HOST env vars override optz.config.ts)
   optz export         static site in dist/static (no server features)
+  optz check          generate route types and type-check (tsc)
+  optz nginx [dir]    print an nginx config (dir: deployed dist/ path)
   optz create <dir>   start a new app`);
     if (cmd) process.exit(2);
 }

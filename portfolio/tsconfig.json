@@ -1,0 +1,22 @@
+{
+  "compilerOptions": {
+    "target": "ESNext",
+    "module": "ESNext",
+    "moduleResolution": "bundler",
+    "jsx": "react-jsx",
+    "strict": true,
+    "noUncheckedIndexedAccess": false,
+    "skipLibCheck": true,
+    "noEmit": true,
+    "resolveJsonModule": true,
+    "allowImportingTsExtensions": true,
+    "types": ["bun"],
+    "paths": {
+      "$lib/*": ["./app/lib/*"],
+      "$components/*": ["./app/components/*"],
+      "$content/*": ["./content/*"]
+    }
+  },
+  "include": ["app", "optz.config.ts", ".optz/types.d.ts"],
+  "exclude": ["engine", "dist", "node_modules"]
+}

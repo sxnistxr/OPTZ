@@ -1,5 +1,5 @@
-# The site, served by the optz framework on Bun (nginx proxies pages here; /api and /assets
-# never reach it). Installed by ops/install-prod.sh.
+# The portfolio, served by the optz framework on Bun (nginx proxies pages and /api here;
+# /api/social and /assets never reach it). Installed by ops/install-prod.sh.
 [Unit]
 Description=OPTZ site (optz on Bun)
 After=network-online.target optz.service
@@ -9,7 +9,7 @@ Wants=network-online.target
 Type=simple
 User=optz
 Group=optz
-WorkingDirectory=/opt/optz/current/web/apps/site
+WorkingDirectory=/opt/optz/current/web/portfolio
 Environment=PORT=3001 HOST=127.0.0.1 NODE_ENV=production
 ExecStart=/opt/bun/bin/bun ../../framework/src/cli.ts start
 Restart=on-failure

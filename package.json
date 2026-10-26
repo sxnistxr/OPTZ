@@ -1,5 +1,9 @@
 {
   "name": "optz-workspace",
   "private": true,
-  "workspaces": ["framework", "apps/*"]
+  "workspaces": [
+    "framework",
+    "portfolio",
+    "apps/*"
+  ]
 }

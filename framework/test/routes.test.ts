@@ -2,7 +2,7 @@ import { describe, expect, test } from "bun:test";
 import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { dataPath, fillPattern, matchRoute, scanRoutes } from "../src/routes";
+import { dataPath, fillPattern, matchRoute, scanApi, scanRoutes, sortRoutes } from "../src/routes";
 import { scriptJson } from "../src/render";
 
 function app(files: string[]) {
@@ -16,16 +16,15 @@ function app(files: string[]) {
 
 describe("scanRoutes", () => {
   const dir = app([
-    "index.tsx", "about.tsx", "_layout.tsx", "_404.tsx", "_error.tsx", "hello.ts",
+    "index.tsx", "about.tsx", "_layout.tsx", "_404.tsx", "_error.tsx", "helper.ts",
     "blog/index.tsx", "blog/[slug].tsx", "blog/new.tsx", "blog/_layout.tsx",
     "docs/[...rest].tsx", "(marketing)/pricing.tsx", "_private/secret.tsx", "lib.d.ts", "x.test.tsx",
   ]);
   const t = scanRoutes(dir);
   const patterns = t.routes.map((r) => r.pattern);
 
-  test("finds pages and API routes, skips private and test files", () => {
-    expect(new Set(patterns)).toEqual(new Set(["/", "/about", "/hello", "/blog", "/blog/[slug]", "/blog/new", "/docs/[...rest]", "/pricing"]));
-    expect(t.routes.find((r) => r.pattern === "/hello")!.kind).toBe("api");
+  test("finds pages, skips private, test and helper .ts files", () => {
+    expect(new Set(patterns)).toEqual(new Set(["/", "/about", "/blog", "/blog/[slug]", "/blog/new", "/docs/[...rest]", "/pricing"]));
     expect(t.notFound).toEndWith("_404.tsx");
   });
 
@@ -63,4 +62,14 @@ test("boot JSON can't break out of its script tag", () => {
   expect(s).not.toContain("</script>");
   expect(s).not.toContain(" ");
   expect(JSON.parse(s).x).toBe("</script><script>alert(1)</script> ");
+});
+
+test("API routes live in app/api under /api", () => {
+  const dir = app(["stats.ts", "posts/index.ts", "posts/[id].ts", "posts/[id]/like.ts", "_internal.ts", "types.d.ts"]);
+  const apis = sortRoutes(scanApi(dir));
+  expect(new Set(apis.map((r) => r.pattern))).toEqual(new Set(["/api/posts/[id]/like", "/api/posts", "/api/stats", "/api/posts/[id]"]));
+  expect(matchRoute(apis, "/api/posts")!.route.pattern).toBe("/api/posts");
+  expect(matchRoute(apis, "/api/posts/7")!.route.pattern).toBe("/api/posts/[id]");
+  expect(apis.every((r) => r.kind === "api")).toBe(true);
+  expect(matchRoute(apis, "/api/posts/7/like")!.params).toEqual({ id: "7" });
 });

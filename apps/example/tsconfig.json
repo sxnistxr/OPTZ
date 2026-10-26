@@ -13,11 +13,15 @@
     "paths": {
       "$lib/*": [
         "./app/lib/*"
+      ],
+      "$components/*": [
+        "./app/components/*"
       ]
     }
   },
   "include": [
     "app",
-    "optz.config.ts"
+    "optz.config.ts",
+    ".optz/types.d.ts"
   ]
 }

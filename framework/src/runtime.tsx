@@ -15,7 +15,7 @@ import {
   type ReactNode,
 } from "react";
 import { dataPath, matchRoute, matchSegments, type Segment } from "./match";
-import type { ErrorModule, Head, LayoutModule, PageModule, Params, RenderMode } from "./types";
+import type { ErrorModule, Head, Href, LayoutModule, PageModule, Params, RenderMode } from "./types";
 
 // ---- state ---------------------------------------------------------------------------------
 
@@ -86,6 +86,27 @@ export function Tree({ state }: { state: PageState }) {
   return node;
 }
 
+/** What an island sees of the router (islands mode). */
+export interface IslandContext {
+  pathname: string;
+  params: Params;
+  navigate: (href: string) => void;
+}
+
+/** Router hooks inside an island: pathname, params and navigation, no page data. */
+export function IslandRouter({ ctx, children }: { ctx: IslandContext; children: ReactNode }) {
+  const value = useMemo<RouterValue>(
+    () => ({
+      state: { pathname: ctx.pathname, params: ctx.params, data: undefined, Page: () => null, layouts: [] },
+      navigate: async (href) => ctx.navigate(href),
+      prefetch: () => {},
+      navigating: false,
+    }),
+    [ctx],
+  );
+  return <RouterContext.Provider value={value}>{children}</RouterContext.Provider>;
+}
+
 /** Server-side wrapper: same tree, no navigation. */
 export function StaticRouter({ state }: { state: PageState }) {
   const value = useMemo(() => ({ state, navigate: noop, prefetch: () => {}, navigating: false }), [state]);
@@ -98,7 +119,13 @@ export function StaticRouter({ state }: { state: PageState }) {
 
 // ---- Link ----------------------------------------------------------------------------------
 
-type LinkProps = AnchorHTMLAttributes<HTMLAnchorElement> & { href: string; replace?: boolean; scroll?: boolean; prefetch?: boolean };
+type LinkProps = Omit<AnchorHTMLAttributes<HTMLAnchorElement>, "href"> & {
+  /** Typed against your routes: a URL no page answers is a type error. */
+  href: Href;
+  replace?: boolean;
+  scroll?: boolean;
+  prefetch?: boolean;
+};
 
 /** An <a> that navigates without a full page load and prefetches on hover/focus. */
 export function Link({ href, replace, scroll, prefetch = true, onClick, onMouseEnter, onFocus, onTouchStart, ...rest }: LinkProps) {
@@ -142,11 +169,19 @@ interface Payload {
   redirect?: string;
 }
 
-declare global {
-  interface Window {
-    __OPTZ__?: { pattern: string; params: Params; data: unknown; dev?: boolean };
-  }
+interface SpaBoot {
+  pattern: string;
+  params: Params;
+  data: unknown;
+  dev?: boolean;
 }
+const readBoot = (): SpaBoot | null => {
+  try {
+    return JSON.parse(document.getElementById("__optz_boot")?.textContent || "null");
+  } catch {
+    return null;
+  }
+};
 
 async function loadState(route: ClientRoute, pathname: string, params: Params, data: unknown): Promise<PageState> {
   const [mod, layouts, err] = await Promise.all([route.load(), Promise.all(route.layouts.map((l) => l())), route.error?.()]);
@@ -260,7 +295,7 @@ function Root({ routes, initial, urlParams }: { routes: ClientRoute[]; initial: 
 
 /** Browser entry: hydrates the server-rendered page, then takes over navigation. */
 export async function start(routes: ClientRoute[]) {
-  const boot = window.__OPTZ__;
+  const boot = readBoot();
   const el = document.getElementById("__optz");
   if (!boot || !el) return;
   if (boot.dev) liveReload();

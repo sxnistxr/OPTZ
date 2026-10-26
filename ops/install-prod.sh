@@ -6,7 +6,8 @@
 # of --seed), installs the Rust toolchain, Bun (the site runs on the optz framework), nginx, systemd units, the
 # backup timer and the journald limit, then deploys the current commit.
 #
-# Layout: nginx on :80; /api/* -> Rust API on 127.0.0.1:3000; pages -> the optz site on Bun
+# Layout: nginx on :80; /api/social/* -> the Rust engine on 127.0.0.1:3000; pages and /api/* ->
+# the portfolio on Bun
 # (127.0.0.1:3001); /assets/* straight from disk.
 set -euo pipefail
 REPO="$(cd "$(dirname "$0")/.." && pwd)"
@@ -23,7 +24,7 @@ while [ $# -gt 0 ]; do
 done
 [ "$(id -u)" -eq 0 ] || { echo "run as root" >&2; exit 1; }
 
-bash "$REPO/submissions/rust-iouring-sxnistxr/install.sh"
+bash "$REPO/portfolio/engine/install.sh"
 apt-get install -y --no-install-recommends python3 git curl nginx openssl
 if [ ! -x /opt/bun-$BUN_VERSION/bin/bun ]; then
   tmp="$(mktemp -d)"
@@ -56,7 +57,7 @@ if [ ! -f /var/lib/optz/feed.db ]; then
   if [ -n "$SEED" ]; then
     install -o optz -g optz -m 0640 "$SEED" /var/lib/optz/feed.db
   else
-    runuser -u optz -- python3 - "$REPO/submissions/rust-iouring-sxnistxr/tests/schema.sql" <<'PY'
+    runuser -u optz -- python3 - "$REPO/portfolio/engine/tests/schema.sql" <<'PY'
 import sqlite3, sys
 db = sqlite3.connect("/var/lib/optz/feed.db")
 db.execute("PRAGMA journal_mode=WAL")
@@ -72,7 +73,10 @@ install -m 0644 "$REPO/ops/backup/optz-backup.service" /etc/systemd/system/optz-
 install -m 0644 "$REPO/ops/backup/optz-backup.timer" /etc/systemd/system/optz-backup.timer
 install -d /etc/systemd/journald.conf.d
 install -m 0644 "$REPO/ops/journald/optz.conf" /etc/systemd/journald.conf.d/optz.conf
+# The real nginx config is generated from portfolio/optz.config.ts on each deploy; this is the
+# first one, so nginx can start.
 install -m 0644 "$REPO/ops/nginx/optz.conf" /etc/nginx/sites-available/optz
+install -d -o www-data -g www-data /var/cache/nginx/optz
 ln -sfn /etc/nginx/sites-available/optz /etc/nginx/sites-enabled/optz
 rm -f /etc/nginx/sites-enabled/default
 systemctl daemon-reload

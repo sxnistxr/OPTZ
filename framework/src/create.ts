@@ -18,7 +18,7 @@ export function create(dir: string) {
         name: basename(dir),
         private: true,
         type: "module",
-        scripts: { dev: "optz dev", build: "optz build", start: "optz start" },
+        scripts: { dev: "optz dev", build: "optz build", start: "optz start", check: "optz check" },
         dependencies: { optz: optzDep, react: "19.3.1", "react-dom": "19.3.1" },
         devDependencies: { "@types/bun": "1.4.4", "@types/react": "19.3.0", "@types/react-dom": "19.3.0" },
       },
@@ -37,19 +37,34 @@ export function create(dir: string) {
           skipLibCheck: true,
           noEmit: true,
           types: ["bun"],
-          paths: { "$lib/*": ["./app/lib/*"] },
+          paths: { "$lib/*": ["./app/lib/*"], "$components/*": ["./app/components/*"] },
         },
-        include: ["app", "optz.config.ts"],
+        include: ["app", "optz.config.ts", ".optz/types.d.ts"],
       },
       null,
       2,
     ),
     "optz.config.ts": `import { defineConfig } from "optz";
 
+// Every option is optional; hover one in your editor for its docs.
 export default defineConfig({
   port: 3001,
   // Forward a prefix to another server (your API), e.g.:
-  // proxy: { "/api": { target: "http://127.0.0.1:3000", strip: true } },
+  // proxy: { "/api/backend": { target: "http://127.0.0.1:3000", strip: true } },
+  client: {
+    mode: "islands", // pages are HTML; only *.island.tsx components ship JS ("spa" hydrates everything)
+    navigation: true, // swap pages without full reloads (~2 KB)
+    prefetch: true,
+    runtime: "react", // "preact": islands ship ~4 KB instead of ~60 KB, same React API
+  },
+  features: {
+    middleware: true,
+    dynamic: true, // per-request rendering; off = React's server renderer never loads at runtime
+    api: true,
+    cache: true,
+  },
+  cache: { maxEntries: 500, maxBytes: 32 << 20 },
+  server: { idleTimeout: 30, maxRequestBodySize: 1 << 20 },
 });
 `,
     "app/styles.css": `@import "tailwindcss";
@@ -71,6 +86,20 @@ export default defineMiddleware(async (ctx, next) => {
   return res;
 });
 `,
+    "app/components/Counter.island.tsx": `import { useState } from "react";
+
+// An island: the only part of the page that ships JavaScript. Hydrates when scrolled into view.
+export const hydrate = "visible";
+
+export default function Counter({ start = 0 }: { start?: number }) {
+  const [n, setN] = useState(start);
+  return (
+    <button className="rounded border px-3 py-1" onClick={() => setN(n + 1)}>
+      Clicked {n} times
+    </button>
+  );
+}
+`,
     "app/routes/_layout.tsx": `import { Link } from "optz";
 import type { ReactNode } from "react";
 
@@ -91,6 +120,7 @@ export default function Layout({ children }: { children: ReactNode }) {
 }
 `,
     "app/routes/index.tsx": `import type { PageProps } from "optz";
+import Counter from "$components/Counter.island";
 import { greeting } from "$lib/greeting";
 
 // Static (the default): rendered once at build time. The loader never reaches the browser.
@@ -101,6 +131,9 @@ export default function Home({ data }: PageProps<{ message: string; builtAt: str
     <>
       <h1 className="text-3xl font-semibold">{data.message}</h1>
       <p className="mt-2 text-gray-500">Built at {data.builtAt}.</p>
+      <div className="mt-6">
+        <Counter start={1} />
+      </div>
     </>
   );
 }
@@ -118,14 +151,16 @@ export const paths = () => [{ name: "ada" }, { name: "grace" }];
 export const loader = ({ params }: LoaderContext) => ({ name: params.name });
 export const head = (d: { name: string }) => ({ title: \`User \${d.name}\` });
 
-export default function User({ data }: PageProps<{ name: string }>) {
+export default function User({ data }: PageProps<{ name: string }, "/users/[name]">) {
   return <h1 className="text-3xl font-semibold">User {data.name}</h1>;
 }
 `,
     "app/routes/time.tsx": `import type { LoaderContext, PageProps } from "optz";
 
 // Dynamic: rendered on every request; the loader sees the request and middleware locals.
+// Cached for 2 s: under load, at most one render per 2 s, everyone else gets it from memory.
 export const config = { render: "dynamic" } as const;
+export const cache = { maxAge: 2, staleWhileRevalidate: 10 };
 export const loader = ({ request, locals }: LoaderContext) => ({
   now: new Date().toISOString(),
   requestId: String(locals.requestId),
@@ -152,11 +187,14 @@ export default function OldAbout() {
   return null;
 }
 `,
-    "app/routes/hello.ts": `import { json, type ApiHandler } from "optz";
+    "app/api/hello.ts": `import { handler, json, type ApiContext, type HandlerContext } from "optz";
 
-// API route: a .ts file in app/routes exporting HTTP method handlers.
-export const GET: ApiHandler = ({ url, locals }) => json({ hello: url.searchParams.get("name") ?? "world", requestId: locals.requestId });
-export const POST: ApiHandler = async ({ request }) => json({ received: await request.json() }, { status: 201 });
+// API route: app/api/hello.ts answers /api/hello. Return types flow to the typed client:
+//   import { api } from "optz";  const r = await api("/api/hello", { query: { name: "Ada" } });  // r.hello: string
+export const GET = ({ url, locals }: ApiContext) => json({ hello: url.searchParams.get("name") ?? "world", requestId: String(locals.requestId) });
+
+// handler() + HandlerContext<Params, Body> types the request body for both sides.
+export const POST = handler(async ({ body }: HandlerContext<{}, { message: string }>) => json({ received: (await body()).message }, { status: 201 }));
 `,
     "app/routes/_404.tsx": `export default function NotFound() {
   return <h1 className="text-3xl font-semibold">Page not found</h1>;

@@ -1,7 +1,29 @@
-// Public types for route modules, middleware and config.
+// Public types for route modules, API routes, middleware and config.
 import type { ComponentType, ReactNode } from "react";
 
 export type Params = Record<string, string>;
+
+// ---- typed routes --------------------------------------------------------------------------
+// `optz build`/`dev`/`check` generate .optz/types.d.ts, which fills these registries from your
+// files. Until then they're empty and everything falls back to plain strings.
+
+/** Page patterns -> their params, e.g. { "/blog/[slug]": { slug: string } }. */
+// biome-ignore lint: augmented by generated types
+export interface RouteRegistry {}
+/** API patterns -> their modules, e.g. { "/api/stats": typeof import("app/api/stats") }. */
+// biome-ignore lint: augmented by generated types
+export interface ApiRegistry {}
+
+type Seg<S extends string> = S extends `[...${string}]` ? `${string}` : S extends `[${string}]` ? string : S;
+type Fill<P extends string> = P extends `/${infer A}/${infer B}` ? `/${Seg<A>}${Fill<`/${B}`>}` : P extends `/${infer A}` ? `/${Seg<A>}` : P;
+type Suffix = "" | `?${string}` | `#${string}`;
+
+/** Every URL your pages answer, as template literal types ("/blog/${string}"). */
+export type AppHref = keyof RouteRegistry extends never ? string : `${Fill<keyof RouteRegistry & string>}${Suffix}`;
+/** What `<Link href>` accepts: an app URL, or anything clearly external or local-only. */
+export type Href = AppHref | `http://${string}` | `https://${string}` | `mailto:${string}` | `tel:${string}` | `#${string}`;
+
+export type ParamsOf<P> = P extends keyof RouteRegistry ? RouteRegistry[P] : Params;
 
 /** How a page is produced. */
 export type RenderMode =
@@ -9,17 +31,24 @@ export type RenderMode =
   | "static"
   /** Rendered on every request on the server; `loader` runs per request. */
   | "dynamic"
-  /** One shell rendered at build time and served for every matching URL; the page loads its own
-   *  data in the browser. Costs the server nothing per request. */
+  /** One shell rendered at build time and served for every matching URL; the page's islands
+   *  load their own data in the browser. Costs the server nothing per request. */
   | "client";
 
-export interface LoaderContext {
-  params: Params;
+export interface LoaderContext<P = Params> {
+  params: P;
   url: URL;
   /** Only for dynamic pages (static pages are rendered at build time, without a request). */
   request?: Request;
   /** Values set by middleware (dynamic pages only). */
-  locals: Record<string, unknown>;
+  locals: Locals;
+}
+
+/** Per-request values set by middleware. Augment it for types:
+ *  declare module "optz" { interface Locals { user?: User } } */
+// biome-ignore lint: open for augmentation
+export interface Locals {
+  [key: string]: unknown;
 }
 
 export interface Head {
@@ -29,9 +58,20 @@ export interface Head {
   links?: Array<Record<string, string>>;
 }
 
-export interface PageProps<D = unknown> {
+/** Props of a page component. `PageProps<Data, "/blog/[slug]">` types the params too. */
+export interface PageProps<D = unknown, P extends string = string> {
   data: D;
-  params: Params;
+  params: P extends keyof RouteRegistry ? RouteRegistry[P] : Params;
+}
+
+/** Caching for a dynamic page or an API GET route (in memory, and `s-maxage` for nginx/CDNs). */
+export interface RouteCache {
+  /** Seconds a cached response is fresh. */
+  maxAge: number;
+  /** Seconds a stale response may still be served while one request refreshes it. */
+  staleWhileRevalidate?: number;
+  /** Request headers that change the response (each value gets its own entry). */
+  vary?: string[];
 }
 
 export interface PageModule<D = unknown> {
@@ -40,6 +80,7 @@ export interface PageModule<D = unknown> {
   loader?: (ctx: LoaderContext) => D | Promise<D>;
   paths?: () => Params[] | Promise<Params[]>;
   head?: (data: D, ctx: { params: Params }) => Head;
+  cache?: RouteCache;
 }
 
 export interface LayoutModule {
@@ -55,25 +96,103 @@ export interface MiddlewareContext {
   request: Request;
   url: URL;
   /** Per-request values for loaders and API routes. */
-  locals: Record<string, unknown>;
+  locals: Locals;
 }
 
 export type Middleware = (ctx: MiddlewareContext, next: () => Promise<Response>) => Response | Promise<Response>;
 
-export type ApiHandler = (ctx: MiddlewareContext & { params: Params }) => Response | Promise<Response>;
+/** A Response that remembers the type of its JSON body, for the typed API client. */
+export type TypedResponse<T> = Response & { readonly __json?: T };
+
+export interface ApiContext<P = Params> extends MiddlewareContext {
+  params: P;
+}
+export type ApiHandler<T = unknown, P = Params> = (ctx: ApiContext<P>) => TypedResponse<T> | Promise<TypedResponse<T>>;
+
+/** Islands: when they hydrate. */
+export type Hydrate = "load" | "idle" | "visible";
+
+// ---- config -------------------------------------------------------------------------------
 
 export interface Config {
   /** Port for `optz start` (the PORT env var wins). Default 3001. */
   port?: number;
   /** Host for `optz start` (the HOST env var wins). Default 127.0.0.1. */
   hostname?: string;
-  /** Forward a path prefix to another server, e.g. { "/api": { target: "http://127.0.0.1:3000", strip: true } }.
-   *  In production, put the same rule in nginx so that traffic never touches Bun. */
-  proxy?: Record<string, { target: string; strip?: boolean }>;
-  /** Extra <head> tags on every page: fonts, icons, etc. */
-  head?: { links?: Array<Record<string, string>>; meta?: Array<Record<string, string>> };
   /** HTML lang attribute. Default "en". */
   lang?: string;
-  /** Tailwind/CSS entry, relative to the app. Default "app/styles.css" if it exists. */
+  /** Tailwind/CSS entry, relative to the project. Default "app/styles.css" if it exists. */
   css?: string;
+  /** Extra <head> tags on every page: fonts, icons, etc. */
+  head?: { links?: Array<Record<string, string>>; meta?: Array<Record<string, string>> };
+  /** Forward a path prefix to another server, e.g. { "/api/social": { target: "http://127.0.0.1:3000", strip: true } }.
+   *  `optz nginx` turns these into nginx locations so production traffic never touches Bun. */
+  proxy?: Record<string, { target: string; strip?: boolean; /** nginx micro-cache for GETs, in seconds (0 = off). */ cacheSeconds?: number }>;
+
+  /** What the browser gets. */
+  client?: {
+    /** "islands" (default): pages are HTML; only `*.island.tsx` components ship JS and hydrate.
+     *  "spa": the whole page hydrates and the React router takes over navigation. */
+    mode?: "islands" | "spa";
+    /** islands mode: swap page HTML on link clicks instead of full loads (~2 KB). Default true. */
+    navigation?: boolean;
+    /** Fetch pages/data on link hover, focus or touch. Default true. */
+    prefetch?: boolean;
+    /** islands mode: the library islands hydrate with. "preact" ships ~4 KB instead of ~60 KB;
+     *  your components still use the React API through preact/compat. Default "react". */
+    runtime?: "react" | "preact";
+  };
+
+  /** Turn off what you don't use; each one saves memory or work per request. */
+  features?: {
+    /** app/middleware.ts. Default true. */
+    middleware?: boolean;
+    /** Pages with render "dynamic". Off: they're a build error, and react-dom/server is never
+     *  loaded by the running server. Default true. */
+    dynamic?: boolean;
+    /** API routes in app/api. Default true. */
+    api?: boolean;
+    /** The in-memory response cache. Default true. */
+    cache?: boolean;
+    /** Compress dynamic responses on the fly (static files are always pre-compressed). Default true. */
+    dynamicCompression?: boolean;
+    /** ETag / 304 Not Modified for dynamic responses too. Default true. */
+    etag?: boolean;
+    /** Log each request (costs a little per request). Default false. */
+    requestLog?: boolean;
+  };
+
+  cache?: {
+    /** Max cached responses. Default 500. */
+    maxEntries?: number;
+    /** Max total bytes of cached bodies. Default 32 MB. */
+    maxBytes?: number;
+    /** Applied to dynamic pages and API GETs that don't set `cache`. Default none. */
+    default?: RouteCache;
+  };
+
+  server?: {
+    /** Seconds before an idle connection is closed. Default 30 (Bun's max is 255). */
+    idleTimeout?: number;
+    /** Largest request body accepted, in bytes. Default 1 MB. */
+    maxRequestBodySize?: number;
+  };
+}
+
+/** Config with every default filled in. */
+export interface ResolvedConfig extends Config {
+  client: Required<NonNullable<Config["client"]>>;
+  features: Required<NonNullable<Config["features"]>>;
+  cache: { maxEntries: number; maxBytes: number; default?: RouteCache };
+  server: Required<NonNullable<Config["server"]>>;
+}
+
+export function resolveConfig(c: Config = {}): ResolvedConfig {
+  return {
+    ...c,
+    client: { mode: "islands", navigation: true, prefetch: true, runtime: "react", ...c.client },
+    features: { middleware: true, dynamic: true, api: true, cache: true, dynamicCompression: true, etag: true, requestLog: false, ...c.features },
+    cache: { maxEntries: 500, maxBytes: 32 << 20, ...c.cache },
+    server: { idleTimeout: 30, maxRequestBodySize: 1 << 20, ...c.server },
+  };
 }

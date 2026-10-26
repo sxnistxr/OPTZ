@@ -12,7 +12,7 @@ REPO="$(cd "${1:-$(dirname "$0")/..}" && pwd)"
 [ -f /etc/optz/env ] || { echo "production not installed (run ops/install-prod.sh)" >&2; exit 1; }
 SHA="$(git -C "$REPO" rev-parse --short=12 HEAD)"
 REL=/opt/optz/releases/$SHA
-SUB=submissions/rust-iouring-sxnistxr
+SUB=portfolio/engine
 CACHE=/var/cache/optz
 PORT="$(sed -n 's/^PORT=//p' /etc/optz/env)"
 
@@ -28,12 +28,15 @@ if [ ! -x "$REL/bin/twelve-iouring" ]; then
   mkdir -p "$REL/bin"
   install -m 0755 "$CACHE/target/release/twelve-iouring" "$REL/bin/twelve-iouring"
   cp -r "$src/ops" "$REL/ops"
-  if [ -f "$src/package.json" ] && [ -d "$src/apps/site" ]; then
-    echo "deploy: building the site"
-    runuser -u optz -- env HOME="$CACHE" PATH="/opt/bun/bin:$PATH" bash -c "cd '$src' && bun install --frozen-lockfile && cd apps/site && bun ../../framework/src/cli.ts build"
+  if [ -f "$src/portfolio/package.json" ]; then
+    echo "deploy: type-checking and building the site"
+    runuser -u optz -- env HOME="$CACHE" PATH="/opt/bun/bin:$PATH" bash -c "cd '$src' && bun install --frozen-lockfile && cd portfolio && bun ../framework/src/cli.ts check && bun ../framework/src/cli.ts build"
     mkdir -p "$REL/web"
     cp -a "$src/package.json" "$src/bunfig.toml" "$src/bun.lock" "$src/framework" "$src/node_modules" "$REL/web/"
-    mkdir -p "$REL/web/apps" && cp -a "$src/apps/site" "$REL/web/apps/site"
+    # The site without the engine's sources (the engine runs from $REL/bin).
+    mkdir -p "$REL/web/portfolio" && (cd "$src/portfolio" && tar --exclude=./engine -cf - .) | tar -xf - -C "$REL/web/portfolio"
+    # nginx config generated from optz.config.ts, so proxies and caching can't drift apart.
+    (cd "$REL/web/portfolio" && /opt/bun/bin/bun ../framework/src/cli.ts nginx /opt/optz/current/web/portfolio/dist) > "$REL/nginx.conf"
   fi
   echo "$SHA" > "$REL/REVISION"
 fi
@@ -44,6 +47,18 @@ if [ "$prev" = "$REL" ] && systemctl is-active --quiet optz; then
   exit 0
 fi
 ln -sfn "$REL" /opt/optz/current.new && mv -T /opt/optz/current.new /opt/optz/current
+# Keep the systemd units in step with the release (paths change between versions).
+changed=0
+for u in optz.service optz-web.service optz-backup.service optz-backup.timer; do
+  src_unit="$(find "$REL/ops" -name "$u" -print -quit)"
+  if [ -n "$src_unit" ] && ! cmp -s "$src_unit" "/etc/systemd/system/$u"; then install -m 0644 "$src_unit" "/etc/systemd/system/$u"; changed=1; fi
+done
+[ "$changed" = 1 ] && systemctl daemon-reload
+if [ -f "$REL/nginx.conf" ] && ! cmp -s "$REL/nginx.conf" /etc/nginx/sites-available/optz; then
+  install -m 0644 "$REL/nginx.conf" /etc/nginx/sites-available/optz
+  install -d -o www-data -g www-data /var/cache/nginx/optz   # nginx workers write the micro-cache
+  nginx -t && systemctl reload nginx
+fi
 systemctl restart optz
 if [ -d "$REL/web" ]; then systemctl restart optz-web; fi
 for _ in $(seq 30); do

@@ -5,7 +5,7 @@
 # Takes ~15-25 minutes (toolchain + seed + LTO build on one CPU). Safe to re-run.
 set -uo pipefail
 REPO="$(cd "$(dirname "$0")/.." && pwd)"
-SUB="$REPO/submissions/rust-iouring-sxnistxr"
+SUB="$REPO/portfolio/engine"
 W=/root/optz-validate
 CHAL=$W/challenge
 mkdir -p $W

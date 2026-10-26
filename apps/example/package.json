@@ -5,7 +5,8 @@
   "scripts": {
     "dev": "optz dev",
     "build": "optz build",
-    "start": "optz start"
+    "start": "optz start",
+    "check": "optz check"
   },
   "dependencies": {
     "optz": "workspace:*",

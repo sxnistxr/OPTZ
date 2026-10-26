@@ -1,12 +1,18 @@
 {
   "name": "optz",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "A small, fast React framework for Bun: file routes, layouts, loaders, middleware, static-first rendering.",
   "type": "module",
-  "bin": { "optz": "./src/cli.ts" },
+  "bin": {
+    "optz": "./src/cli.ts"
+  },
   "exports": {
     ".": "./src/index.ts",
-    "./runtime": "./src/runtime.tsx"
+    "./runtime": "./src/runtime.tsx",
+    "./types": "./src/types.ts",
+    "./island": "./src/island.tsx",
+    "./hydrate": "./src/hydrate.tsx",
+    "./islands": "./src/islands.ts"
   },
   "peerDependencies": {
     "react": "^19",
@@ -14,6 +20,10 @@
   },
   "dependencies": {
     "@tailwindcss/cli": "4.3.3",
-    "tailwindcss": "4.3.3"
+    "tailwindcss": "4.3.3",
+    "typescript": "7.0.2"
+  },
+  "optionalDependencies": {
+    "preact": "11.0.2"
   }
 }

@@ -33,3 +33,27 @@ alone**, whatever the CPU cost per request. The admission ceiling uses 4,800 B p
 See `submissions/rust-iouring-sxnistxr/BENCHMARKS.md`. All local numbers are loopback on a
 4 vCPU box with the server pinned to one CPU. They are good for before/after comparisons, not
 for capacity.
+
+## Frontend: JavaScript per page (portfolio)
+
+Chromium, cold load, scripts only (compressed as sent / decoded size to parse). Measured with
+the same seed data and API for every column.
+
+| page | SPA + React | islands + React | islands + Preact (shipped) |
+|---|---:|---:|---:|
+| `/` (2 islands) | 66.6 / 207.8 KB | 64.0 / 209.9 KB | 14.5 / 18.2 KB |
+| `/blog` (no islands) | 63.6 / 214.2 KB | 3.3 / 5.5 KB | 2.9 / 5.6 KB |
+| `/blog/<post>` (no islands) | 63.1 / 208.1 KB | 3.3 / 5.5 KB | 2.9 / 5.6 KB |
+| `/social` (1 island) | 66.5 / 215.4 KB | 64.2 / 213.2 KB | 14.7 / 21.3 KB |
+
+## The Bun server (optz), one core, wrk 128 connections, local
+
+| what | req/s |
+|---|---:|
+| static page from memory (brotli) | 57–64k |
+| `/api/blog` with the response cache | 47–53k |
+| `/api/blog` without it (re-reads the Markdown) | 2.2k |
+| `/api/social/feed` from the nginx micro-cache (1 s) | 61k |
+
+Memory: 29.7 MiB idle and ~45 MiB peak under load with `features.dynamic: false`. A single
+dynamic render loads React's server renderer: 43.1 MiB idle afterwards (+13.4 MiB).

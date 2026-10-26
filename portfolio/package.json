@@ -1,0 +1,25 @@
+{
+  "name": "portfolio",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "optz dev",
+    "build": "optz build",
+    "start": "optz start",
+    "check": "optz check",
+    "nginx": "optz nginx",
+    "engine:build": "bash engine/build.sh",
+    "engine:test": "cd engine && cargo test --release"
+  },
+  "dependencies": {
+    "marked": "18.1.1",
+    "optz": "workspace:*",
+    "react": "19.3.1",
+    "react-dom": "19.3.1"
+  },
+  "devDependencies": {
+    "@types/bun": "1.4.4",
+    "@types/react": "19.3.0",
+    "@types/react-dom": "19.3.0"
+  }
+}

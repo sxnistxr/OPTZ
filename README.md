@@ -2,16 +2,16 @@
 
 | folder | what |
 |---|---|
-| `submissions/rust-iouring-sxnistxr/` | The $12 Server Challenge entry: the feed API in Rust on raw io_uring and SQLite |
-| `framework/` | **optz**, a small React framework for Bun (routes, layouts, loaders, middleware, `$lib`) |
-| `apps/site/` | The personal site, blog and feed client, built on optz |
+| `portfolio/` | **The site**: pages, typed API routes, components, content and the Rust feed engine, in one folder |
+| `framework/` | **optz**, the React framework for Bun it's built on (islands, typed routes/APIs, caching, middleware) |
 | `apps/example/` | The `optz create` starter, showing every framework feature once |
-| `ops/` | Production: systemd units, nginx, deploys with rollback, verified backups |
+| `submissions/rust-iouring-sxnistxr` | Link to `portfolio/engine` (the $12 Server Challenge entry) |
+| `ops/` | Production: systemd units, generated nginx, deploys with rollback, verified backups |
 | `deploy/` | The VPS auto-sync (pulls this branch every 30 s and deploys) |
 | `docs/` | Design notes and measurements |
 
 ```sh
-bun install                       # JavaScript workspace (framework + apps)
-cd apps/site && bun run dev       # site with live reload
-cd framework && bun test          # framework tests
+bun install
+cd portfolio && bun run dev        # site with live reload (needs the engine on :3000 for the feed)
+cd framework && bun test           # framework tests
 ```
