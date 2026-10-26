@@ -5,7 +5,8 @@ for. Everything needed to run it as a real service lives here.
 
 | file | what it does |
 |---|---|
-| `nginx/optz.conf` | Serves the built site (`frontend/`) on :80 and proxies `/api/*` to the API on 127.0.0.1:3000, with CSP and security headers |
+| `nginx/optz.conf` | :80 → `/api/*` to the Rust API (127.0.0.1:3000), `/assets/*` from disk, everything else to the site on Bun (127.0.0.1:3001) |
+| `systemd/optz-web.service` | Runs the site (`apps/site`, on the optz framework) with Bun, memory-capped and sandboxed |
 | `mint-token.py` | Signs a posting token for a username (creating its user row) with the server's secret |
 | `install-prod.sh` | One-time install on Ubuntu 24.04: `optz` user, `/var/lib/optz`, `/etc/optz/env` (with a random JWT secret unless given), the database (empty schema or `--seed`), toolchain, units, journald limit, first deploy |
 | `deploy.sh` | Builds the current commit as the `optz` user (shared cargo cache, so later builds are incremental), installs it as `/opt/optz/releases/<sha>`, switches `/opt/optz/current`, restarts, and **rolls back if `/health` isn't OK within 30 s**. Keeps 5 releases |
@@ -23,7 +24,7 @@ gets built and deployed, and a bad commit is rolled back automatically.
 
 ```sh
 # on the VPS, once:
-sudo bash /srv/optz/ops/install-prod.sh                  # site on :80, API on 127.0.0.1:3000
+sudo bash /srv/optz/ops/install-prod.sh                  # site on :80 (Bun on 3001), API on 127.0.0.1:3000
 ```
 
 ## Verified here

@@ -28,10 +28,12 @@ if [ ! -x "$REL/bin/twelve-iouring" ]; then
   mkdir -p "$REL/bin"
   install -m 0755 "$CACHE/target/release/twelve-iouring" "$REL/bin/twelve-iouring"
   cp -r "$src/ops" "$REL/ops"
-  if [ -f "$src/frontend/package.json" ]; then
+  if [ -f "$src/package.json" ] && [ -d "$src/apps/site" ]; then
     echo "deploy: building the site"
-    runuser -u optz -- env HOME="$CACHE" PATH="/opt/node/bin:$PATH" bash -c "cd '$src/frontend' && npm ci --no-audit --no-fund --loglevel=error && node build.mjs"
-    cp -r "$src/frontend/dist" "$REL/site"
+    runuser -u optz -- env HOME="$CACHE" PATH="/opt/bun/bin:$PATH" bash -c "cd '$src' && bun install --frozen-lockfile && cd apps/site && bun ../../framework/src/cli.ts build"
+    mkdir -p "$REL/web"
+    cp -a "$src/package.json" "$src/bunfig.toml" "$src/bun.lock" "$src/framework" "$src/node_modules" "$REL/web/"
+    mkdir -p "$REL/web/apps" && cp -a "$src/apps/site" "$REL/web/apps/site"
   fi
   echo "$SHA" > "$REL/REVISION"
 fi
@@ -43,8 +45,10 @@ if [ "$prev" = "$REL" ] && systemctl is-active --quiet optz; then
 fi
 ln -sfn "$REL" /opt/optz/current.new && mv -T /opt/optz/current.new /opt/optz/current
 systemctl restart optz
+if [ -d "$REL/web" ]; then systemctl restart optz-web; fi
 for _ in $(seq 30); do
-  if curl -fsS --max-time 2 "http://127.0.0.1:$PORT/health" >/dev/null 2>&1; then
+  if curl -fsS --max-time 2 "http://127.0.0.1:$PORT/health" >/dev/null 2>&1 \
+     && { [ ! -d "$REL/web" ] || curl -fsS --max-time 2 -o /dev/null http://127.0.0.1:3001/; }; then
     if systemctl is-active --quiet nginx && ! curl -fsS --max-time 2 -o /dev/null http://127.0.0.1/; then
       echo "deploy: warning: nginx isn't serving the site" >&2
     fi
@@ -60,6 +64,7 @@ journalctl -u optz -n 30 --no-pager >&2 || true
 if [ -n "$prev" ] && [ -d "$prev" ]; then
   ln -sfn "$prev" /opt/optz/current.new && mv -T /opt/optz/current.new /opt/optz/current
   systemctl restart optz
+  if [ -d "$prev/web" ]; then systemctl restart optz-web; fi
   echo "deploy: rolled back to $(basename "$prev")" >&2
 fi
 exit 1

@@ -3,15 +3,17 @@
 #   sudo bash ops/install-prod.sh [--seed /path/to/feed.db] [--jwt-secret S]
 #
 # Creates the optz user and directories, the env file, the database (an empty schema, or a copy
-# of --seed), installs the Rust toolchain, Node (for the site build), nginx, systemd units, the
+# of --seed), installs the Rust toolchain, Bun (the site runs on the optz framework), nginx, systemd units, the
 # backup timer and the journald limit, then deploys the current commit.
 #
-# Layout: nginx on :80 serves the site and proxies /api/* to the API on 127.0.0.1:3000.
+# Layout: nginx on :80; /api/* -> Rust API on 127.0.0.1:3000; pages -> the optz site on Bun
+# (127.0.0.1:3001); /assets/* straight from disk.
 set -euo pipefail
 REPO="$(cd "$(dirname "$0")/.." && pwd)"
 SEED="" PORT=3000 SECRET=""
-NODE_VERSION=24.22.1
-NODE_SHA256=6c172a9ab6718f7b801fb5a7bd486af2ee5e32758086a04b84fcce2aa77095e6
+BUN_VERSION=1.4.4
+# sha512 "integrity" of @oven/bun-linux-x64@1.4.4 from the npm registry.
+BUN_SHA512=CHbbkmHVM28T1GFq+6GL4Ao4ujwwYwj1CxFFwEFzLanPfNsId9AhbIP0Q4reWuWBkGimUkoQygrK7Rgjtj3vog==
 while [ $# -gt 0 ]; do
   case "$1" in
     --seed) SEED="$2"; shift 2 ;;
@@ -22,16 +24,17 @@ done
 [ "$(id -u)" -eq 0 ] || { echo "run as root" >&2; exit 1; }
 
 bash "$REPO/submissions/rust-iouring-sxnistxr/install.sh"
-apt-get install -y --no-install-recommends python3 git curl nginx xz-utils
-if [ ! -x /opt/node-v$NODE_VERSION/bin/node ]; then
+apt-get install -y --no-install-recommends python3 git curl nginx openssl
+if [ ! -x /opt/bun-$BUN_VERSION/bin/bun ]; then
   tmp="$(mktemp -d)"
-  curl -fsSL --retry 3 "https://nodejs.org/dist/v$NODE_VERSION/node-v$NODE_VERSION-linux-x64.tar.xz" -o "$tmp/node.tar.xz"
-  echo "$NODE_SHA256  $tmp/node.tar.xz" | sha256sum -c -
-  mkdir -p /opt/node-v$NODE_VERSION
-  tar -xJf "$tmp/node.tar.xz" -C /opt/node-v$NODE_VERSION --strip-components=1
+  curl -fsSL --retry 3 "https://registry.npmjs.org/@oven/bun-linux-x64/-/bun-linux-x64-$BUN_VERSION.tgz" -o "$tmp/bun.tgz"
+  got="$(openssl dgst -sha512 -binary "$tmp/bun.tgz" | openssl base64 -A)"
+  [ "$got" = "$BUN_SHA512" ] || { echo "bun tarball checksum mismatch: $got" >&2; exit 1; }
+  tar -xzf "$tmp/bun.tgz" -C "$tmp"
+  install -D -m 0755 "$tmp/package/bin/bun" /opt/bun-$BUN_VERSION/bin/bun
   rm -rf "$tmp"
 fi
-ln -sfn /opt/node-v$NODE_VERSION /opt/node
+ln -sfn /opt/bun-$BUN_VERSION /opt/bun
 id optz >/dev/null 2>&1 || useradd --system --home /var/lib/optz --shell /usr/sbin/nologin optz
 install -d -o optz -g optz -m 0750 /var/lib/optz /var/backups/optz /var/cache/optz
 install -d -m 0755 /opt/optz/releases
@@ -64,6 +67,7 @@ PY
 fi
 
 install -m 0644 "$REPO/ops/systemd/optz.service" /etc/systemd/system/optz.service
+install -m 0644 "$REPO/ops/systemd/optz-web.service" /etc/systemd/system/optz-web.service
 install -m 0644 "$REPO/ops/backup/optz-backup.service" /etc/systemd/system/optz-backup.service
 install -m 0644 "$REPO/ops/backup/optz-backup.timer" /etc/systemd/system/optz-backup.timer
 install -d /etc/systemd/journald.conf.d
@@ -73,7 +77,7 @@ ln -sfn /etc/nginx/sites-available/optz /etc/nginx/sites-enabled/optz
 rm -f /etc/nginx/sites-enabled/default
 systemctl daemon-reload
 systemctl restart systemd-journald
-systemctl enable optz.service optz-backup.timer
+systemctl enable optz.service optz-web.service optz-backup.timer
 bash "$REPO/ops/deploy.sh" "$REPO"
 nginx -t && systemctl enable --now nginx && systemctl reload nginx
 systemctl start optz-backup.timer
