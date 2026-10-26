@@ -1,5 +1,5 @@
 // Shared by build and server; deliberately imports nothing heavy.
-import { join } from "node:path";
+import type { ActionModule } from "./actions-runtime";
 import type { Segment } from "./match";
 import type { RenderMode } from "./types";
 
@@ -12,12 +12,33 @@ export interface ManifestRoute {
   hasLoader: boolean;
   layouts: string[];
   error?: string;
+  loading?: string;
+  og?: string;
   preload: string[];
   shell?: string;
+  /** Static pages and prerendered API routes: regenerate after this many seconds. */
+  revalidate?: number;
+  /** Static pages: render unlisted params on demand. */
+  dynamicParams?: boolean;
+  tags?: string[];
+  /** API routes: GET was run at build time. */
+  prerendered?: boolean;
+  /** Intercepting routes: where navigation must start. */
+  scope?: Segment[];
+}
+
+export interface ManifestSlot {
+  name: string;
+  layout: string;
+  routes: ManifestRoute[];
+  intercepts: ManifestRoute[];
+  default?: string;
 }
 
 export interface Manifest {
-  version: 2;
+  version: 3;
+  /** ms since epoch: when the static files were rendered (ISR ages count from here). */
+  builtAt: number;
   mode: "islands" | "spa";
   entry: string;
   css: string[];
@@ -27,6 +48,21 @@ export interface Manifest {
   notFound?: string;
   rootLayouts: string[];
   redirects: Record<string, { status: number; location: string }>;
+  slots: ManifestSlot[];
+  intercepts: ManifestRoute[];
+  /** Server Actions: id -> module. */
+  actions: Record<string, ActionModule>;
+  /** Font files to preload on every page. */
+  fonts: string[];
+  /** Prerendered API responses: URL path -> static file and content type. */
+  apiStatic: Record<string, { file: string; type: string }>;
 }
 
-export const outDirFor = (root: string, dev?: boolean) => (dev ? join(root, ".optz/dev") : join(root, "dist"));
+export const outDirFor = (root: string, dev?: boolean) => `${root.replace(/\/$/, "")}/${dev ? ".optz/dev" : "dist"}`;
+
+/** Where a page's HTML lives in dist/static. */
+export const htmlPath = (pathname: string) => (pathname === "/" ? "/index.html" : `${pathname}/index.html`);
+/** Where a page's Open Graph image is served. */
+export const ogPath = (pathname: string) => `/_optz/og${pathname === "/" ? "/index" : pathname}.png`;
+/** Where a prerendered API response lives in dist/static. */
+export const apiStaticPath = (pathname: string) => `/_optz/api${pathname}`;

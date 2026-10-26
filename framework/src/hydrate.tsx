@@ -4,5 +4,5 @@ import { hydrateRoot } from "react-dom/client";
 import { IslandRouter, type IslandContext } from "./runtime";
 
 export function hydrateIsland(el: Element, Component: ComponentType<Record<string, unknown>>, props: Record<string, unknown>, ctx: IslandContext) {
-  return hydrateRoot(el, createElement(IslandRouter, { ctx }, createElement(Component, props)));
+  return hydrateRoot(el, createElement(IslandRouter, { ctx, children: createElement(Component, props) }));
 }

@@ -2,6 +2,7 @@
 // navigate without full page loads). Must not touch browser globals at import time.
 import {
   Component,
+  Suspense,
   createContext,
   useCallback,
   useContext,
@@ -19,13 +20,36 @@ import type { ErrorModule, Head, Href, LayoutModule, PageModule, Params, RenderM
 
 // ---- state ---------------------------------------------------------------------------------
 
+/** i18n settings the browser needs to build links. */
+export interface LocaleInfo {
+  locale: string;
+  locales: string[];
+  defaultLocale: string;
+  prefixDefault?: boolean;
+}
+
 export interface PageState {
   pathname: string;
   params: Params;
   data: unknown;
-  Page: ComponentType<{ data: unknown; params: Params }>;
+  Page: ComponentType<{ data: unknown; params: Params; locale?: string }>;
   layouts: ComponentType<{ children: ReactNode; params: Params }>[];
   ErrorView?: ComponentType<{ error: Error; params: Params }>;
+  /** Shown while the page streams (_loading.tsx). Server only. */
+  Loading?: ComponentType<{ params: Params }>;
+  /** Parallel route slots per layout (same index as `layouts`). Server only. */
+  slots?: Array<Record<string, ReactNode> | undefined>;
+  i18n?: LocaleInfo;
+}
+
+/** "/blog" -> "/fr/blog" for the current (or given) locale. */
+export function localizeHref(href: string, i18n: LocaleInfo | undefined, locale?: string): string {
+  if (!i18n || !href.startsWith("/") || href.startsWith("//")) return href;
+  const first = href.split(/[/?#]/)[1];
+  if (i18n.locales.includes(first)) return href;
+  const l = locale ?? i18n.locale;
+  if (l === i18n.defaultLocale && !i18n.prefixDefault) return href;
+  return `/${l}${href === "/" ? "" : href}`;
 }
 
 interface RouterValue {
@@ -48,9 +72,21 @@ const useRouterValue = () => {
 export const useLoaderData = <T = unknown,>() => useRouterValue().state.data as T;
 export const useParams = <P extends Params = Params>() => useRouterValue().state.params as P;
 export const useNavigating = () => useRouterValue().navigating;
+/** The current locale when `i18n` is configured. */
+export const useLocale = () => useRouterValue().state.i18n?.locale;
 export function useRouter() {
   const { state, navigate, prefetch, navigating } = useRouterValue();
-  return { pathname: state.pathname, params: state.params, navigate, prefetch, navigating, back: () => history.back() };
+  return {
+    pathname: state.pathname,
+    params: state.params,
+    locale: state.i18n?.locale,
+    navigate,
+    prefetch,
+    navigating,
+    back: () => history.back(),
+    /** Re-fetch the current page from the server (islands mode keeps unchanged islands mounted). */
+    refresh: () => (globalThis as { __optz?: { refresh?: () => unknown } }).__optz?.refresh?.(),
+  };
 }
 
 // ---- rendering -----------------------------------------------------------------------------
@@ -73,15 +109,21 @@ class Boundary extends Component<{ view?: PageState["ErrorView"]; params: Params
 
 /** Layouts wrapped around the page, with the nearest error boundary inside the layouts. */
 export function Tree({ state }: { state: PageState }) {
-  const { Page, layouts, params, data, ErrorView, pathname } = state;
+  const { Page, layouts, params, data, ErrorView, Loading, pathname, slots } = state;
+  let page: ReactNode = <Page data={data} params={params} locale={state.i18n?.locale} />;
+  if (Loading) page = <Suspense fallback={<Loading params={params} />}>{page}</Suspense>;
   let node: ReactNode = (
     <Boundary view={ErrorView} params={params} resetKey={pathname}>
-      <Page data={data} params={params} />
+      {page}
     </Boundary>
   );
   for (let i = layouts.length - 1; i >= 0; i--) {
     const L = layouts[i];
-    node = <L params={params}>{node}</L>;
+    node = (
+      <L params={params} {...slots?.[i]}>
+        {node}
+      </L>
+    );
   }
   return node;
 }
@@ -91,13 +133,14 @@ export interface IslandContext {
   pathname: string;
   params: Params;
   navigate: (href: string) => void;
+  i18n?: LocaleInfo;
 }
 
 /** Router hooks inside an island: pathname, params and navigation, no page data. */
 export function IslandRouter({ ctx, children }: { ctx: IslandContext; children: ReactNode }) {
   const value = useMemo<RouterValue>(
     () => ({
-      state: { pathname: ctx.pathname, params: ctx.params, data: undefined, Page: () => null, layouts: [] },
+      state: { pathname: ctx.pathname, params: ctx.params, data: undefined, Page: () => null, layouts: [], i18n: ctx.i18n },
       navigate: async (href) => ctx.navigate(href),
       prefetch: () => {},
       navigating: false,
@@ -125,11 +168,14 @@ type LinkProps = Omit<AnchorHTMLAttributes<HTMLAnchorElement>, "href"> & {
   replace?: boolean;
   scroll?: boolean;
   prefetch?: boolean;
+  /** i18n: link to this locale's version, or `false` to leave the href as written. Default: the current locale. */
+  locale?: string | false;
 };
 
 /** An <a> that navigates without a full page load and prefetches on hover/focus. */
-export function Link({ href, replace, scroll, prefetch = true, onClick, onMouseEnter, onFocus, onTouchStart, ...rest }: LinkProps) {
+export function Link({ href: rawHref, replace, scroll, prefetch = true, locale, onClick, onMouseEnter, onFocus, onTouchStart, ...rest }: LinkProps) {
   const r = useContext(RouterContext);
+  const href = locale === false ? rawHref : localizeHref(rawHref, r?.state.i18n, locale);
   const pre = () => prefetch && r?.prefetch(href);
   const click = (e: MouseEvent<HTMLAnchorElement>) => {
     onClick?.(e);
@@ -173,7 +219,16 @@ interface SpaBoot {
   pattern: string;
   params: Params;
   data: unknown;
+  i18n?: LocaleInfo;
   dev?: boolean;
+}
+
+/** "/fr/blog" -> { locale info for fr, path "/blog" } */
+function splitLocale(pathname: string, base: LocaleInfo | undefined): { i18n?: LocaleInfo; path: string } {
+  if (!base) return { path: pathname };
+  const first = pathname.split("/")[1];
+  if (base.locales.includes(first)) return { i18n: { ...base, locale: first }, path: pathname.slice(first.length + 1) || "/" };
+  return { i18n: { ...base, locale: base.defaultLocale }, path: pathname };
 }
 const readBoot = (): SpaBoot | null => {
   try {
@@ -183,9 +238,9 @@ const readBoot = (): SpaBoot | null => {
   }
 };
 
-async function loadState(route: ClientRoute, pathname: string, params: Params, data: unknown): Promise<PageState> {
+async function loadState(route: ClientRoute, pathname: string, params: Params, data: unknown, i18n?: LocaleInfo): Promise<PageState> {
   const [mod, layouts, err] = await Promise.all([route.load(), Promise.all(route.layouts.map((l) => l())), route.error?.()]);
-  return { pathname, params, data, Page: mod.default as PageState["Page"], layouts: layouts.map((l) => l.default), ErrorView: err?.default };
+  return { pathname, params, data, Page: mod.default as PageState["Page"], layouts: layouts.map((l) => l.default), ErrorView: err?.default, i18n };
 }
 
 function applyHead(head: Head | undefined) {
@@ -230,19 +285,20 @@ function Root({ routes, initial, urlParams }: { routes: ClientRoute[]; initial: 
     (href: string) => {
       const url = new URL(href, location.href);
       if (url.origin !== location.origin) return;
-      const m = matchRoute(routes, url.pathname);
+      const m = matchRoute(routes, splitLocale(url.pathname, initial.i18n).path);
       if (!m) return;
       m.route.load();
       m.route.layouts.forEach((l) => l());
       if (m.route.render === "static") fetchPayload(url.pathname, m.route);
     },
-    [routes, fetchPayload],
+    [routes, fetchPayload, initial.i18n],
   );
 
   const navigate = useCallback(
     async (href: string, opts: { replace?: boolean; scroll?: boolean; pop?: boolean } = {}) => {
       const url = new URL(href, location.href);
-      const m = url.origin === location.origin ? matchRoute(routes, url.pathname) : null;
+      const loc = splitLocale(url.pathname, initial.i18n);
+      const m = url.origin === location.origin ? matchRoute(routes, loc.path) : null;
       if (!m) return void location.assign(url.href);
       if (url.pathname === location.pathname && url.hash && !opts.pop) {
         history.pushState(null, "", url.href);
@@ -251,7 +307,7 @@ function Root({ routes, initial, urlParams }: { routes: ClientRoute[]; initial: 
       const id = ++seq.current;
       setNavigating(true);
       try {
-        const [payload, next] = await Promise.all([fetchPayload(url.pathname, m.route), loadState(m.route, url.pathname, m.params, undefined)]);
+        const [payload, next] = await Promise.all([fetchPayload(url.pathname, m.route), loadState(m.route, url.pathname, m.params, undefined, loc.i18n)]);
         if (id !== seq.current) return;
         // No data (404, error, offline): let the server render the page properly.
         if (!payload) return void location.assign(url.href);
@@ -275,7 +331,7 @@ function Root({ routes, initial, urlParams }: { routes: ClientRoute[]; initial: 
         if (id === seq.current) setNavigating(false);
       }
     },
-    [routes, fetchPayload],
+    [routes, fetchPayload, initial.i18n],
   );
 
   useEffect(() => {
@@ -283,6 +339,16 @@ function Root({ routes, initial, urlParams }: { routes: ClientRoute[]; initial: 
     const onPop = () => navigate(location.href, { pop: true });
     addEventListener("popstate", onPop);
     return () => removeEventListener("popstate", onPop);
+  }, [navigate]);
+
+  useEffect(() => {
+    (globalThis as { __optz?: unknown }).__optz = {
+      navigate: (href: string) => navigate(href),
+      refresh: () => {
+        cache.current.clear();
+        return navigate(location.href, { replace: true, scroll: false });
+      },
+    };
   }, [navigate]);
 
   const value = useMemo(() => ({ state, navigate, prefetch, navigating }), [state, navigate, prefetch, navigating]);
@@ -294,29 +360,15 @@ function Root({ routes, initial, urlParams }: { routes: ClientRoute[]; initial: 
 }
 
 /** Browser entry: hydrates the server-rendered page, then takes over navigation. */
-export async function start(routes: ClientRoute[]) {
+export async function start(routes: ClientRoute[], _i18n?: unknown) {
   const boot = readBoot();
   const el = document.getElementById("__optz");
   if (!boot || !el) return;
-  if (boot.dev) liveReload();
+  if (boot.dev) import("./dev-client").then((m) => m.connect({ refresh: async () => (globalThis as { __optz?: { refresh?: () => Promise<void> } }).__optz?.refresh?.() }));
   const route = routes.find((r) => r.pattern === boot.pattern);
   if (!route) return;
   const { hydrateRoot } = await import("react-dom/client");
-  const initial = await loadState(route, location.pathname, boot.params, boot.data);
-  const urlParams = route.render === "client" ? (matchSegments(route.segments, location.pathname) ?? undefined) : undefined;
+  const initial = await loadState(route, location.pathname, boot.params, boot.data, boot.i18n);
+  const urlParams = route.render === "client" ? (matchSegments(route.segments, splitLocale(location.pathname, boot.i18n).path) ?? undefined) : undefined;
   hydrateRoot(el, <Root routes={routes} initial={initial} urlParams={urlParams} />);
-}
-
-function liveReload() {
-  let es: EventSource;
-  const connect = (wasDown: boolean) => {
-    es = new EventSource("/_optz/dev/events");
-    es.onopen = () => wasDown && location.reload();
-    es.onmessage = (e) => e.data === "reload" && location.reload();
-    es.onerror = () => {
-      es.close();
-      setTimeout(() => connect(true), 300);
-    };
-  };
-  connect(false);
 }

@@ -1,7 +1,8 @@
 #!/usr/bin/env bun
 // optz <command>
 //   dev            develop with live reload (http://127.0.0.1:3001)
-//   build          production build into dist/
+//   build          production build into dist/ (--compile: also a single executable,
+//                  --target edge: also an edge worker)
 //   start          serve dist/ (PORT and HOST env vars override optz.config.ts)
 //   export         static site in dist/static for any static host (no server features)
 //   check          generate route types and type-check the project (tsc)
@@ -13,6 +14,11 @@ import type { Subprocess } from "bun";
 import { resolveConfig, type Config, type ResolvedConfig } from "./types";
 
 const root = process.cwd();
+const [cmd, ...args] = process.argv.slice(2);
+// React picks its production build from NODE_ENV; `optz start` and `build` must never run the
+// development one (several times slower, and noisy).
+if (cmd !== "dev" && cmd !== "__dev-child") process.env.NODE_ENV ??= "production";
+else process.env.NODE_ENV ??= "development";
 
 async function loadConfig(): Promise<ResolvedConfig> {
   for (const f of ["optz.config.ts", "optz.config.js"]) {
@@ -21,12 +27,17 @@ async function loadConfig(): Promise<ResolvedConfig> {
   return resolveConfig({});
 }
 
-const [cmd, ...args] = process.argv.slice(2);
-
 switch (cmd) {
   case "build": {
     const { build } = await import("./build");
-    await build({ root, config: await loadConfig() });
+    const config = await loadConfig();
+    const manifest = await build({ root, config });
+    const target = args.find((a) => a.startsWith("--target="))?.slice(9) ?? (args.includes("--target") ? args[args.indexOf("--target") + 1] : undefined);
+    if (args.includes("--compile") || target === "edge") {
+      const { buildServerBundle } = await import("./server-bundle");
+      if (args.includes("--compile")) await buildServerBundle({ root, config, manifest, target: "bun" });
+      if (target === "edge") await buildServerBundle({ root, config, manifest, target: "edge" });
+    }
     break;
   }
   case "export": {
@@ -120,6 +131,8 @@ switch (cmd) {
 
   optz dev            develop with live reload
   optz build          production build into dist/
+                      --compile       also dist/server, a single executable
+                      --target edge   also dist/edge/worker.js (Workers, Deno, Vercel Edge)
   optz start          serve the build (PORT/HOST env vars override optz.config.ts)
   optz export         static site in dist/static (no server features)
   optz check          generate route types and type-check (tsc)

@@ -12,10 +12,13 @@ import type { BunPlugin } from "bun";
 import { writeTypes } from "./codegen";
 import { outDirFor, type Manifest, type ManifestRoute } from "./manifest";
 export { outDirFor, type Manifest, type ManifestRoute };
+import { actionStubs, scanActions } from "./actions";
+import { createApp } from "./handler";
+import { apiStaticPath, htmlPath, ogPath, type ManifestSlot } from "./manifest";
 import { islandId, registerIslandLoader } from "./plugin";
-import { renderPage } from "./render";
-import { dataPath, fillPattern, scanApi, scanRoutes, sortRoutes, type Route, type Segment } from "./routes";
-import type { ErrorModule, Hydrate, LayoutModule, PageModule, RenderMode, ResolvedConfig } from "./types";
+import { dataPath, fillPattern, scanApi, scanRoutes, sortRoutes, type Route } from "./routes";
+import { bunPlatform } from "./server";
+import type { ApiModule, Hydrate, PageModule, RenderMode, ResolvedConfig } from "./types";
 
 export interface BuildOptions {
   root: string;
@@ -94,11 +97,13 @@ function precompress(dir: string) {
   }
 }
 
-const FRAMEWORK_CSS = "optz-island{display:contents}html.optz-navigating{cursor:progress}\n";
+const FRAMEWORK_CSS =
+  "optz-island,optz-script{display:contents}html.optz-navigating{cursor:progress}" +
+  ".optz-img{max-width:100%;height:auto}.optz-img-fill{position:absolute;inset:0;width:100%;height:100%;object-fit:cover}\n";
 
-async function buildCss(root: string, config: ResolvedConfig, assetsDir: string, dev?: boolean): Promise<string[]> {
+async function buildCss(root: string, config: ResolvedConfig, assetsDir: string, dev?: boolean, extra = ""): Promise<string[]> {
   const entry = join(root, config.css ?? "app/styles.css");
-  let css: Buffer | string = FRAMEWORK_CSS;
+  let css: Buffer | string = FRAMEWORK_CSS + extra;
   if (existsSync(entry)) {
     const cliPkg = Bun.resolveSync("@tailwindcss/cli/package.json", import.meta.dir);
     const pkg = JSON.parse(readFileSync(cliPkg, "utf8"));
@@ -106,7 +111,7 @@ async function buildCss(root: string, config: ResolvedConfig, assetsDir: string,
     const tmp = join(assetsDir, "styles.tmp.css");
     const p = Bun.spawnSync([process.execPath, bin, "-i", entry, "-o", tmp, ...(dev ? [] : ["--minify"])], { cwd: root, stderr: "pipe" });
     if (p.exitCode !== 0) throw new Error(`tailwind failed:\n${p.stderr.toString()}`);
-    appendFileSync(tmp, FRAMEWORK_CSS);
+    appendFileSync(tmp, FRAMEWORK_CSS + extra);
     css = readFileSync(tmp);
     rmSync(tmp);
   }
@@ -134,26 +139,44 @@ export async function build({ root, config, dev, exportOnly }: BuildOptions): Pr
   const pages = table.routes;
   writeTypes(root, pages, apis);
   const all = sortRoutes([...pages, ...apis]);
+  const actions = config.features.actions ? scanActions(root) : {};
+  if (!islandsMode && (table.slots.length || table.intercepts.length)) throw new Error("parallel and intercepting routes need client.mode \"islands\"");
 
-  const modes = new Map<Route, { render: RenderMode; hasLoader: boolean }>();
-  for (const r of pages) {
+  interface Mode {
+    render: RenderMode;
+    hasLoader: boolean;
+    revalidate?: number;
+    dynamicParams?: boolean;
+    tags?: string[];
+  }
+  const modes = new Map<Route, Mode>();
+  const modeOf = async (r: Route): Promise<Mode> => {
     const mod = (await import(r.file)) as PageModule;
     if (typeof mod.default !== "function") throw new Error(`${rel(root, r.file)}: a page must export a default React component`);
-    modes.set(r, { render: mod.config?.render ?? "static", hasLoader: typeof mod.loader === "function" });
+    return { render: mod.config?.render ?? "static", hasLoader: typeof mod.loader === "function", revalidate: mod.revalidate, dynamicParams: mod.dynamicParams, tags: mod.tags };
+  };
+  for (const r of [...pages, ...table.intercepts, ...table.slots.flatMap((s) => [...s.routes, ...s.intercepts])]) modes.set(r, await modeOf(r));
+  const apiMods = new Map<Route, ApiModule>();
+  for (const r of apis) apiMods.set(r, (await import(r.file)) as ApiModule);
+  const dynamic = pages.filter((r) => modes.get(r)!.render === "dynamic" || modes.get(r)!.revalidate !== undefined || modes.get(r)!.dynamicParams);
+  if (dynamic.length && !config.features.dynamic) {
+    throw new Error(`features.dynamic is off, but these pages render at request time (dynamic, revalidate or dynamicParams):\n${dynamic.map((r) => `  ${r.pattern}`).join("\n")}`);
   }
-  const dynamic = pages.filter((r) => modes.get(r)!.render === "dynamic");
-  if (dynamic.length && !config.features.dynamic) throw new Error(`features.dynamic is off, but these pages are dynamic:\n${dynamic.map((r) => `  ${r.pattern}`).join("\n")}`);
-  if (exportOnly && (apis.length || dynamic.length)) {
-    throw new Error(`optz export makes a static site, but these need a server:\n${[...apis.map((r) => `  ${r.pattern} (API route)`), ...dynamic.map((r) => `  ${r.pattern} (dynamic page)`)].join("\n")}`);
+  if (exportOnly) {
+    const needServer = [
+      ...apis.filter((r) => !apiMods.get(r)!.prerender).map((r) => `  ${r.pattern} (API route)`),
+      ...dynamic.map((r) => `  ${r.pattern} (rendered at request time)`),
+      ...Object.values(actions).map((a) => `  ${a.file} (Server Actions)`),
+    ];
+    if (needServer.length) throw new Error(`optz export makes a static site, but these need a server:\n${needServer.join("\n")}`);
   }
 
   // ---- browser bundles ----
   const entryFile = join(gen, "entry.tsx");
-  const plugins: BunPlugin[] = [];
+  const plugins: BunPlugin[] = [actionStubs(root, actions)];
   if (config.client.runtime === "preact") plugins.push(preactAlias(root));
   const preloadOf = new Map<Route, string[]>();
   const islands: Record<string, string> = {};
-  let entrypoints: string[];
   let urlOf: (file: string) => string | undefined = () => undefined;
 
   if (islandsMode) {
@@ -170,8 +193,7 @@ export async function build({ root, config, dev, exportOnly }: BuildOptions): Pr
       lines.push(`  ${JSON.stringify(islandId(root, f))}: { load: () => import("./i${i}.tsx"), hydrate: ${JSON.stringify(mod.hydrate ?? "load")} },`);
     }
     writeFileSync(entryFile, `import { startIslands } from "optz/islands";\nstartIslands({\n${lines.join("\n")}\n}, ${JSON.stringify({ navigation: config.client.navigation, prefetch: config.client.prefetch })});\n`);
-    entrypoints = [entryFile, ...wrappers];
-    const result = await bundle(entrypoints, assetsDir, dev, plugins);
+    const result = await bundle([entryFile, ...wrappers], assetsDir, dev, plugins);
     urlOf = (file) => outputUrl(result, assetsDir, file);
     files.forEach((f, i) => (islands[islandId(root, f)] = urlOf(wrappers[i])!));
   } else {
@@ -187,95 +209,155 @@ export async function build({ root, config, dev, exportOnly }: BuildOptions): Pr
     const layoutW = layoutFiles.map((f, i) => wrapper(`l${i}`, f));
     const errorW = errorFiles.map((f, i) => wrapper(`e${i}`, f));
     const imp = (p: string) => `() => import(${JSON.stringify("./" + relative(gen, p))})`;
+    const i18n = config.i18n ? { locales: config.i18n.locales, defaultLocale: config.i18n.defaultLocale, prefixDefault: config.i18n.prefixDefault } : undefined;
     writeFileSync(
       entryFile,
       `import { start } from "optz/runtime";\nstart([\n${pages
         .map((r, i) => {
           const m = modes.get(r)!;
-          return `  { pattern: ${JSON.stringify(r.pattern)}, segments: ${JSON.stringify(r.segments)}, render: ${JSON.stringify(m.render)}, hasLoader: ${m.hasLoader}, load: ${imp(pageW[i])}, layouts: [${r.layouts.map((l) => imp(layoutW[layoutFiles.indexOf(l)])).join(", ")}]${r.error ? `, error: ${imp(errorW[errorFiles.indexOf(r.error)])}` : ""} },`;
+          return `  { pattern: ${JSON.stringify(r.pattern)}, segments: ${JSON.stringify(r.segments)}, render: ${JSON.stringify(m.render === "static" && (m.revalidate !== undefined || m.dynamicParams) ? "dynamic" : m.render)}, hasLoader: ${m.hasLoader}, load: ${imp(pageW[i])}, layouts: [${r.layouts.map((l) => imp(layoutW[layoutFiles.indexOf(l)])).join(", ")}]${r.error ? `, error: ${imp(errorW[errorFiles.indexOf(r.error)])}` : ""} },`;
         })
-        .join("\n")}\n]);\n`,
+        .join("\n")}\n], ${JSON.stringify(i18n ?? null)});\n`,
     );
-    entrypoints = [entryFile, ...pageW, ...layoutW, ...errorW];
-    const result = await bundle(entrypoints, assetsDir, dev, [...plugins, stripServerExports(routesDir)]);
+    const result = await bundle([entryFile, ...pageW, ...layoutW, ...errorW], assetsDir, dev, [...plugins, stripServerExports(routesDir)]);
     urlOf = (file) => outputUrl(result, assetsDir, file);
     pages.forEach((r, i) => preloadOf.set(r, [urlOf(pageW[i]), ...r.layouts.map((l) => urlOf(layoutW[layoutFiles.indexOf(l)]))].filter(Boolean) as string[]));
   }
   const entryUrl = urlOf(entryFile)!;
-  const css = await buildCss(root, config, assetsDir, dev);
+  const fonts = config.fonts?.length && !dev ? await (await import("./fonts")).buildFonts(config.fonts, assetsDir) : { css: "", preload: [] as string[] };
+  const css = await buildCss(root, config, assetsDir, dev, fonts.css);
   if (existsSync(join(root, "public"))) cpSync(join(root, "public"), staticDir, { recursive: true });
 
-  const manifest: Manifest = {
-    version: 2,
-    mode: config.client.mode,
-    entry: entryUrl,
-    css,
-    islands,
-    routes: all.map((r) => ({
+  const toManifest = (r: Route): ManifestRoute => {
+    const m = modes.get(r);
+    const api = apiMods.get(r);
+    return {
       pattern: r.pattern,
       segments: r.segments,
       file: rel(root, r.file),
       kind: r.kind,
-      render: modes.get(r)?.render ?? "dynamic",
-      hasLoader: modes.get(r)?.hasLoader ?? false,
+      render: m?.render ?? "dynamic",
+      hasLoader: m?.hasLoader ?? false,
       layouts: r.layouts.map((l) => rel(root, l)),
       error: r.error && rel(root, r.error),
+      loading: r.loading && rel(root, r.loading),
+      og: r.og && rel(root, r.og),
       preload: preloadOf.get(r) ?? [],
-    })),
+      revalidate: m?.revalidate ?? api?.revalidate,
+      dynamicParams: m?.dynamicParams,
+      tags: m?.tags ?? api?.tags,
+      prerendered: api?.prerender || undefined,
+      scope: r.scope,
+    };
+  };
+  const manifest: Manifest = {
+    version: 3,
+    builtAt: Date.now(),
+    mode: config.client.mode,
+    entry: entryUrl,
+    css,
+    islands,
+    routes: all.map(toManifest),
     notFound: table.notFound && rel(root, table.notFound),
     rootLayouts: table.rootLayouts.map((l) => rel(root, l)),
     redirects: {},
+    slots: table.slots.map(
+      (s): ManifestSlot => ({ name: s.name, layout: rel(root, s.layout), routes: s.routes.map(toManifest), intercepts: s.intercepts.map(toManifest), default: s.default && rel(root, s.default) }),
+    ),
+    intercepts: table.intercepts.map(toManifest),
+    actions,
+    fonts: fonts.preload,
+    apiStatic: {},
   };
 
-  // ---- pre-render static pages and client shells (production only; dev renders on demand) ----
+  // ---- pre-render static pages, client shells, API routes and OG images (production only) ----
+  // Rendered through the same handler that serves requests, so what's built is exactly what a
+  // request would have produced.
   let rendered = 0;
   if (!dev) {
-    const load = async <T,>(f: string) => (await import(join(root, f))) as T;
+    const platform = bunPlatform(root, config);
+    const app = await createApp({ manifest, config: { ...config, features: { ...config.features, cache: false } }, files: new Map(), platform, prerender: true });
+    const get = async (path: string, headers: Record<string, string> = {}) => app.fetch(new Request("http://build" + path, { headers }));
+    const locales = config.i18n?.locales ?? [undefined];
+    const localized = (path: string, l?: string) =>
+      !l || !config.i18n || (l === config.i18n.defaultLocale && !config.i18n.prefixDefault) ? path : `/${l}${path === "/" ? "" : path}`;
+
     for (const mr of manifest.routes) {
-      if (mr.kind !== "page" || mr.render === "dynamic") continue;
-      const page = await load<PageModule>(mr.file);
-      const layouts = await Promise.all(mr.layouts.map((l) => load<LayoutModule>(l)));
-      const error = mr.error ? await load<ErrorModule>(mr.error) : undefined;
-      const assets = { entry: entryUrl, css, preload: mr.preload, islands };
-      const base = { page, layouts, error, pattern: mr.pattern, segments: mr.segments, render: mr.render };
+      const page = mr.kind === "page" ? await import(join(root, mr.file)) as PageModule : null;
+      if (mr.kind === "api") {
+        const mod = apiMods.get(all.find((r) => rel(root, r.file) === mr.file)!)!;
+        if (!mod.prerender) continue;
+        const hasParams = mr.segments.some((s) => s.kind !== "static");
+        if (hasParams && !mod.paths) throw new Error(`${mr.file}: a prerendered API route with parameters needs \`export function paths()\``);
+        for (const params of hasParams ? await mod.paths!() : [{}]) {
+          const path = fillPattern(mr.segments, params);
+          const res = await get(path);
+          if (res.status !== 200) throw new Error(`${mr.file}: GET ${path} answered ${res.status} at build time`);
+          write(join(staticDir, apiStaticPath(path)), new Uint8Array(await res.arrayBuffer()));
+          manifest.apiStatic[path] = { file: apiStaticPath(path), type: res.headers.get("content-type") ?? "application/json" };
+          rendered++;
+        }
+        continue;
+      }
+      if (!page || mr.render === "dynamic") continue;
       if (mr.render === "client") {
-        const r = await renderPage({ ...base, pathname: mr.pattern, params: {}, skipLoader: true, ctx: { url: new URL("http://build" + mr.pattern), locals: {} } }, assets, config);
-        if (r.kind !== "page") continue;
         mr.shell = `/_optz/shells/${hash(mr.pattern)}.html`;
-        write(join(staticDir, mr.shell), r.html);
+        const res = await get(mr.pattern.replace(/\[\[?\.{0,3}(\w+)\]?\]/g, "_$1_"));
+        if (res.status !== 200) throw new Error(`${mr.file}: rendering its shell failed (${res.status})`);
+        write(join(staticDir, mr.shell), await res.text());
         rendered++;
         continue;
       }
-      const hasParams = mr.segments.some((s) => s.kind !== "static");
-      if (hasParams && !page.paths) throw new Error(`${mr.file}: a static page with parameters needs \`export function paths()\` (or \`export const config = { render: "dynamic" }\`)`);
-      const sets = hasParams ? await page.paths!() : [{}];
-      for (const params of sets) {
-        const pathname = fillPattern(mr.segments, params);
-        const r = await renderPage({ ...base, pathname, params, ctx: { url: new URL("http://build" + pathname), locals: {} } }, assets, config);
-        if (r.kind === "notFound") continue;
-        if (r.kind === "redirect") {
-          const location = r.response.headers.get("Location") ?? "/";
-          manifest.redirects[pathname] = { status: r.response.status, location };
-          write(join(staticDir, dataPath(pathname)), JSON.stringify({ redirect: location }));
-          continue;
+      const needsPaths = mr.segments.some((s) => s.kind === "param" || s.kind === "rest");
+      if (needsPaths && !page.paths && !mr.dynamicParams) {
+        throw new Error(`${mr.file}: a static page with parameters needs \`export function paths()\` (or \`export const dynamicParams = true\`, or \`export const config = { render: "dynamic" }\`)`);
+      }
+      for (const locale of locales) {
+        const sets = page.paths ? await page.paths({ locale }) : needsPaths ? [] : [{}];
+        for (const params of sets) {
+          const path = localized(fillPattern(mr.segments, params), locale);
+          const res = await get(path);
+          if (res.status >= 300 && res.status < 400) {
+            const location = res.headers.get("Location") ?? "/";
+            manifest.redirects[path] = { status: res.status, location };
+            write(join(staticDir, dataPath(path)), JSON.stringify({ redirect: location }));
+            continue;
+          }
+          if (res.status >= 500) throw new Error(`${mr.file}: rendering ${path} failed (see the error above)`);
+          if (res.status !== 200) continue;
+          write(join(staticDir, htmlPath(path)), await res.text());
+          if (!islandsMode) {
+            const d = await get(dataPath(path));
+            if (d.status === 200) write(join(staticDir, dataPath(path)), await d.text());
+          }
+          if (mr.og) {
+            const og = await get(ogPath(path));
+            if (og.status === 200) write(join(staticDir, ogPath(path)), new Uint8Array(await og.arrayBuffer()));
+          }
+          rendered++;
         }
-        write(join(staticDir, pathname === "/" ? "index.html" : `${pathname.slice(1)}/index.html`), r.html);
-        if (!islandsMode) write(join(staticDir, dataPath(pathname)), JSON.stringify(r.payload));
-        rendered++;
       }
     }
     if (manifest.notFound) {
-      const page = await load<PageModule>(manifest.notFound);
-      const layouts = await Promise.all(manifest.rootLayouts.map((l) => load<LayoutModule>(l)));
-      const r = await renderPage({ page, layouts, pattern: "/_404", pathname: "/_404", params: {}, ctx: { url: new URL("http://build/_404"), locals: {} } }, { entry: entryUrl, css, preload: [], islands }, config);
-      if (r.kind === "page") write(join(staticDir, "404.html"), r.html);
+      for (const locale of locales) {
+        const res = await get(`/_optz/404${locale ? `?locale=${locale}` : ""}`);
+        const file = locale && localized("/", locale) !== "/" ? `${locale}/404.html` : "404.html";
+        if (res.status === 404 && (res.headers.get("content-type") ?? "").includes("html")) write(join(staticDir, file), await res.text());
+      }
     }
+    const { buildSeoFiles } = await import("./seo");
+    rendered += await buildSeoFiles(root, config, staticDir);
     precompress(staticDir);
   }
   writeFileSync(join(out, "manifest.json"), JSON.stringify(manifest, null, 1));
   const ms = Math.round(performance.now() - t0);
+  const extras = [
+    Object.keys(actions).length && `${Object.values(actions).reduce((n, a) => n + a.exports.length, 0)} actions`,
+    table.slots.length && `${table.slots.length} slots`,
+    fonts.preload.length && `${fonts.preload.length} fonts`,
+  ].filter(Boolean);
   console.log(
-    `optz: built ${pages.length} pages, ${apis.length} API routes, ${Object.keys(islands).length} islands (${config.client.mode}, ${config.client.runtime})${dev ? "" : `, pre-rendered ${rendered}`} in ${ms} ms`,
+    `optz: built ${pages.length} pages, ${apis.length} API routes, ${Object.keys(islands).length} islands${extras.length ? ", " + extras.join(", ") : ""} (${config.client.mode}, ${config.client.runtime})${dev ? "" : `, pre-rendered ${rendered}`} in ${ms} ms`,
   );
   return manifest;
 }

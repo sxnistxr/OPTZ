@@ -1,12 +1,16 @@
 import { expect, test } from "bun:test";
 import { ResponseCache } from "../src/cache";
+import { bunPlatform } from "../src/server";
+import { resolveConfig } from "../src/types";
+
+const z = bunPlatform("/tmp", resolveConfig({}));
 
 const req = (h: Record<string, string> = {}) => new Request("http://x/a", { headers: h });
 const url = new URL("http://x/a");
 const body = (n: number) => new Response(JSON.stringify({ n, pad: "x".repeat(600) }), { headers: { "Content-Type": "application/json" } });
 
 test("serves fresh entries from memory, compressed, with ETag and 304", async () => {
-  const c = new ResponseCache(10, 1 << 20);
+  const c = new ResponseCache(10, 1 << 20, z);
   let calls = 0;
   const produce = async () => body(++calls);
   const rc = { maxAge: 60 };
@@ -22,7 +26,7 @@ test("serves fresh entries from memory, compressed, with ETag and 304", async ()
 });
 
 test("concurrent misses share one render", async () => {
-  const c = new ResponseCache(10, 1 << 20);
+  const c = new ResponseCache(10, 1 << 20, z);
   let calls = 0;
   const produce = async () => {
     calls++;
@@ -35,7 +39,7 @@ test("concurrent misses share one render", async () => {
 });
 
 test("stale-while-revalidate: serves stale once, refreshes in the background", async () => {
-  const c = new ResponseCache(10, 1 << 20);
+  const c = new ResponseCache(10, 1 << 20, z);
   let calls = 0;
   const produce = async () => body(++calls);
   const rc = { maxAge: 0.05, staleWhileRevalidate: 60 };
@@ -50,7 +54,7 @@ test("stale-while-revalidate: serves stale once, refreshes in the background", a
 });
 
 test("never stores errors, cookies or no-store responses", async () => {
-  const c = new ResponseCache(10, 1 << 20);
+  const c = new ResponseCache(10, 1 << 20, z);
   let calls = 0;
   for (const make of [
     () => new Response("x", { status: 500 }),
@@ -64,7 +68,7 @@ test("never stores errors, cookies or no-store responses", async () => {
 });
 
 test("evicts least recently used past the entry limit", async () => {
-  const c = new ResponseCache(2, 1 << 20);
+  const c = new ResponseCache(2, 1 << 20, z);
   const rc = { maxAge: 60 };
   for (const k of ["a", "b", "c"]) await c.handle(req(), k, rc, async () => body(1));
   expect(c.stats.entries).toBe(2);

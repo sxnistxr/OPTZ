@@ -3,7 +3,7 @@ import type { ApiContext, Config, Middleware, Params, RouteCache, TypedResponse 
 
 export type * from "./types";
 export { resolveConfig } from "./types";
-export { Link, useRouter, useParams, useLoaderData, useNavigating } from "./runtime";
+export { Link, useRouter, useParams, useLoaderData, useNavigating, useLocale, localizeHref } from "./runtime";
 
 /** Typed config for optz.config.ts (every option is documented on hover). */
 export const defineConfig = (c: Config) => c;
@@ -81,7 +81,7 @@ export async function api<P extends ApiPath, M extends MethodsOf<P> = Extract<"G
   ...[opts]: HasParams<P> extends true ? [ApiOptions<P, M>] : [ApiOptions<P, M>?]
 ): Promise<Out<Mod<P>[M]>> {
   const o = (opts ?? {}) as { method?: string; params?: Params; query?: Record<string, unknown>; body?: unknown; headers?: Record<string, string>; signal?: AbortSignal };
-  let url = path.replace(/\[(?:\.\.\.)?(\w+)\]/g, (_, k: string) => encodeURIComponent(o.params?.[k] ?? "")).replace(/%2F/g, "/");
+  let url = (path as string).replace(/\[\[?(?:\.\.\.)?(\w+)\]?\]/g, (_: string, k: string) => encodeURIComponent(o.params?.[k] ?? "")).replace(/%2F/g, "/");
   if (o.query) url += "?" + new URLSearchParams(Object.entries(o.query).map(([k, v]) => [k, String(v)]));
   const res = await fetch(url, {
     method: o.method ?? "GET",

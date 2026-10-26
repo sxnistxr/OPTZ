@@ -1,7 +1,13 @@
 // Route matching shared by the server and the browser runtime (no Node imports).
 import type { Params } from "./types";
 
-export type Segment = { kind: "static"; value: string } | { kind: "param"; name: string } | { kind: "rest"; name: string };
+export type Segment =
+  | { kind: "static"; value: string }
+  | { kind: "param"; name: string }
+  /** [...name]: one or more segments */
+  | { kind: "rest"; name: string }
+  /** [[...name]]: zero or more segments (last only) */
+  | { kind: "optional"; name: string };
 
 /** Matches a pathname against segments. Returns params or null. */
 export function matchSegments(segments: Segment[], pathname: string): Params | null {
@@ -9,8 +15,8 @@ export function matchSegments(segments: Segment[], pathname: string): Params | n
   const params: Params = {};
   for (let i = 0; i < segments.length; i++) {
     const s = segments[i];
-    if (s.kind === "rest") {
-      if (i >= parts.length) return null;
+    if (s.kind === "rest" || s.kind === "optional") {
+      if (i >= parts.length) return s.kind === "optional" ? params : null;
       params[s.name] = parts.slice(i).map(decodeURIComponent).join("/");
       return params;
     }
@@ -35,14 +41,28 @@ export function matchRoute<R extends { segments: Segment[] }>(routes: R[], pathn
 
 /** Fills a pattern with params: "/blog/[slug]" + {slug:"x"} -> "/blog/x". */
 export function fillPattern(segments: Segment[], params: Params): string {
-  const out = segments.map((s) => {
-    if (s.kind === "static") return s.value;
+  const out = segments.flatMap((s) => {
+    if (s.kind === "static") return [s.value];
     const v = params[s.name];
+    if (s.kind === "optional" && !v) return [];
     if (v === undefined) throw new Error(`missing param "${s.name}"`);
-    return s.kind === "rest" ? v.split("/").map(encodeURIComponent).join("/") : encodeURIComponent(v);
+    return [s.kind === "param" ? encodeURIComponent(v) : v.split("/").map(encodeURIComponent).join("/")];
   });
   return "/" + out.join("/");
 }
 
 /** "/" -> "/_optz/data/index.json", "/blog/x" -> "/_optz/data/blog/x.json" */
 export const dataPath = (pathname: string) => `/_optz/data${pathname === "/" ? "/index" : pathname.replace(/\/$/, "")}.json`;
+
+/** Does `pathname` start inside `scope` (a folder's URL)? Params match anything. */
+export function inScope(scope: Segment[], pathname: string): boolean {
+  const parts = pathname.split("/").filter(Boolean);
+  for (let i = 0; i < scope.length; i++) {
+    const s = scope[i];
+    if (s.kind === "rest") return parts.length > i;
+    if (s.kind === "optional") return true;
+    if (parts[i] === undefined) return false;
+    if (s.kind === "static" && decodeURIComponent(parts[i]) !== s.value) return false;
+  }
+  return true;
+}

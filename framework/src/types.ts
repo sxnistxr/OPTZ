@@ -14,12 +14,13 @@ export interface RouteRegistry {}
 // biome-ignore lint: augmented by generated types
 export interface ApiRegistry {}
 
-type Seg<S extends string> = S extends `[...${string}]` ? `${string}` : S extends `[${string}]` ? string : S;
-type Fill<P extends string> = P extends `/${infer A}/${infer B}` ? `/${Seg<A>}${Fill<`/${B}`>}` : P extends `/${infer A}` ? `/${Seg<A>}` : P;
+type Part<S extends string> = S extends `[[...${string}]]` ? "" | `/${string}` : S extends `[...${string}]` ? `/${string}` : S extends `[${string}]` ? `/${string}` : `/${S}`;
+type Fill<P extends string> = P extends `/${infer A}/${infer B}` ? `${Part<A>}${Fill<`/${B}`>}` : P extends `/${infer A}` ? (A extends "" ? "/" : Part<A>) : P;
+type Root<T extends string> = T extends "" ? "/" : T;
 type Suffix = "" | `?${string}` | `#${string}`;
 
 /** Every URL your pages answer, as template literal types ("/blog/${string}"). */
-export type AppHref = keyof RouteRegistry extends never ? string : `${Fill<keyof RouteRegistry & string>}${Suffix}`;
+export type AppHref = keyof RouteRegistry extends never ? string : `${Root<Fill<keyof RouteRegistry & string>>}${Suffix}`;
 /** What `<Link href>` accepts: an app URL, or anything clearly external or local-only. */
 export type Href = AppHref | `http://${string}` | `https://${string}` | `mailto:${string}` | `tel:${string}` | `#${string}`;
 
@@ -38,6 +39,10 @@ export type RenderMode =
 export interface LoaderContext<P = Params> {
   params: P;
   url: URL;
+  /** The current locale when `i18n` is configured. */
+  locale?: string;
+  /** Draft mode is on for this request (see `draftMode()` in optz/server). */
+  draft?: boolean;
   /** Only for dynamic pages (static pages are rendered at build time, without a request). */
   request?: Request;
   /** Values set by middleware (dynamic pages only). */
@@ -51,9 +56,44 @@ export interface Locals {
   [key: string]: unknown;
 }
 
+export interface OpenGraphImage {
+  url: string;
+  width?: number;
+  height?: number;
+  alt?: string;
+}
+
+/** Everything that goes in <head>. Relative URLs in canonical, openGraph and twitter become
+ *  absolute with `site.url` from the config. */
 export interface Head {
   title?: string;
   description?: string;
+  canonical?: string;
+  /** "noindex, nofollow", or { index: false } */
+  robots?: string | { index?: boolean; follow?: boolean };
+  keywords?: string[];
+  themeColor?: string;
+  openGraph?: {
+    title?: string;
+    description?: string;
+    type?: "website" | "article" | "profile";
+    url?: string;
+    siteName?: string;
+    locale?: string;
+    images?: Array<string | OpenGraphImage>;
+    publishedTime?: string;
+    authors?: string[];
+  };
+  twitter?: {
+    card?: "summary" | "summary_large_image";
+    site?: string;
+    creator?: string;
+    title?: string;
+    description?: string;
+    images?: string[];
+  };
+  /** hreflang alternates (added automatically with i18n) and feeds, e.g. { types: { "application/rss+xml": "/feed.xml" } } */
+  alternates?: { languages?: Record<string, string>; types?: Record<string, string> };
   meta?: Array<Record<string, string>>;
   links?: Array<Record<string, string>>;
 }
@@ -62,6 +102,8 @@ export interface Head {
 export interface PageProps<D = unknown, P extends string = string> {
   data: D;
   params: P extends keyof RouteRegistry ? RouteRegistry[P] : Params;
+  /** The current locale when `i18n` is configured. */
+  locale?: string;
 }
 
 /** Caching for a dynamic page or an API GET route (in memory, and `s-maxage` for nginx/CDNs). */
@@ -72,20 +114,33 @@ export interface RouteCache {
   staleWhileRevalidate?: number;
   /** Request headers that change the response (each value gets its own entry). */
   vary?: string[];
+  /** Names for `revalidateTag()`: dropping a tag drops every cached response that has it. */
+  tags?: string[];
 }
 
 export interface PageModule<D = unknown> {
   default: ComponentType<PageProps<D>>;
   config?: { render?: RenderMode };
   loader?: (ctx: LoaderContext) => D | Promise<D>;
-  paths?: () => Params[] | Promise<Params[]>;
-  head?: (data: D, ctx: { params: Params }) => Head;
+  /** Static pages with params: which ones to build. Gets the locale when i18n is on. */
+  paths?: (ctx: { locale?: string }) => Params[] | Promise<Params[]>;
+  head?: (data: D, ctx: { params: Params; locale?: string }) => Head;
+  /** Dynamic pages: the response cache. */
   cache?: RouteCache;
+  /** Static pages: rebuild in the background at most this often, in seconds (incremental
+   *  static regeneration). `revalidatePath()` / `revalidateTag()` rebuild sooner. */
+  revalidate?: number;
+  /** Static pages with params: render params `paths()` didn't list on first request, then
+   *  keep them. Default false (404). */
+  dynamicParams?: boolean;
+  /** Static pages: names for `revalidateTag()`. */
+  tags?: string[];
 }
 
 export interface LayoutModule {
-  default: ComponentType<{ children: ReactNode; params: Params }>;
-  head?: (ctx: { params: Params }) => Head;
+  /** Gets `children`, `params` and one prop per parallel route slot (`@name` folders). */
+  default: ComponentType<{ children: ReactNode; params: Params; [slot: string]: ReactNode | Params }>;
+  head?: (ctx: { params: Params; locale?: string }) => Head;
 }
 
 export interface ErrorModule {
@@ -109,6 +164,16 @@ export interface ApiContext<P = Params> extends MiddlewareContext {
 }
 export type ApiHandler<T = unknown, P = Params> = (ctx: ApiContext<P>) => TypedResponse<T> | Promise<TypedResponse<T>>;
 
+/** API routes can be built ahead of time: `export const prerender = true` calls GET at build
+ *  time (once per `paths()` entry) and serves the result from memory. */
+export interface ApiModule {
+  prerender?: boolean;
+  paths?: () => Params[] | Promise<Params[]>;
+  revalidate?: number;
+  tags?: string[];
+  cache?: RouteCache;
+}
+
 /** Islands: when they hydrate. */
 export type Hydrate = "load" | "idle" | "visible";
 
@@ -125,6 +190,46 @@ export interface Config {
   css?: string;
   /** Extra <head> tags on every page: fonts, icons, etc. */
   head?: { links?: Array<Record<string, string>>; meta?: Array<Record<string, string>> };
+  /** The site's public URL, e.g. "https://example.com". Makes canonical, Open Graph, sitemap
+   *  and hreflang URLs absolute. */
+  site?: { url?: string };
+  /** Locale-prefixed routing: /fr/blog/x renders app/routes/blog/[slug].tsx with locale "fr". */
+  i18n?: {
+    locales: string[];
+    defaultLocale: string;
+    /** Prefix the default locale too (/en/...). Default false. */
+    prefixDefault?: boolean;
+    /** Redirect "/" by Accept-Language (and the optz-locale cookie). Default true. */
+    detect?: boolean;
+  };
+  /** <Image> and /_optz/image. */
+  images?: {
+    /** Widths the optimizer will produce (others are rounded up). Default [384, 640, 828, 1080, 1200, 1920, 2048]. */
+    sizes?: number[];
+    /** Remote hosts images may come from, e.g. ["images.example.com"]. Default none (local only). */
+    remoteHosts?: string[];
+    /** Output formats in order of preference, picked by the browser's Accept header. Default ["avif", "webp"]. */
+    formats?: Array<"avif" | "webp">;
+    /** Default quality, 1-100. Default 75. */
+    quality?: number;
+    /** Max optimized images kept on disk, in MB. Default 256. */
+    cacheMB?: number;
+  };
+  /** Self-hosted web fonts: Google Fonts CSS URLs downloaded at build time and served from
+   *  /assets, with size-matched fallbacks so text doesn't shift when they load. */
+  fonts?: Array<{
+    /** A fonts.googleapis.com/css2 URL. */
+    google: string;
+    /** Preload these subsets' files. Default ["latin"]. */
+    preload?: string[];
+    /** Local font the fallback face is based on. Default "Arial" (or "Times New Roman" for serif families). */
+    fallback?: string;
+  }>;
+  /** Draft mode: a signed cookie that makes static pages render per request (for previews). */
+  draft?: {
+    /** Secret that signs the cookie. Default the OPTZ_DRAFT_SECRET env var, else random per process. */
+    secret?: string;
+  };
   /** Forward a path prefix to another server, e.g. { "/api/social": { target: "http://127.0.0.1:3000", strip: true } }.
    *  `optz nginx` turns these into nginx locations so production traffic never touches Bun. */
   proxy?: Record<string, { target: string; strip?: boolean; /** nginx micro-cache for GETs, in seconds (0 = off). */ cacheSeconds?: number }>;
@@ -160,6 +265,12 @@ export interface Config {
     etag?: boolean;
     /** Log each request (costs a little per request). Default false. */
     requestLog?: boolean;
+    /** Stream dynamic pages (Suspense, async components, _loading.tsx). Off: they're sent whole. Default true. */
+    streaming?: boolean;
+    /** Server Actions ("use server" modules). Default true. */
+    actions?: boolean;
+    /** The /_optz/image optimizer. Default true. */
+    images?: boolean;
   };
 
   cache?: {
@@ -191,7 +302,7 @@ export function resolveConfig(c: Config = {}): ResolvedConfig {
   return {
     ...c,
     client: { mode: "islands", navigation: true, prefetch: true, runtime: "react", ...c.client },
-    features: { middleware: true, dynamic: true, api: true, cache: true, dynamicCompression: true, etag: true, requestLog: false, ...c.features },
+    features: { middleware: true, dynamic: true, api: true, cache: true, dynamicCompression: true, etag: true, requestLog: false, streaming: true, actions: true, images: true, ...c.features },
     cache: { maxEntries: 500, maxBytes: 32 << 20, ...c.cache },
     server: { idleTimeout: 30, maxRequestBodySize: 1 << 20, ...c.server },
   };

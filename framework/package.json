@@ -1,6 +1,6 @@
 {
   "name": "optz",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "A small, fast React framework for Bun: file routes, layouts, loaders, middleware, static-first rendering.",
   "type": "module",
   "bin": {
@@ -8,11 +8,18 @@
   },
   "exports": {
     ".": "./src/index.ts",
+    "./server": "./src/server-api.ts",
+    "./image": "./src/image-component.tsx",
+    "./script": "./src/script.tsx",
+    "./og": "./src/og-types.ts",
     "./runtime": "./src/runtime.tsx",
     "./types": "./src/types.ts",
     "./island": "./src/island.tsx",
     "./hydrate": "./src/hydrate.tsx",
-    "./islands": "./src/islands.ts"
+    "./islands": "./src/islands.ts",
+    "./action-client": "./src/action-client.ts",
+    "./edge": "./src/edge.ts",
+    "./seo": "./src/seo.ts"
   },
   "peerDependencies": {
     "react": "^19",
@@ -24,6 +31,10 @@
     "typescript": "7.0.2"
   },
   "optionalDependencies": {
-    "preact": "11.0.2"
+    "preact": "11.0.2",
+    "sharp": "0.35.5",
+    "satori": "0.63.2",
+    "@resvg/resvg-js": "2.6.2",
+    "react-refresh": "0.19.0"
   }
 }

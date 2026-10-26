@@ -6,8 +6,14 @@
 // - miss: concurrent requests for the same key share one render (no stampede)
 // Bounded by entry count and total bytes (least recently used goes first). Responses that set
 // cookies, aren't 200, or say private/no-store are never stored.
-import { brotliCompressSync, constants as zc } from "node:zlib";
+import { fnv } from "./static";
 import type { RouteCache } from "./types";
+
+export interface Compressors {
+  hash?: (b: Uint8Array) => string;
+  gzip?: (b: Uint8Array) => Uint8Array;
+  brotli?: (b: Uint8Array) => Uint8Array;
+}
 
 interface Entry {
   status: number;
@@ -38,7 +44,19 @@ export class ResponseCache {
   constructor(
     private maxEntries: number,
     private maxBytes: number,
+    private z: Compressors = {},
   ) {}
+
+  /** Drops every entry `drop` matches (revalidatePath / revalidateTag). */
+  invalidate(drop: (key: string, rc: RouteCache) => boolean) {
+    for (const [k, e] of this.map) {
+      if (!drop(k, e.rc)) continue;
+      this.map.delete(k);
+      this.bytes -= e.bytes;
+    }
+    this.stats.entries = this.map.size;
+    this.stats.bytes = this.bytes;
+  }
 
   static key(req: Request, url: URL, rc: RouteCache): string {
     let k = `${url.pathname}${url.search}`;
@@ -84,10 +102,10 @@ export class ResponseCache {
         status: 200,
         headers,
         body,
-        // Compressed once per entry, not per request. Brotli at quality 5: fast and small.
-        gz: compressible ? Bun.gzipSync(body, { level: 6 }) : undefined,
-        br: compressible ? brotliCompressSync(body, { params: { [zc.BROTLI_PARAM_QUALITY]: 5 } }) : undefined,
-        etag: `"${Bun.hash(body).toString(36)}"`,
+        // Compressed once per entry, not per request.
+        gz: compressible ? this.z.gzip?.(body) : undefined,
+        br: compressible ? this.z.brotli?.(body) : undefined,
+        etag: `"${(this.z.hash ?? fnv)(body)}"`,
         storedAt: Date.now(),
         rc,
         bytes: 0,
@@ -147,5 +165,5 @@ function respond(e: Entry, req: Request, age: number): Response {
     body = e.gz;
     h.set("Content-Encoding", "gzip");
   }
-  return new Response(body, { status: e.status, headers: h });
+  return new Response(body as BodyInit, { status: e.status, headers: h });
 }
