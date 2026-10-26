@@ -50,6 +50,8 @@ export interface Assets {
   /** Font files to preload. */
   fonts?: string[];
   dev?: boolean;
+  /** Dev: the build's id, so the browser can tell what changed after a rebuild. */
+  build?: number;
 }
 
 export type Loaded =
@@ -208,7 +210,7 @@ export async function renderPage(input: RenderInput, assets: Assets, config: Res
   const boot: Record<string, unknown> = islandsMode ? { pattern: input.pattern, params: input.params } : { pattern: input.pattern, params: input.params, data };
   if (islandsMode && input.render === "client" && input.segments) boot.segments = input.segments;
   if (input.i18n) boot.i18n = input.i18n;
-  if (assets.dev) boot.dev = true;
+  if (assets.dev) boot.dev = assets.build ?? true;
 
   const fontLinks = (assets.fonts ?? []).map((f) => `<link rel="preload" href="${f}" as="font" type="font/woff2" crossorigin>`).join("\n");
   const docHead = (scriptsInHead: string, preload: string[]) => `<!doctype html>

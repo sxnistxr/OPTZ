@@ -174,7 +174,13 @@ export async function build({ root, config, dev, exportOnly }: BuildOptions): Pr
   // ---- browser bundles ----
   const entryFile = join(gen, "entry.tsx");
   const plugins: BunPlugin[] = [actionStubs(root, actions)];
-  if (config.client.runtime === "preact") plugins.push(preactAlias(root));
+  // Dev (islands): React from one vendor bundle, so Fast Refresh can hot-swap island code.
+  const hot = !!dev && islandsMode;
+  if (hot) {
+    const { buildDevVendor, refreshFix, vendorShims } = await import("./dev-vendor");
+    await buildDevVendor(root, assetsDir);
+    plugins.push(vendorShims(root), refreshFix(root));
+  } else if (config.client.runtime === "preact") plugins.push(preactAlias(root));
   const preloadOf = new Map<Route, string[]>();
   const islands: Record<string, string> = {};
   let urlOf: (file: string) => string | undefined = () => undefined;
@@ -192,8 +198,8 @@ export async function build({ root, config, dev, exportOnly }: BuildOptions): Pr
       wrappers.push(w);
       lines.push(`  ${JSON.stringify(islandId(root, f))}: { load: () => import("./i${i}.tsx"), hydrate: ${JSON.stringify(mod.hydrate ?? "load")} },`);
     }
-    writeFileSync(entryFile, `import { startIslands } from "optz/islands";\nstartIslands({\n${lines.join("\n")}\n}, ${JSON.stringify({ navigation: config.client.navigation, prefetch: config.client.prefetch })});\n`);
-    const result = await bundle([entryFile, ...wrappers], assetsDir, dev, plugins);
+    writeFileSync(entryFile, `${hot ? 'import "/assets/dev-vendor/refresh.js";\n' : ""}import { startIslands } from "optz/islands";\nstartIslands({\n${lines.join("\n")}\n}, ${JSON.stringify({ navigation: config.client.navigation, prefetch: config.client.prefetch })});\n`);
+    const result = await bundle([entryFile, ...wrappers], assetsDir, dev, plugins, hot);
     urlOf = (file) => outputUrl(result, assetsDir, file);
     files.forEach((f, i) => (islands[islandId(root, f)] = urlOf(wrappers[i])!));
   } else {
@@ -362,8 +368,9 @@ export async function build({ root, config, dev, exportOnly }: BuildOptions): Pr
   return manifest;
 }
 
-async function bundle(entrypoints: string[], outdir: string, dev: boolean | undefined, plugins: BunPlugin[]) {
+async function bundle(entrypoints: string[], outdir: string, dev: boolean | undefined, plugins: BunPlugin[], reactFastRefresh = false) {
   const result = await Bun.build({
+    reactFastRefresh,
     entrypoints,
     outdir,
     target: "browser",

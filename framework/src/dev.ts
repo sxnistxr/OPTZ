@@ -1,5 +1,6 @@
 // Dev server endpoints: the update stream browsers listen to, and stats.
 import type { ResponseCache } from "./cache";
+import type { Manifest } from "./manifest";
 
 type Client = ReadableStreamDefaultController<string>;
 // Kept on globalThis so connections survive the dev server re-running its modules.
@@ -18,7 +19,7 @@ export function broadcast(event: string, data = "") {
   }
 }
 
-export function devRequest(_req: Request, p: string, cache: ResponseCache | null): Response {
+export function devRequest(_req: Request, p: string, cache: ResponseCache | null, manifest: Manifest): Response {
   if (p === "/_optz/dev/events") {
     let ctl: Client;
     return new Response(
@@ -26,7 +27,8 @@ export function devRequest(_req: Request, p: string, cache: ResponseCache | null
         start(c) {
           ctl = c;
           clients.add(c);
-          c.enqueue(": connected\n\n");
+          // What this build is: pages compare it with what they loaded and update in place.
+          c.enqueue(`event: hello\ndata: ${JSON.stringify({ build: manifest.builtAt, mode: manifest.mode, islands: manifest.islands, css: manifest.css })}\n\n`);
         },
         cancel() {
           clients.delete(ctl);

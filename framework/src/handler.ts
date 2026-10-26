@@ -102,7 +102,7 @@ export async function createApp({ manifest, config, files, platform, middleware 
   let renderMod: Promise<typeof import("./render")> | undefined;
   const render = () => (renderMod ??= import("./render"));
   const proxies = Object.entries(config.proxy ?? {}).sort((a, b) => b[0].length - a[0].length);
-  const assets = (r?: ManifestRoute) => ({ entry: manifest.entry, css: manifest.css, preload: r?.preload ?? [], islands: manifest.islands, fonts: manifest.fonts, dev });
+  const assets = (r?: ManifestRoute) => ({ entry: manifest.entry, css: manifest.css, preload: r?.preload ?? [], islands: manifest.islands, fonts: manifest.fonts, dev, build: manifest.builtAt });
   const i18n = config.i18n;
 
   // Server Actions are tagged up front so pages that render <form action={fn}> get real URLs.

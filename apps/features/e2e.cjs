@@ -1,5 +1,7 @@
 // Browser checks for every feature in this app. Needs a built, running app:
 //   bun run build && bun run start &   then   node e2e.cjs http://127.0.0.1:3002
+// Also passes against the single executable (optz build --compile) and the edge worker
+// (optz build --target edge, in workerd) with UNOPTIMIZED=1.
 const { chromium } = require("playwright");
 
 const base = process.argv[2] ?? "http://127.0.0.1:3002";
@@ -83,7 +85,9 @@ const check = (name, ok, detail = "") => results.push(`${ok ? "ok  " : "FAIL"} $
   await pg.goto(base + "/media");
   await pg.waitForTimeout(800);
   const hero = await pg.$eval('[data-testid="hero"]', (i) => ({ w: i.naturalWidth, src: i.currentSrc }));
-  check("<Image> loads an optimized AVIF", hero.w > 0 && imgTypes.includes("image/avif"), JSON.stringify({ hero, imgTypes }));
+  // UNOPTIMIZED=1: edge workers and binaries without sharp send images as they are.
+  if (process.env.UNOPTIMIZED) check("<Image> loads (unoptimized)", hero.w > 0, JSON.stringify(hero));
+  else check("<Image> loads an optimized AVIF", hero.w > 0 && imgTypes.includes("image/avif"), JSON.stringify({ hero, imgTypes }));
   check("<Script lazyOnload> ran once", (await pg.evaluate(() => window.__thirdParty)) === 1);
   await pg.click("nav >> text=Home");
   await pg.waitForTimeout(300);

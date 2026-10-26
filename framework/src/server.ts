@@ -82,7 +82,7 @@ export async function serve({ root, config, dev, port, hostname }: ServeOptions)
     fetch(req) {
       if (dv) {
         const p = req.url.slice(req.url.indexOf("/", 8));
-        if (p.startsWith("/_optz/dev/")) return dv.devRequest(req, p, app.cache);
+        if (p.startsWith("/_optz/dev/")) return dv.devRequest(req, p, app.cache, manifest);
       }
       return app.fetch(req);
     },

@@ -4,7 +4,7 @@
 //                              built pages and assets). Copy it to a machine and run it; nothing
 //                              to install.
 //   optz build --target edge   dist/edge/worker.js: `export default { fetch }` for Cloudflare
-//                              Workers (with nodejs_compat), Deno Deploy, Vercel Edge or any
+//                              Workers (Node compatibility on), Deno Deploy, Vercel Edge or any
 //                              runtime with web-standard Request/Response. Static files are
 //                              embedded; Server Actions, streaming, ISR, i18n all work.
 //
@@ -102,20 +102,20 @@ import { typeOf, cacheFor } from ${imp(join(fw, "static.ts"))};
     const entries = files.map((f) => {
       const url = "/" + relative(staticDir, f);
       const b64 = (p: string) => (existsSync(p) ? imp(readFileSync(p).toString("base64")) : "null");
-      return `  [${imp(url)}, ${b64(f)}, ${b64(f + ".br")}, ${b64(f + ".gz")}],`;
+      // Workers compress responses themselves (a pre-compressed body would be encoded twice).
+      return `  [${imp(url)}, ${b64(f)}],`;
     });
     staticSrc = `import { fnv } from ${imp(join(fw, "static.ts"))};
-const list: [string, string, string | null, string | null][] = [
+const list: [string, string][] = [
 ${entries.join("\n")}
 ];
-const dec = (s: string | null) => (s ? Uint8Array.from(atob(s), (c) => c.charCodeAt(0)) : undefined);
+const dec = (s: string) => Uint8Array.from(atob(s), (c) => c.charCodeAt(0));
 const types = ${JSON.stringify(Object.fromEntries(files.map((f) => ["/" + relative(staticDir, f), [typeOf(f), cacheFor("/" + relative(staticDir, f))]])))};
 export async function staticFiles() {
   const map = new Map();
-  for (const [url, b, br, gz] of list) {
-    const body = dec(b)!;
-    // Workers compress responses themselves; brotli copies are kept for other runtimes.
-    map.set(url, { body, br: dec(br), gz: dec(gz), type: types[url][0], etag: '"' + fnv(body) + '"', cache: types[url][1] });
+  for (const [url, b] of list) {
+    const body = dec(b);
+    map.set(url, { body, type: types[url][0], etag: '"' + fnv(body) + '"', cache: types[url][1] });
   }
   return map;
 }
@@ -216,7 +216,7 @@ export default {
   if (target === "edge") {
     writeFileSync(
       join(root, "dist/edge/wrangler.toml"),
-      `# Deploy with: npx wrangler deploy (from dist/edge)\nname = "${(config.site?.url && new URL(config.site.url).hostname.replace(/\./g, "-")) || "optz-app"}"\nmain = "worker.js"\ncompatibility_date = "2026-09-01"\ncompatibility_flags = ["nodejs_compat"]\n`,
+      `# Deploy with: npx wrangler deploy (from dist/edge)\nname = "${(config.site?.url && new URL(config.site.url).hostname.replace(/\./g, "-")) || "optz-app"}"\nmain = "worker.js"\ncompatibility_date = "2026-09-01"\n`,
     );
   }
   const size = statSync(out).size;
