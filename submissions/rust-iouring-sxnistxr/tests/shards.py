@@ -7,7 +7,7 @@ Runs the server with --shard-slots=1000 (a test-only flag) so 5,000 connections 
 over 5 rings, then with --max-conns to check that connections past the ceiling are refused
 cleanly (closed at once) while existing ones keep working, and that freed slots are reused.
 """
-import argparse, sys
+import argparse, socket, sys
 from harness import Server, connect, raw, read_response
 
 failures = []
@@ -30,6 +30,8 @@ def open_and_request(port, n):
             ok += st == 200
         except (EOFError, ConnectionResetError, BrokenPipeError):
             pass
+        except socket.timeout:
+            raise SystemExit(f"  FAIL request timed out after {ok} answers: server stopped responding")
     return socks, ok
 
 

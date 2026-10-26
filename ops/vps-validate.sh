@@ -23,10 +23,10 @@ echo "== build + official suite"
 (cd $CHAL && bash test/run.sh submissions/rust-iouring-sxnistxr 2>&1 | grep -v "Compiling\|Download" | tail -50)
 cd "$SUB"
 ulimit -n 1048576
-echo "== unit tests"; /opt/rust-1.99.1/bin/cargo test --release 2>&1 | grep "test result"
-echo "== protocol (incl. 66 s idle)"; python3 tests/protocol.py --seed $SEED --long 2>&1 | tail -16
-echo "== shards"; python3 tests/shards.py --seed $SEED 2>&1 | tail -8
-echo "== crash (kill -9 x 5)"; python3 tests/crash.py --seed $SEED --rounds 5 2>&1 | tail -6
+echo "== unit tests"; timeout 900 /opt/rust-1.99.1/bin/cargo test --release 2>&1 | grep -E "test result|error|FAILED|panicked" | head -20
+echo "== protocol (incl. 66 s idle)"; timeout 600 python3 tests/protocol.py --seed $SEED --long 2>&1 | tail -16
+echo "== shards"; timeout 300 python3 tests/shards.py --seed $SEED 2>&1 | tail -8; ls -t /tmp/twelve-*/server.log 2>/dev/null | head -2 | xargs -r tail -n 5
+echo "== crash (kill -9 x 5)"; timeout 600 python3 tests/crash.py --seed $SEED --rounds 5 2>&1 | tail -6
 echo "== socket option inheritance on this kernel"
 python3 - <<'PY'
 import socket
@@ -36,6 +36,6 @@ print("accepted socket inherits TCP_NODELAY:", bool(s.getsockopt(socket.IPPROTO_
 PY
 echo "== memory per idle connection (server limited to 65535 fds, like the scoring unit)"
 swapoff -a 2>/dev/null; echo "swap off for the measurement"
-for n in 40000 80000; do python3 tests/connmem.py --seed $SEED --conns $n --sources 400 2>&1 | tail -16; done
+for n in 40000 80000; do timeout 900 python3 tests/connmem.py --seed $SEED --conns $n --sources 400 2>&1 | tail -16; done
 swapon -a 2>/dev/null
 echo "== done"

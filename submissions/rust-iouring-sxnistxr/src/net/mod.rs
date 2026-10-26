@@ -367,6 +367,8 @@ impl Server {
 
     pub fn run(&mut self) -> io::Result<()> {
         let mut cqes: Vec<(u64, i32, u32)> = Vec::with_capacity(CQE_BATCH);
+        let multi_wait = Timespec::new().nsec(1_000_000);
+        let multi_args = io_uring::types::SubmitArgs::new().timespec(&multi_wait);
         loop {
             let now = SystemTime::now().duration_since(UNIX_EPOCH).map(|d| d.as_secs() as i64).unwrap_or(0);
             self.env.now_unix = now;
@@ -412,11 +414,21 @@ impl Server {
                     r.submit()?;
                 }
             }
+            let multi = self.shards.len() > 1;
             let r = &mut self.shards[0].io.ring;
-            let res = if any { r.submit() } else { r.submit_and_wait(1) };
+            // With several rings we never block indefinitely on ring 0 alone: completions on the
+            // other rings are announced through a poll on their fds, which hung on Ubuntu's 6.8
+            // kernel. A 1 ms bounded wait guarantees every ring is checked regularly.
+            let res = if any {
+                r.submit()
+            } else if multi {
+                r.submitter().submit_with_args(1, &multi_args)
+            } else {
+                r.submit_and_wait(1)
+            };
             match res {
                 Ok(_) => {}
-                Err(e) if e.raw_os_error() == Some(libc::EINTR) || e.raw_os_error() == Some(libc::EBUSY) => {}
+                Err(e) if matches!(e.raw_os_error(), Some(libc::EINTR | libc::EBUSY | libc::ETIME)) => {}
                 Err(e) => return Err(e),
             }
         }
