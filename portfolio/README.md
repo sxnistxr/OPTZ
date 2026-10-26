@@ -1,48 +1,40 @@
-# portfolio
+# dihlabs.lol
 
-The whole site in one folder: pages, typed API routes, components, content, and the Rust engine
-that runs the social feed. Built on the optz framework (`../framework`).
+The site of dihlabs.lol, a dev lab by sxnistxr: the lab's experiments, writing, and the
+documentation for this whole repository. Built on the optz framework (`../framework`). The
+folder also holds the Rust engine (`engine/`), the $12 Server Challenge entry, which runs next to
+the site in production; its old social frontend is now `apps/social`.
 
 ```
 portfolio/
-  optz.config.ts            how it's served: islands + Preact, feature switches, cache, limits,
-                            and the engine proxy (with an nginx micro-cache)
+  optz.config.ts            how it's served: islands + Preact, feature switches, cache, fonts
   app/
-    routes/                 pages: /, /blog, /blog/[slug], /social, /social/post/[id]
-    api/                    typed API routes: /api/blog, /api/status
-    components/             UI; *.island.tsx files hydrate in the browser, everything else is HTML only
-      Pulse.island.tsx      live server timing (hydrates on load)
-      Feed.island.tsx       newest posts (hydrates when scrolled into view)
-      Social.island.tsx     token, compose box and feed (one island: they share state)
-      PostView.island.tsx   one post, by the id in the URL
-    lib/                    social.ts (typed engine client), auth.ts (token store), posts.ts (blog),
-                            format.ts, site.ts
-    middleware.ts           security headers (strict CSP, no 'unsafe-inline')
-    styles.css              Tailwind v4 theme
-  content/                  site.json (name, intro, links) and blog/*.md
-  public/                   favicon
-  engine/                   the Rust + io_uring + SQLite feed API (also the $12 Server Challenge
-                            entry; submissions/rust-iouring-sxnistxr links here)
+    routes/                 /, /lab, /blog, /blog/[slug], /docs, /docs/[slug]
+      docs/_layout.tsx      the docs sidebar (search + every page by section)
+      *.og.tsx              Open Graph cards, rendered to PNG at build time
+    api/                    /api/status (live timing), /api/blog and /api/docs (prerendered)
+    components/             Pulse.island (live server timing), DocsSearch.island, Lab, PostList
+    lib/                    docs.ts (Markdown docs), posts.ts (blog), lab.ts, site.ts, og-card.tsx
+    sitemap.ts robots.ts    built into /sitemap.xml and /robots.txt
+    middleware.ts           security headers (strict CSP, no 'unsafe-inline', fonts from 'self')
+    styles.css              Tailwind v4 theme, blog and docs typography
+  content/
+    site.json               name, intro, links, URL, repository
+    lab.json                the lab's experiments
+    blog/*.md               posts
+    docs/                   the docs menu (index.json) and pages written for the site
+  e2e.cjs                   browser checks for the site
+  engine/                   the Rust + io_uring + SQLite server (submissions/rust-iouring-sxnistxr links here)
 ```
 
 ## Run it
 
 ```sh
 bun install                         # once, from the repo root
-bun run engine:build                # builds engine/ (pinned Rust toolchain: engine/install.sh)
-SQLITE_PATH=… JWT_SECRET=… HOST=127.0.0.1 PORT=3000 bash engine/start.sh &
 bun run dev                         # http://127.0.0.1:3001
 bun run check                       # type-check everything (routes, links, API calls)
 bun run build && bun run start      # production
-bun run nginx                       # the nginx config for production
-```
-
-## How requests flow in production
-
-```
-browser ── nginx :80 ─┬─ /api/social/*  → engine (Rust, :3000)    1 s micro-cache on GETs
-                      ├─ /assets/*      → dist/ on disk           immutable, pre-compressed
-                      └─ everything else → optz on Bun (:3001)    pages from memory, /api/* typed routes
+node e2e.cjs http://127.0.0.1:3001  # browser checks against a running build
 ```
 
 ## Edit
@@ -50,17 +42,20 @@ browser ── nginx :80 ─┬─ /api/social/*  → engine (Rust, :3000)    1 
 | change | where |
 |---|---|
 | name, intro, links | `content/site.json` |
+| an experiment | `content/lab.json` (`status`: `exploring`, `shipped` or `paused`) |
 | a blog post | `content/blog/<slug>.md` with `title`, `date`, `summary` front matter |
+| a docs page | a Markdown file anywhere in the repo, listed in `content/docs/index.json` |
 | a page | `app/routes/` (links to it become type-checked automatically) |
-| an API route | `app/api/` (call it from the browser with `api("/api/…")`, fully typed) |
-| something interactive | a `*.island.tsx` in `app/components/` |
 | what's on or off, caching, limits | `optz.config.ts` |
+
+Docs pages are rendered at build time: headings get anchors, links between docs become
+`/docs/<slug>`, links to other repository files go to GitHub, and `/api/docs` (the search index)
+is prerendered with them.
 
 ## What a visitor downloads
 
 | page | JavaScript (compressed) |
 |---|---:|
-| a blog post | 2.9 KB (navigation only) |
-| home, feed | ~14.5 KB (navigation, Preact, islands) |
-
-Before islands it was ~63–67 KB on every page.
+| a blog post, the lab | 2.9 KB (navigation only) |
+| home | navigation + Preact + the live-timing island |
+| docs | navigation + Preact + the search island (hydrates when the browser is idle) |

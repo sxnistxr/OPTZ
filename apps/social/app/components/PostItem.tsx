@@ -32,7 +32,7 @@ export function PostItem({ post }: { post: Post }) {
     <li className="py-5">
       <div className="flex items-baseline justify-between gap-4 text-sm">
         <span className="font-medium">{post.author}</span>
-        <Link href={`/social/post/${post.id}`} className="text-muted hover:text-ink">
+        <Link href={`/post/${post.id}`} className="text-muted hover:text-ink">
           <time dateTime={post.created_at}>{when}</time>
         </Link>
       </div>

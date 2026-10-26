@@ -1,19 +1,18 @@
 import { useEffect, useState } from "react";
+import { api } from "optz";
 import { duration } from "$lib/format";
-import { social } from "$lib/social";
 
-type S = { state: "checking" } | { state: "live"; ms: number; uptime: number } | { state: "down" };
+type S = { state: "checking" } | { state: "live"; ms: number; uptime: number; mib: number } | { state: "down" };
 
-/** Island: times a real request to the engine from the visitor's browser, every 15 s while visible. */
+/** Island: times a real request to this site's server from the visitor's browser, every 15 s while visible. */
 export default function Pulse() {
   const [s, setS] = useState<S>({ state: "checking" });
   useEffect(() => {
     const check = async () => {
       const t0 = performance.now();
       try {
-        const d = await social.health();
-        const ms = performance.now() - t0;
-        setS(d.status === "ok" ? { state: "live", ms, uptime: d.uptime_s } : { state: "down" });
+        const d = await api("/api/status", { query: { t: Date.now() } });
+        setS({ state: "live", ms: performance.now() - t0, uptime: d.uptimeSeconds, mib: d.rssMiB });
       } catch {
         setS({ state: "down" });
       }
@@ -34,8 +33,13 @@ export default function Pulse() {
         The server behind this page answered in <strong className="font-semibold tabular-nums">{ms}</strong>.
       </p>
       <p className="mt-1 text-muted">
-        It has been up for <span className="tabular-nums text-ink">{s.state === "live" ? duration(s.uptime) : s.state === "down" ? "an unknown time" : "…"}</span>, on one CPU core and
-        2 GB of memory.
+        It has been up for <span className="tabular-nums text-ink">{s.state === "live" ? duration(s.uptime) : s.state === "down" ? "an unknown time" : "…"}</span>
+        {s.state === "live" && (
+          <>
+            , using <span className="tabular-nums text-ink">{s.mib} MB</span> of memory
+          </>
+        )}{" "}
+        on one CPU core.
       </p>
     </section>
   );

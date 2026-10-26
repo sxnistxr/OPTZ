@@ -1,6 +1,6 @@
 # Rust + raw io_uring + SQLite
 
-*Lives in `portfolio/engine/` in this repo, where it serves the portfolio's social feed;
+*Lives in `portfolio/engine/` in this repo (the social demo in `apps/social` is its frontend);
 `submissions/rust-iouring-sxnistxr` links here. Copy this folder as-is for a challenge PR.*
 
 **Direct on `0.0.0.0:80`, no Nginx.** The server handles every keep-alive connection itself.

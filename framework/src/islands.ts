@@ -141,11 +141,11 @@ async function applyHtml(html: string | null, url: URL, opts: { pop?: boolean; r
   }
   document.title = doc.title;
   document.documentElement.lang = doc.documentElement.lang;
-  for (const sel of ['meta[name="description"]', 'link[rel="canonical"]']) {
-    const theirs = doc.querySelector(sel);
-    const mine = document.querySelector(sel);
-    if (theirs && mine) mine.replaceWith(theirs.cloneNode());
-  }
+  // Per-page head tags follow the page: description, canonical, Open Graph, Twitter, hreflang.
+  const perPage = 'meta[name="description"], meta[name="robots"], meta[name="keywords"], link[rel="canonical"], meta[property^="og:"], meta[property^="article:"], meta[name^="twitter:"], link[rel="alternate"]';
+  document.head.querySelectorAll(perPage).forEach((el) => el.remove());
+  const before = document.head.querySelector('link[rel="stylesheet"]');
+  doc.head.querySelectorAll(perPage).forEach((el) => document.head.insertBefore(document.importNode(el, true), before));
   const boot = doc.getElementById("__optz_boot");
   const myBoot = document.getElementById("__optz_boot");
   if (boot && myBoot) myBoot.textContent = boot.textContent;

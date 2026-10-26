@@ -9,6 +9,10 @@ Every Next.js feature optz didn't have is now built in (see [Features](#features
 `apps/features/` uses all of them in one app, checked by a 22-step browser suite (`e2e.cjs`)
 that passes on the Bun server, the single executable and the edge worker in `workerd`.
 
+The numbers below were measured on the site as it was before it became dihlabs.lol (commit
+`9a312d6`, when it still had the social feed); `bench/nextjs-portfolio` is a port of that version.
+`compare.sh` now compares the URLs both versions still share.
+
 Reproduce the numbers with `bash bench/compare.sh` (after `npm ci` in `bench/nextjs-portfolio`).
 Raw numbers: [`bench/results.json`](../bench/results.json).
 

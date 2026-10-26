@@ -1,4 +1,4 @@
-// Everything about how the portfolio is served. Hover any option for its docs.
+// Everything about how dihlabs.lol is served. Hover any option for its docs.
 import { defineConfig } from "optz";
 import site from "./content/site.json";
 
@@ -6,15 +6,6 @@ export default defineConfig({
   port: 3001,
   // Absolute URLs for Open Graph images, canonical links and the sitemap.
   site: { url: process.env.SITE_URL ?? site.url },
-
-  // The Rust engine (engine/) answers the social feed. `optz nginx` turns this into an nginx
-  // location, so in production these requests never touch Bun.
-  // cacheSeconds: nginx serves GETs from a 1 s micro-cache, so a traffic spike reaches the engine
-  // at most once a second per URL (measured: 61k req/s from nginx for /api/social/feed).
-  // Writes (POST) and anything with a token always go straight through.
-  proxy: {
-    "/api/social": { target: "http://127.0.0.1:3000", strip: true, cacheSeconds: 1 },
-  },
 
   client: {
     mode: "islands", // pages are HTML; only *.island.tsx components ship JS

@@ -1,0 +1,112 @@
+[
+  {
+    "section": "Start here",
+    "pages": [
+      {
+        "slug": "introduction",
+        "file": "portfolio/content/docs/introduction.md"
+      },
+      {
+        "slug": "getting-started",
+        "file": "portfolio/content/docs/getting-started.md",
+        "description": "Install Bun, run this site, edit its content, and start a new optz app."
+      },
+      {
+        "slug": "why-optz",
+        "file": "portfolio/content/docs/why-optz.md"
+      }
+    ]
+  },
+  {
+    "section": "Building with optz",
+    "pages": [
+      {
+        "slug": "framework",
+        "title": "Framework reference",
+        "file": "framework/README.md",
+        "description": "Everything optz does, with examples: routes, render modes, islands, Server Actions, streaming, ISR, API routes, i18n, images, fonts and deploy targets."
+      },
+      {
+        "slug": "features-app",
+        "title": "Every feature in one app",
+        "file": "apps/features/README.md"
+      },
+      {
+        "slug": "social-demo",
+        "title": "Social demo",
+        "file": "apps/social/README.md"
+      }
+    ]
+  },
+  {
+    "section": "How it's made",
+    "pages": [
+      {
+        "slug": "architecture",
+        "file": "portfolio/content/docs/architecture.md"
+      },
+      {
+        "slug": "contributing",
+        "file": "portfolio/content/docs/contributing.md"
+      }
+    ]
+  },
+  {
+    "section": "Speed",
+    "pages": [
+      {
+        "slug": "vs-nextjs",
+        "title": "optz vs Next.js",
+        "file": "docs/OPTZ-VS-NEXTJS.md",
+        "description": "The same site on optz and on Next.js 16, measured on one core, and a feature-by-feature comparison."
+      },
+      {
+        "slug": "native",
+        "title": "Would C be faster?",
+        "file": "docs/NATIVE.md"
+      },
+      {
+        "slug": "measurements",
+        "title": "Measurements",
+        "file": "docs/MEASUREMENTS.md"
+      }
+    ]
+  },
+  {
+    "section": "The $12 server",
+    "pages": [
+      {
+        "slug": "engine",
+        "title": "The Rust engine",
+        "file": "portfolio/engine/README.md",
+        "description": "A social network backend in Rust on raw io_uring and SQLite for the $12 Server Challenge: architecture, optimizations and tests."
+      },
+      {
+        "slug": "engine-design",
+        "title": "Engine design notes",
+        "file": "docs/DESIGN.md",
+        "description": "The engine's design document: the feed path, connections and memory, durability, and what changed while building it."
+      }
+    ]
+  },
+  {
+    "section": "Operations",
+    "pages": [
+      {
+        "slug": "deployment",
+        "file": "portfolio/content/docs/deployment.md"
+      },
+      {
+        "slug": "ops",
+        "title": "Production files",
+        "file": "ops/README.md",
+        "description": "Every file in ops/: systemd units, the generated nginx config, deploys with rollback, verified backups."
+      },
+      {
+        "slug": "restore",
+        "title": "Restoring a backup",
+        "file": "ops/RESTORE.md"
+      }
+    ]
+  }
+]

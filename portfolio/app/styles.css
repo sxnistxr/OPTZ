@@ -77,6 +77,65 @@
   .prose-post ul { list-style: disc; padding-left: 1.25rem; }
   .prose-post ol { list-style: decimal; padding-left: 1.25rem; }
 
+  /* Documentation: sans-serif (it's technical), a wider measure for tables and code. */
+  .prose-docs {
+    font-size: 1.0625rem;
+    line-height: 1.7;
+    max-width: 46rem;
+  }
+  .prose-docs > * + * { margin-top: 1.05em; }
+  .prose-docs h2 {
+    font-size: 1.5rem;
+    font-weight: 650;
+    letter-spacing: -0.015em;
+    line-height: 1.25;
+    margin-top: 2.6em;
+    padding-top: 0.6em;
+    border-top: 1px solid var(--color-rule);
+  }
+  .prose-docs h3 { font-size: 1.15rem; font-weight: 650; margin-top: 2em; }
+  .prose-docs h4 { font-weight: 650; margin-top: 1.6em; }
+  .prose-docs h2, .prose-docs h3, .prose-docs h4 { scroll-margin-top: 1.5rem; }
+  .prose-docs .anchor { color: inherit; text-decoration: none; }
+  .prose-docs .anchor:hover::after { content: " #"; color: var(--color-muted); }
+  .prose-docs a:not(.anchor) { text-decoration: underline; text-underline-offset: 3px; text-decoration-color: var(--color-rule); }
+  .prose-docs a:not(.anchor):hover { text-decoration-color: var(--color-ink); }
+  .prose-docs strong { font-weight: 650; }
+  .prose-docs em { font-style: italic; }
+  .prose-docs ul { list-style: disc; padding-left: 1.25rem; }
+  .prose-docs ol { list-style: decimal; padding-left: 1.25rem; }
+  .prose-docs li + li { margin-top: 0.35em; }
+  .prose-docs blockquote { border-left: 2px solid var(--color-signal); padding-left: 1rem; color: var(--color-muted); }
+  .prose-docs code {
+    font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+    font-size: 0.86em;
+    background: var(--color-panel);
+    padding: 0.12em 0.36em;
+    border-radius: 3px;
+  }
+  .prose-docs pre {
+    background: var(--color-panel);
+    border: 1px solid var(--color-rule);
+    padding: 0.9rem 1rem;
+    border-radius: 6px;
+    overflow-x: auto;
+    font-size: 0.88rem;
+    line-height: 1.6;
+  }
+  .prose-docs pre code { background: none; padding: 0; font-size: inherit; }
+  .prose-docs .table-scroll { overflow-x: auto; }
+  .prose-docs table { width: 100%; border-collapse: collapse; font-size: 0.93rem; line-height: 1.5; }
+  .prose-docs th { text-align: left; font-weight: 600; border-bottom: 1px solid var(--color-ink); padding: 0.45rem 0.9rem 0.45rem 0; white-space: nowrap; }
+  .prose-docs td { border-bottom: 1px solid var(--color-rule); padding: 0.5rem 0.9rem 0.5rem 0; vertical-align: top; }
+  .prose-docs [data-align="right"] { text-align: right; }
+  .prose-docs [data-align="center"] { text-align: center; }
+  .prose-docs td code { white-space: nowrap; }
+
+  /* Lab status: amber while exploring, ink once shipped. */
+  .status-dot { width: 0.45rem; height: 0.45rem; border-radius: 9999px; display: inline-block; background: var(--color-rule); }
+  .status-dot[data-status="exploring"] { background: var(--color-signal); }
+  .status-dot[data-status="shipped"] { background: var(--color-ink); }
+
   /* The live signal dot: the only motion on the site, and only while live. */
   .signal-dot {
     width: 0.5rem;

@@ -9,7 +9,7 @@ ROOT=$PWD
 DUR=${DUR:-10}
 CONNS=${CONNS:-64}
 SLUG=$(ls portfolio/content/blog | head -1 | sed 's/\.md$//')
-PATHS=("/" "/blog/$SLUG" "/api/blog" "/social/post/1" "/nope")
+PATHS=("/" "/blog/$SLUG" "/api/blog" "/nope")
 export NEXT_TELEMETRY_DISABLED=1
 
 add() { awk "BEGIN {printf \"%.4f\", $1 + $2}"; }
