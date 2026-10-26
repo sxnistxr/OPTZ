@@ -1,0 +1,24 @@
+{
+  "name": "nextjs-portfolio",
+  "private": true,
+  "description": "The portfolio ported to Next.js, for an apples-to-apples comparison with optz (see docs/OPTZ-VS-NEXTJS.md).",
+  "scripts": {
+    "sync": "rm -rf content public && cp -r ../../portfolio/content ../../portfolio/public .",
+    "prebuild": "npm run sync",
+    "build": "next build",
+    "start": "next start -p 3011 -H 127.0.0.1"
+  },
+  "dependencies": {
+    "next": "16.4.3",
+    "react": "19.3.1",
+    "react-dom": "19.3.1",
+    "marked": "18.1.1"
+  },
+  "devDependencies": {
+    "@tailwindcss/postcss": "4.3.3",
+    "tailwindcss": "4.3.3",
+    "typescript": "5.9.3",
+    "@types/react": "19.3.0",
+    "@types/node": "24.10.1"
+  }
+}

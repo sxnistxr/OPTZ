@@ -8,7 +8,8 @@
 | `submissions/rust-iouring-sxnistxr` | Link to `portfolio/engine` (the $12 Server Challenge entry) |
 | `ops/` | Production: systemd units, generated nginx, deploys with rollback, verified backups |
 | `deploy/` | The VPS auto-sync (pulls this branch every 30 s and deploys) |
-| `docs/` | Design notes and measurements |
+| `bench/` | The portfolio ported to Next.js, and `compare.sh` to benchmark the two |
+| `docs/` | Design notes and measurements ([optz vs Next.js](docs/OPTZ-VS-NEXTJS.md)) |
 
 ```sh
 bun install

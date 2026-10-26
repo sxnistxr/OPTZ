@@ -1,0 +1,105 @@
+{
+  "date": "2026-10-26T05:50:43.700Z",
+  "build_s": {
+    "optz": 0.4772,
+    "next": 9.2617
+  },
+  "optz": {
+    "server": "optz",
+    "cold_start_s": 0.0436,
+    "first_hits_s": 0.0156,
+    "idle_rss_kib": 36140,
+    "paths": {
+      "/": {
+        "status": 200,
+        "bytes": 1553,
+        "rps": 58225.57,
+        "p50": "0.97ms",
+        "p99": "3.31ms",
+        "non2xx": 0
+      },
+      "/blog/a-close-that-never-closed": {
+        "status": 200,
+        "bytes": 1404,
+        "rps": 56199.98,
+        "p50": "1.00ms",
+        "p99": "3.49ms",
+        "non2xx": 0
+      },
+      "/api/blog": {
+        "status": 200,
+        "bytes": 421,
+        "rps": 50962.16,
+        "p50": "1.12ms",
+        "p99": "3.41ms",
+        "non2xx": 0
+      },
+      "/social/post/1": {
+        "status": 200,
+        "bytes": 965,
+        "rps": 56449.55,
+        "p50": "0.98ms",
+        "p99": "3.31ms",
+        "non2xx": 0
+      },
+      "/nope": {
+        "status": 404,
+        "bytes": 881,
+        "rps": 56444.72,
+        "p50": "1.00ms",
+        "p99": "3.03ms",
+        "non2xx": 564856
+      }
+    },
+    "peak_rss_kib": 44820
+  },
+  "next": {
+    "server": "next",
+    "cold_start_s": 0.6096,
+    "first_hits_s": 0.1716,
+    "idle_rss_kib": 144448,
+    "paths": {
+      "/": {
+        "status": 200,
+        "bytes": 3431,
+        "rps": 400.81,
+        "p50": "139.40ms",
+        "p99": "1.23s",
+        "non2xx": 0
+      },
+      "/blog/a-close-that-never-closed": {
+        "status": 200,
+        "bytes": 3457,
+        "rps": 476.85,
+        "p50": "122.62ms",
+        "p99": "1.07s",
+        "non2xx": 0
+      },
+      "/api/blog": {
+        "status": 200,
+        "bytes": 421,
+        "rps": 569.56,
+        "p50": "103.30ms",
+        "p99": "868.61ms",
+        "non2xx": 0
+      },
+      "/social/post/1": {
+        "status": 200,
+        "bytes": 3119,
+        "rps": 159.77,
+        "p50": "372.94ms",
+        "p99": "1.47s",
+        "non2xx": 0
+      },
+      "/nope": {
+        "status": 404,
+        "bytes": 2431,
+        "rps": 628.88,
+        "p50": "94.02ms",
+        "p99": "636.75ms",
+        "non2xx": 6302
+      }
+    },
+    "peak_rss_kib": 330688
+  }
+}

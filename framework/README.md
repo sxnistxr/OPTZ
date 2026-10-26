@@ -159,6 +159,10 @@ Every option is typed and documented on hover in `optz.config.ts`. The ones that
 Static pages ~58–64k req/s, assets ~75k req/s, cached API ~50k req/s. Memory: ~30 MB idle,
 ~45 MB under load with `features.dynamic: false`.
 
+Against Next.js 16 on the same app and core: ~56k vs ~400 req/s, 44 vs 323 MB peak memory,
+2.9 vs 145 KB of JS on a blog post. Full feature-by-feature comparison:
+[docs/OPTZ-VS-NEXTJS.md](../docs/OPTZ-VS-NEXTJS.md).
+
 ## Tests
 
 `bun test` in `framework/`: route scanning and matching, API routes, the cache (fresh, stale,
