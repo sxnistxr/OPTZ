@@ -5,8 +5,8 @@
 
 
 @theme {
-  --font-sans: "Schibsted Grotesk", ui-sans-serif, system-ui, sans-serif;
-  --font-serif: "Newsreader", ui-serif, Georgia, serif;
+  --font-sans: "Schibsted Grotesk", "Schibsted Grotesk Fallback", ui-sans-serif, system-ui, sans-serif;
+  --font-serif: "Newsreader", "Newsreader Fallback", ui-serif, Georgia, serif;
 
   --color-paper: #eef1f4;
   --color-ink: #1b2433;

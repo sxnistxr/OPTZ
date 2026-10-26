@@ -1,105 +1,105 @@
 {
-  "date": "2026-10-26T05:50:43.700Z",
+  "date": "2026-10-26T09:33:51.311Z",
   "build_s": {
-    "optz": 0.4772,
-    "next": 9.2617
+    "optz": 1.7713,
+    "next": 9.5199
   },
   "optz": {
     "server": "optz",
-    "cold_start_s": 0.0436,
-    "first_hits_s": 0.0156,
-    "idle_rss_kib": 36140,
+    "cold_start_s": 0.0743,
+    "first_hits_s": 0.0034,
+    "idle_rss_kib": 35756,
     "paths": {
       "/": {
         "status": 200,
-        "bytes": 1553,
-        "rps": 58225.57,
-        "p50": "0.97ms",
-        "p99": "3.31ms",
+        "bytes": 1495,
+        "rps": 56635.92,
+        "p50": "0.98ms",
+        "p99": "3.74ms",
         "non2xx": 0
       },
       "/blog/a-close-that-never-closed": {
         "status": 200,
-        "bytes": 1404,
-        "rps": 56199.98,
-        "p50": "1.00ms",
-        "p99": "3.49ms",
+        "bytes": 1479,
+        "rps": 54567.42,
+        "p50": "1.03ms",
+        "p99": "3.33ms",
         "non2xx": 0
       },
       "/api/blog": {
         "status": 200,
         "bytes": 421,
-        "rps": 50962.16,
-        "p50": "1.12ms",
-        "p99": "3.41ms",
+        "rps": 55034.54,
+        "p50": "1.00ms",
+        "p99": "16.68ms",
         "non2xx": 0
       },
       "/social/post/1": {
         "status": 200,
-        "bytes": 965,
-        "rps": 56449.55,
-        "p50": "0.98ms",
-        "p99": "3.31ms",
+        "bytes": 892,
+        "rps": 56185.12,
+        "p50": "1.00ms",
+        "p99": "3.40ms",
         "non2xx": 0
       },
       "/nope": {
         "status": 404,
-        "bytes": 881,
-        "rps": 56444.72,
-        "p50": "1.00ms",
-        "p99": "3.03ms",
-        "non2xx": 564856
+        "bytes": 828,
+        "rps": 50333.99,
+        "p50": "1.11ms",
+        "p99": "19.80ms",
+        "non2xx": 507293
       }
     },
-    "peak_rss_kib": 44820
+    "peak_rss_kib": 53636
   },
   "next": {
     "server": "next",
-    "cold_start_s": 0.6096,
-    "first_hits_s": 0.1716,
-    "idle_rss_kib": 144448,
+    "cold_start_s": 0.6923,
+    "first_hits_s": 0.1853,
+    "idle_rss_kib": 143280,
     "paths": {
       "/": {
         "status": 200,
         "bytes": 3431,
-        "rps": 400.81,
-        "p50": "139.40ms",
-        "p99": "1.23s",
+        "rps": 388.89,
+        "p50": "146.03ms",
+        "p99": "1.24s",
         "non2xx": 0
       },
       "/blog/a-close-that-never-closed": {
         "status": 200,
-        "bytes": 3457,
-        "rps": 476.85,
-        "p50": "122.62ms",
-        "p99": "1.07s",
+        "bytes": 3459,
+        "rps": 501.22,
+        "p50": "118.23ms",
+        "p99": "993.82ms",
         "non2xx": 0
       },
       "/api/blog": {
         "status": 200,
         "bytes": 421,
-        "rps": 569.56,
-        "p50": "103.30ms",
-        "p99": "868.61ms",
+        "rps": 577.17,
+        "p50": "97.93ms",
+        "p99": "1.01s",
         "non2xx": 0
       },
       "/social/post/1": {
         "status": 200,
-        "bytes": 3119,
-        "rps": 159.77,
-        "p50": "372.94ms",
-        "p99": "1.47s",
+        "bytes": 3122,
+        "rps": 157.79,
+        "p50": "368.63ms",
+        "p99": "1.46s",
         "non2xx": 0
       },
       "/nope": {
         "status": 404,
-        "bytes": 2431,
-        "rps": 628.88,
-        "p50": "94.02ms",
-        "p99": "636.75ms",
-        "non2xx": 6302
+        "bytes": 2433,
+        "rps": 615.15,
+        "p50": "97.04ms",
+        "p99": "553.41ms",
+        "non2xx": 6161
       }
     },
-    "peak_rss_kib": 330688
+    "peak_rss_kib": 340924
   }
 }

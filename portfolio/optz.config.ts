@@ -1,8 +1,11 @@
 // Everything about how the portfolio is served. Hover any option for its docs.
 import { defineConfig } from "optz";
+import site from "./content/site.json";
 
 export default defineConfig({
   port: 3001,
+  // Absolute URLs for Open Graph images, canonical links and the sitemap.
+  site: { url: process.env.SITE_URL ?? site.url },
 
   // The Rust engine (engine/) answers the social feed. `optz nginx` turns this into an nginx
   // location, so in production these requests never touch Bun.
@@ -34,15 +37,14 @@ export default defineConfig({
 
   server: { idleTimeout: 30, maxRequestBodySize: 64 * 1024 },
 
+  // Downloaded at build time and served from /assets: no request to Google from visitors, and
+  // size-matched fallbacks ("Newsreader Fallback") so text doesn't shift when they load.
+  fonts: [
+    { google: "https://fonts.googleapis.com/css2?family=Schibsted+Grotesk:wght@400;500;600;700&display=swap" },
+    { google: "https://fonts.googleapis.com/css2?family=Newsreader:ital,opsz,wght@0,6..72,400;0,6..72,500;1,6..72,400&display=swap", fallback: "Times New Roman", preload: [] },
+  ],
+
   head: {
-    links: [
-      { rel: "icon", href: "/favicon.svg", type: "image/svg+xml" },
-      { rel: "preconnect", href: "https://fonts.googleapis.com" },
-      { rel: "preconnect", href: "https://fonts.gstatic.com", crossorigin: "" },
-      {
-        rel: "stylesheet",
-        href: "https://fonts.googleapis.com/css2?family=Newsreader:ital,opsz,wght@0,6..72,400;0,6..72,500;1,6..72,400&family=Schibsted+Grotesk:wght@400;500;600;700&display=swap",
-      },
-    ],
+    links: [{ rel: "icon", href: "/favicon.svg", type: "image/svg+xml" }],
   },
 });

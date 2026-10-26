@@ -8,7 +8,7 @@
 // them is a map lookup. React's server renderer isn't even loaded until a dynamic page needs it.
 import { BOUND_FIELD, tagModule } from "./actions-runtime";
 import { cacheControl, ResponseCache } from "./cache";
-import { setRevalidator, withStore, type RequestStore } from "./context";
+import { inStore, newStore, setRevalidator, type RequestStore } from "./context";
 import { apiStaticPath, htmlPath, ogPath, type Manifest, type ManifestRoute, type ManifestSlot } from "./manifest";
 import { inScope, matchRoute, matchSegments } from "./match";
 import { fnv, send, type StaticEntry } from "./static";
@@ -51,6 +51,8 @@ const jsonRes = (v: unknown, status = 200, extra?: Record<string, string>) =>
 /** Streamed responses carry their CSP nonce in this header until middleware is done; then it
  *  is added to the Content-Security-Policy and removed. */
 const NONCE = "x-optz-nonce";
+/** Requests whose response streamed (so only they pay for the nonce header lookup). */
+const streamed = new WeakSet<object>();
 
 function withNonce(res: Response, nonce: string): Response {
   const csp = res.headers.get("content-security-policy");
@@ -119,8 +121,15 @@ export async function createApp({ manifest, config, files, platform, middleware 
   const key = await crypto.subtle.importKey("raw", new TextEncoder().encode(secret), { name: "HMAC", hash: "SHA-256" }, false, ["sign"]);
   const sig = new Uint8Array(await crypto.subtle.sign("HMAC", key, new TextEncoder().encode("optz-draft")));
   const draftValue = btoa(String.fromCharCode(...sig)).replace(/[+/=]/g, "");
-  setDraftToken(() => draftValue);
+  // With a random secret, only cookies set by this process can be valid: skip the check (a
+  // header lookup on every static request) until draft mode is first turned on.
+  let draftPossible = !!(config.draft?.secret ?? (typeof process !== "undefined" ? process.env.OPTZ_DRAFT_SECRET : undefined));
+  setDraftToken(() => {
+    draftPossible = true;
+    return draftValue;
+  });
   const isDraft = (req: Request) => {
+    if (!draftPossible) return false;
     const c = req.headers.get("cookie");
     return !!c && c.includes(`${DRAFT_COOKIE}=${draftValue}`);
   };
@@ -139,6 +148,7 @@ export async function createApp({ manifest, config, files, platform, middleware 
     path(path, type) {
       const now = Date.now();
       const p = path.length > 1 ? path.replace(/\/+$/, "") : path;
+      anyStamps = true;
       if (type === "layout") prefixStamps.push([p === "/" ? "/" : p + "/", now], [p, now]);
       else pathStamps.set(p, now);
       cache?.invalidate((k) => {
@@ -147,12 +157,16 @@ export async function createApp({ manifest, config, files, platform, middleware 
       });
     },
     tag(tag) {
+      anyStamps = true;
       tagStamps.set(tag, Date.now());
       cache?.invalidate((_k, rc) => !!rc.tags?.includes(tag));
     },
   });
 
+  let anyStamps = false;
   function isStale(path: string, r: ManifestRoute): boolean {
+    // The common case, checked first: nothing can make this page stale.
+    if (r.revalidate === undefined && !anyStamps) return false;
     const at = renderedAt.get(path) ?? manifest.builtAt;
     if (r.revalidate !== undefined && Date.now() - at > r.revalidate * 1000) return true;
     if ((pathStamps.get(path) ?? 0) > at) return true;
@@ -269,6 +283,7 @@ export async function createApp({ manifest, config, files, platform, middleware 
     if (out.kind === "redirect") return out.response;
     if (out.kind === "notFound") return notFound(ctx);
     if (out.kind === "stream") {
+      streamed.add(ctx);
       return new Response(out.stream, {
         status: out.status,
         headers: { "Content-Type": "text/html; charset=utf-8", "Cache-Control": "no-cache", "X-Accel-Buffering": "no", [NONCE]: out.nonce, ...extra },
@@ -412,9 +427,9 @@ export async function createApp({ manifest, config, files, platform, middleware 
     const { request: req, url } = ctx;
     const p = url.pathname;
     if (p.length > 1 && p.endsWith("/")) return new Response(null, { status: 308, headers: { Location: p.replace(/\/+$/, "") + url.search } });
-    if (p.startsWith("/_optz/action/")) return action(ctx, s);
-    if (p.startsWith("/_optz/data/") && p.endsWith(".json")) return data(ctx);
-    if (p.startsWith("/_optz/og/") && p.endsWith(".png")) return og(ctx);
+    if (p.startsWith("/_optz/action/")) return inStore(s, () => action(ctx, s));
+    if (p.startsWith("/_optz/data/") && p.endsWith(".json")) return inStore(s, () => data(ctx));
+    if (p.startsWith("/_optz/og/") && p.endsWith(".png")) return inStore(s, () => og(ctx));
     if (p === "/_optz/404" && prerender) return notFound(ctx, url.searchParams.get("locale") ?? undefined);
     if (p === "/_optz/image") return F.images && platform.images ? platform.images(req, url, files) : notFound(ctx);
     if (p.startsWith("/_optz/")) return notFound(ctx);
@@ -435,8 +450,8 @@ export async function createApp({ manifest, config, files, platform, middleware 
     if (redir) return new Response(null, { status: redir.status, headers: { Location: redir.location } });
 
     // Intercepting routes: in-app navigation from inside their folder.
-    const from = req.headers.get("x-optz-swap") ? req.headers.get("x-optz-from") : null;
-    if (from && (manifest.intercepts?.length || manifest.slots?.some((x) => x.intercepts.length))) {
+    const from = hasIntercepts && req.headers.get("x-optz-swap") ? req.headers.get("x-optz-from") : null;
+    if (from) {
       const fromInner = splitLocale(from).inner;
       const headers = { "Cache-Control": "no-store", Vary: "X-Optz-From" };
       for (const slot of manifest.slots ?? []) {
@@ -445,16 +460,21 @@ export async function createApp({ manifest, config, files, platform, middleware 
           if (!params || !ir.scope || !inScope(ir.scope, fromInner)) continue;
           const under = matchRoute(manifest.routes, fromInner);
           if (!under || under.route.kind !== "page" || !under.route.layouts.includes(slot.layout)) continue;
-          const { renderPage } = await render();
-          const input = await renderInput(under.route, ctx, p, fromInner, under.params, locale, false, { slot, route: ir, params });
-          return finish(await renderPage(input, assets(under.route), config), ctx, headers);
+          const route = under.route, uparams = under.params;
+          return inStore(s, async () => {
+            const { renderPage } = await render();
+            const input = await renderInput(route, ctx, p, fromInner, uparams, locale, false, { slot, route: ir, params });
+            return finish(await renderPage(input, assets(route), config), ctx, headers);
+          });
         }
       }
       for (const ir of manifest.intercepts ?? []) {
         const params = matchSegments(ir.segments, inner);
         if (!params || !ir.scope || !inScope(ir.scope, fromInner)) continue;
-        const { renderPage } = await render();
-        return finish(await renderPage(await renderInput(ir, ctx, p, inner, params, locale), assets(ir), config), ctx, headers);
+        return inStore(s, async () => {
+          const { renderPage } = await render();
+          return finish(await renderPage(await renderInput(ir, ctx, p, inner, params, locale), assets(ir), config), ctx, headers);
+        });
       }
     }
 
@@ -486,7 +506,7 @@ export async function createApp({ manifest, config, files, platform, middleware 
         if (rc && !res.headers.has("cache-control") && res.status === 200) res.headers.set("Cache-Control", cacheControl(rc));
         return res;
       };
-      return req.method === "GET" || req.method === "HEAD" ? withCache(ctx, mod.cache, run) : run();
+      return inStore(s, () => (req.method === "GET" || req.method === "HEAD" ? withCache(ctx, mod.cache, run) : run()));
     }
     if (req.method !== "GET" && req.method !== "HEAD") return new Response(null, { status: 405, headers: { Allow: "GET, HEAD" } });
 
@@ -501,10 +521,10 @@ export async function createApp({ manifest, config, files, platform, middleware 
       if (!r.dynamicParams) return notFound(ctx, locale);
       // Params paths() didn't list: render once, keep it like a built page (bounded by the cache).
       const input = await renderInput(r, ctx, p, inner, m.params, locale);
-      return withCache(ctx, { maxAge: r.revalidate ?? 31536000, staleWhileRevalidate: r.revalidate ? 31536000 : undefined, tags: r.tags }, async () => {
+      return inStore(s, () => withCache(ctx, { maxAge: r.revalidate ?? 31536000, staleWhileRevalidate: r.revalidate ? 31536000 : undefined, tags: r.tags }, async () => {
         const { renderPage } = await render();
         return finish(await renderPage(input, assets(r), config), ctx);
-      });
+      }));
     }
     if (live && !draft && r.render === "client" && r.shell) {
       const f = files.get(r.shell);
@@ -520,8 +540,10 @@ export async function createApp({ manifest, config, files, platform, middleware 
       const { renderPage } = await render();
       return finish(await renderPage(input, assets(r), config, { stream }), ctx, draft ? { "Cache-Control": "private, no-store" } : undefined);
     };
-    return rc ? withCache(ctx, rc, produce) : produce();
+    return inStore(s, () => (rc ? withCache(ctx, rc, produce) : produce()));
   }
+
+  const hasIntercepts = !!(manifest.intercepts?.length || manifest.slots?.some((x) => x.intercepts.length));
 
   const run = (ctx: MiddlewareContext, s: RequestStore, i: number): Promise<Response> =>
     i < middleware.length ? Promise.resolve(middleware[i](ctx, () => run(ctx, s, i + 1))) : route(ctx, s);
@@ -550,8 +572,8 @@ export async function createApp({ manifest, config, files, platform, middleware 
     const ctx: MiddlewareContext = { request: req, url, locals: {} as Locals };
     const t0 = F.requestLog ? performance.now() : 0;
     try {
-      const res = await withStore({ request: req, url, locals: ctx.locals, draft: false }, (s) => run(ctx, s, 0));
-      const nonce = res.headers.get(NONCE);
+      const res = await run(ctx, newStore({ request: req, url, locals: ctx.locals, draft: false }), 0);
+      const nonce = streamed.has(ctx) ? res.headers.get(NONCE) : null;
       if (nonce) {
         res.headers.delete(NONCE);
         withNonce(res, nonce);

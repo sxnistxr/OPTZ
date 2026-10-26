@@ -5,48 +5,51 @@ The same site built twice: `portfolio/` on optz and `bench/nextjs-portfolio/` on
 API and the proxy to the Rust engine are equivalent; the components are the same files with
 `"use client"` and `next/link` in place of islands and `optz`'s `Link`.
 
-Reproduce everything below with `bash bench/compare.sh` (after `npm ci` in
-`bench/nextjs-portfolio`). Raw numbers: [`bench/results.json`](../bench/results.json).
+Every Next.js feature optz didn't have is now built in (see [Features](#features)), and
+`apps/features/` uses all of them in one app, checked by a 22-step browser suite (`e2e.cjs`)
+that passes on the Bun server, the single executable and the edge worker in `workerd`.
+
+Reproduce the numbers with `bash bench/compare.sh` (after `npm ci` in `bench/nextjs-portfolio`).
+Raw numbers: [`bench/results.json`](../bench/results.json).
 
 ## Speed
 
-A 4-vCPU Linux container. Each server is **pinned to one core** with `taskset -c 0`, the same
-budget as the $12 VPS. wrk runs on the other three cores: 3 threads, 64 connections, 10 s per
-URL, `Accept-Encoding: br, gzip` like a browser. Both are in production mode (`optz start`,
-`next start`), with no nginx in front of either.
+A 4-vCPU Linux VM. Each server is **pinned to one core** with `taskset -c 0`, the same budget as
+the $12 VPS. wrk runs on the other three cores: 3 threads, 64 connections, 10 s per URL,
+`Accept-Encoding: br, gzip` like a browser. Both are in production mode (`optz start`,
+`next start`), with no nginx in front of either. Measured 2026-10-26, after adding all the
+features below.
 
 | URL | what it is | optz req/s | Next req/s | optz p99 | Next p99 |
 |---|---|---:|---:|---:|---:|
-| `/` | static page, 2 islands / 2 client components | **58,226** | 401 | 3.3 ms | 1.23 s |
-| `/blog/<slug>` | static page from Markdown | **56,200** | 477 | 3.5 ms | 1.07 s |
-| `/api/blog` | JSON, cached 300 s | **50,962** | 570 | 3.4 ms | 869 ms |
-| `/social/post/1` | page whose data loads in the browser | **56,450** | 160 | 3.3 ms | 1.47 s |
-| `/nope` | 404 page | **56,445** | 629 | 3.0 ms | 637 ms |
+| `/` | static page, 2 islands / 2 client components | **56,636** | 389 | 3.7 ms | 1.24 s |
+| `/blog/<slug>` | static page from Markdown | **54,567** | 501 | 3.3 ms | 994 ms |
+| `/api/blog` | JSON, prerendered at build time | **55,035** | 577 | 17 ms | 1.01 s |
+| `/social/post/1` | page whose data loads in the browser | **56,185** | 158 | 3.4 ms | 1.46 s |
+| `/nope` | 404 page | **50,334** | 615 | 20 ms | 553 ms |
 
-On one core, optz serves 100–350× more requests per second, with tail latency in milliseconds
-rather than seconds. Two checks to make sure Next wasn't handicapped by the setup:
+On one core, optz serves about 100× more requests per second (350× on `/social/post/[id]`), with
+tail latency in milliseconds rather than seconds. Two checks that Next wasn't handicapped by the
+setup:
 
-- Every Next page above is a cache `HIT` and `x-nextjs-prerender: 1`, so they're prerendered
-  pages, not renders.
-- Next's best case is with `proxy.ts` removed and no compression: **1,033 req/s** for `/`, and
-  718 req/s at 8 connections instead of 64. Most of its cost is the request pipeline itself, not
-  gzip or the proxy.
+- Every Next page above is a cache `HIT` with `x-nextjs-prerender: 1`: prerendered pages, not renders.
+- Next's best case, with `proxy.ts` removed and no compression, is **1,033 req/s** for `/`. Most of
+  its cost is the request pipeline itself, not gzip or the proxy.
 
 `/social/post/[id]` is where the designs differ most. optz serves one prebuilt shell for every
-id (`render: "client"`), so it costs the same as a static page. Next has no equivalent, so the
-route renders on every request (`ƒ` in its build output). `generateStaticParams = () => []`
-would make Next cache each id after its first request instead, at about its static-page rate.
+id (`render: "client"`), so it costs the same as a static page. Next renders the route on every
+request (`ƒ` in its build output); `generateStaticParams = () => []` would make it cache each id
+after its first request instead, at about its static-page rate.
 
 | | optz | Next | |
 |---|---:|---:|---|
-| Build | **0.5 s** | 9.3 s | clean build, same machine |
-| Cold start to first 200 | **44 ms** | 610 ms | process start until `/` answers |
-| First hit of the 5 URLs (sum) | **16 ms** | 172 ms | Next loads route code lazily |
-| Memory, idle | **35 MB** | 141 MB | RSS, process tree |
-| Memory, peak under load | **44 MB** | 323 MB | RSS during the runs above |
-| Response bytes, `/` | **1,553** | 3,431 | brotli/gzip as sent |
-| Build output | **300 KB** | 41 MB | `dist/` vs `.next/` |
-| Framework on disk | **148 KB** source | 307 MB | `framework/src` vs `next` + `@next` |
+| Build | **1.8 s** | 9.5 s | clean build; optz's includes downloading fonts and rendering 2 OG images |
+| Cold start to first 200 | **74 ms** | 692 ms | process start until `/` answers |
+| First hit of the 5 URLs (sum) | **3 ms** | 185 ms | Next loads route code lazily |
+| Memory, idle | **35 MB** | 140 MB | RSS, process tree |
+| Memory, peak under load | **52 MB** | 333 MB | RSS during the runs above |
+| Response bytes, `/` | **1,495** | 3,431 | brotli/gzip as sent |
+| Framework on disk | **~220 KB** source | 307 MB | `framework/src` vs `next` + `@next` |
 
 ### JavaScript sent to the browser
 
@@ -62,111 +65,106 @@ Cold load in Chromium, all scripts, compressed as transferred:
 
 Next ships React, its router and the RSC runtime on every page, including pages with no client
 components. optz pages are HTML; only islands hydrate, with Preact (`client.runtime: "preact"`).
-The 2.9 KB on blog pages is the HTML-swap navigation with hover prefetch. With
-`client.runtime: "react"`, the pages with islands cost about 64 KB in optz (see
-[MEASUREMENTS.md](MEASUREMENTS.md)).
+The 2.9 KB on blog pages is the HTML-swap navigation with hover prefetch.
 
 ### What this means on the $12 VPS
 
-At ~400 req/s per core, Next would need a CDN or nginx cache in front of it to handle a spike.
-optz handles ~56k req/s on the same core, and 44 MB peak memory leaves the rest of the 2 GB for
-the Rust engine and its connections. Neither number is what end users see through the internet;
-both are what the server can sustain before it becomes the bottleneck.
+At ~400 req/s per core, Next needs a CDN or nginx cache in front of it to survive a spike. optz
+handles ~55k req/s on the same core, and 52 MB peak memory leaves the rest of the 2 GB for the
+Rust engine and its connections. Whether native code would be faster still is measured in
+[NATIVE.md](NATIVE.md) (short answer: no, not for this site).
 
 ## Features
 
-✅ built in · ◐ partly, or with extra work · ❌ not available
+✅ built in · ◐ partly · ❌ not available
 
 ### Routing and rendering
 
 | feature | optz | Next.js | notes |
 |---|:---:|:---:|---|
-| File-based routes | ✅ `app/routes/blog/[slug].tsx` | ✅ `app/blog/[slug]/page.tsx` | |
-| Dynamic, catch-all and group segments | ✅ `[id]`, `[...rest]`, `(group)` | ✅ also `[[...optional]]` | |
-| Nested layouts | ✅ `_layout.tsx` | ✅ `layout.tsx` | |
-| Error boundary and 404 page | ✅ `_error.tsx`, `_404.tsx` | ✅ `error.tsx`, `not-found.tsx` | |
-| `loading.tsx`, parallel and intercepting routes | ❌ | ✅ | |
-| Static generation | ✅ default, `paths()` for params | ✅ default, `generateStaticParams` | |
+| File-based routes, nested layouts | ✅ `app/routes`, `_layout.tsx` | ✅ `app/**/page.tsx`, `layout.tsx` | |
+| Dynamic, catch-all, optional catch-all, groups | ✅ `[id]`, `[...rest]`, `[[...rest]]`, `(group)` | ✅ same | |
+| Error boundary, 404 page | ✅ `_error.tsx` (also during SSR: status 500), `_404.tsx` | ✅ `error.tsx`, `not-found.tsx` | |
+| Loading UI | ✅ `_loading.tsx` | ✅ `loading.tsx` | Suspense fallback while the page streams |
+| Parallel routes | ✅ `@slot` folders, `default.tsx` | ✅ same | optz: islands mode |
+| Intercepting routes | ✅ `(.)x`, `(..)x`, `(...)x` | ✅ same | e.g. a photo opens as a modal from the feed |
+| Static generation | ✅ default, `paths()` | ✅ default, `generateStaticParams` | |
 | Server rendering per request | ✅ `render: "dynamic"` | ✅ | |
-| One static shell for any param (client-rendered) | ✅ `render: "client"` | ❌ renders per request or per id | |
-| Server-only data loading | ✅ `loader`, stripped from browser bundles | ✅ async server components | |
-| React Server Components, streaming, Suspense on the server | ❌ | ✅ | the main thing Next has that optz doesn't |
-| Server Actions | ❌ use typed API routes | ✅ | |
-| Incremental regeneration | ◐ response cache with stale-while-revalidate | ✅ ISR, `revalidatePath`/`revalidateTag` | optz has no on-demand invalidation API |
-| Redirects and not-found from loaders | ✅ `redirect()`, `notFound()` | ✅ same names | |
-| Head and metadata | ✅ `head()` per page and layout | ✅ `metadata`, `generateMetadata`, OG images | |
-| Static export | ✅ `optz export`, with rewrites printed for client routes | ✅ `output: "export"` | |
+| Streaming SSR, Suspense, async server components | ✅ | ✅ | optz streams dynamic pages; static pages wait for every boundary at build |
+| One static shell for any param | ✅ `render: "client"` | ❌ | Next renders per request or per id |
+| Incremental static regeneration | ✅ `export const revalidate` | ✅ | stale copy served while one render rebuilds |
+| On-demand revalidation | ✅ `revalidatePath`, `revalidateTag` | ✅ same | |
+| Unlisted params rendered on demand | ✅ `dynamicParams = true` | ✅ same | |
+| Draft mode | ✅ `draftMode()`, signed cookie | ✅ | |
+| `redirect()`, `notFound()` | ✅ | ✅ | |
+| Static export | ✅ `optz export` | ✅ `output: "export"` | |
+| RSC wire format, client router cache, Partial Prerendering, `"use cache"` | ❌ | ✅ | optz navigates by fetching HTML and keeps unchanged islands mounted instead |
 
-### Browser JavaScript
+### Data and mutations
 
 | feature | optz | Next.js | notes |
 |---|:---:|:---:|---|
-| Pages without JS | ✅ default (islands mode) | ❌ framework runtime always ships | 2.9 KB vs 145 KB above |
-| Partial hydration (islands) | ✅ `*.island.tsx` | ◐ client components hydrate; the runtime still loads | |
-| Hydrate on load, idle or visible | ✅ `export const hydrate = "visible"` | ❌ use `next/dynamic` + your own observer | |
+| Server-only data loading | ✅ `loader` or async components | ✅ async server components | |
+| Server Actions | ✅ `"use server"` modules | ✅ | |
+| Forms that work without JavaScript | ✅ `<form action={fn}>`, `fn.bind(null, id)` | ✅ | |
+| Refresh after a mutation | ✅ action calls `revalidatePath` → the page updates in place | ✅ | islands keep their state |
+| `cookies()`, `headers()`, `after()` | ✅ `optz/server` | ✅ `next/headers`, `next/server` | |
+| Typed API client from route files | ✅ `api("/api/posts/[id]")` | ❌ | wrong route, method, param or body is a compile error |
+| API routes | ✅ `app/api/*.ts` | ✅ `route.ts` | |
+| Prerendered API routes | ✅ `export const prerender = true` | ✅ static route handlers | |
+| In-memory response cache (LRU, SWR, merged misses) | ✅ `cache = { maxAge, staleWhileRevalidate, tags }` | ◐ data cache + ISR | |
+
+### Browser JavaScript and assets
+
+| feature | optz | Next.js | notes |
+|---|:---:|:---:|---|
+| Pages without JS | ✅ default (islands mode) | ❌ | 2.9 KB vs 145 KB above |
+| Partial hydration, on load / idle / visible | ✅ `*.island.tsx`, `export const hydrate` | ◐ client components; the runtime always loads | |
 | Preact runtime option | ✅ `client.runtime: "preact"` | ❌ | |
-| Client-side navigation | ✅ HTML swap (islands) or React router (SPA) | ✅ RSC router | |
-| Prefetch | ✅ on hover/focus/touch | ✅ in viewport and on hover | |
-| `useParams`, `useRouter`, `Link` | ✅ | ✅ | |
-| Whole-app SPA mode | ✅ `client.mode: "spa"` | ◐ via client components everywhere | |
-| Image optimization | ❌ | ✅ `next/image` | |
-| Font optimization | ❌ | ✅ `next/font` | |
-| Script loading strategies | ❌ | ✅ `next/script` | |
-
-### Type safety
-
-| feature | optz | Next.js | notes |
-|---|:---:|:---:|---|
-| Typed `Link` hrefs | ✅ generated registry | ✅ `typedRoutes` | |
-| Typed page params | ✅ `PageProps<Data, "/blog/[slug]">` | ✅ `PageProps<"/blog/[slug]">` | |
-| Typed API client from route files | ✅ `api("/api/posts/[id]")` returns the handler's type | ❌ | Next types neither route-handler responses nor fetch calls to them |
-| Typed request bodies | ✅ `handler()` + `HandlerContext<P, Body>` | ❌ | |
-| Wrong route, method, param or body is a compile error | ✅ checked by `optz check` | ◐ only route strings in `Link`/`router` | |
-| Typed config with docs on hover | ✅ | ✅ | |
-
-### Server, APIs and middleware
-
-| feature | optz | Next.js | notes |
-|---|:---:|:---:|---|
-| API routes | ✅ `app/api/*.ts`, `GET`/`POST`/… exports | ✅ `route.ts` | |
-| Middleware | ✅ chain, `ctx.locals` typed and passed to loaders/APIs | ✅ `proxy.ts`, one function | |
-| Strict CSP with no `'unsafe-inline'` on static pages | ✅ boot data is a JSON script | ❌ needs nonces, which make every page dynamic | |
-| Proxy a path prefix to another server | ✅ `proxy` in config | ✅ `rewrites` | |
-| In-memory response cache: LRU, SWR, merged misses | ✅ `cache = { maxAge, staleWhileRevalidate }` | ◐ data cache + ISR, file-system based | |
-| ETag / 304 | ✅ static and dynamic | ✅ | |
+| Client navigation with prefetch | ✅ | ✅ | |
+| Image optimization | ✅ `<Image>` + `/_optz/image` (AVIF/WebP, resize, cache) | ✅ `next/image` | needs `sharp`; edge workers serve originals |
+| Font optimization | ✅ `fonts` in config: self-hosted Google Fonts, preload, size-matched fallbacks | ✅ `next/font` | Next also has `next/font/local` |
+| Script loading strategies | ✅ `<Script strategy>` | ✅ `next/script` | no inline scripts (strict CSP), no web-worker strategy |
+| Strict CSP with no `'unsafe-inline'` | ✅ static pages need nothing; streamed pages get a nonce automatically | ◐ needs nonces, which make every page dynamic | |
 | Pre-compressed brotli + gzip | ✅ at build time | ❌ gzip per request | |
-| Hashed, immutable assets | ✅ | ✅ | |
-| nginx config generator, micro-cache for proxied APIs | ✅ `optz nginx` | ❌ | |
-| Request body and idle limits in config | ✅ | ◐ | |
-| Edge runtime | ❌ | ✅ | |
-| i18n routing | ❌ | ◐ via proxy | |
-| Draft mode | ❌ | ✅ | |
 
-### Cost controls
+### Metadata and SEO
 
 | feature | optz | Next.js |
 |---|:---:|:---:|
-| Turn features off in config (dynamic rendering, middleware, API, cache, compression, ETags) | ✅ `features.*` | ❌ |
-| Server renderer not loaded when no page needs it | ✅ `features.dynamic: false`, ~13 MB less | ❌ |
-| Cache bounds (entries, bytes) | ✅ `cache.maxEntries`, `maxBytes` | ◐ `cacheMaxMemorySize` |
+| Title, description, canonical, robots, Open Graph, Twitter cards | ✅ `head()` | ✅ `metadata` |
+| Open Graph images from components | ✅ `page.og.tsx` (PNG at build time) | ✅ `opengraph-image.tsx` |
+| `sitemap.xml`, `robots.txt`, web manifest from code | ✅ `app/sitemap.ts`, `robots.ts`, `manifest.ts` | ✅ same |
+| hreflang alternates | ✅ automatic with i18n | ✅ `alternates` |
+
+### Deployment and runtime
+
+| feature | optz | Next.js | notes |
+|---|:---:|:---:|---|
+| i18n routing | ✅ `i18n` in config: prefixes, Accept-Language detection, localized links | ◐ App Router: by hand in `proxy.ts` | |
+| Middleware | ✅ chain, typed `ctx.locals` | ✅ `proxy.ts` | |
+| Edge runtime | ✅ `optz build --target edge`: the whole app as one worker | ✅ per route | tested in Cloudflare's `workerd` |
+| Single-file deploy | ✅ `optz build --compile`: one executable | ◐ `output: "standalone"` (a folder + Node) | |
+| nginx config generator, micro-cache for proxied APIs | ✅ `optz nginx` | ❌ | |
+| Turn features off for less memory per request | ✅ `features.*` | ❌ | |
 
 ### Tooling
 
 | feature | optz | Next.js | notes |
 |---|:---:|:---:|---|
-| Dev server with reload | ✅ restarts and reloads on save | ✅ Turbopack HMR with state kept | Next's is better for large apps |
+| Dev server with state-preserving updates | ✅ Fast Refresh for islands, CSS swap, page HTML updated in place | ✅ Fast Refresh | optz restarts the server process on each change (~0.3 s) |
 | Tailwind CSS | ✅ built in | ✅ via PostCSS | |
-| `$lib`-style imports | ✅ `$lib/*`, `$components/*` | ✅ tsconfig `paths` | |
-| Type-check command | ✅ `optz check` (route types + tsc) | ✅ during `next build` | |
+| Type-check command, typed routes | ✅ `optz check` | ✅ `typedRoutes` + `next build` | |
 | Project starter | ✅ `optz create` | ✅ `create-next-app` | |
-| Runtime | Bun | Node.js (Bun works) | |
+| Runtime | Bun | Node.js | |
 | Ecosystem, docs, hosting integrations | small, this repo | large | |
 
 ## When to pick which
 
 **optz**: content sites, blogs, dashboards and apps where most pages are static or load their
-data in the browser, on small servers, or wherever memory and requests per core matter.
+data in the browser; small servers; anywhere requests per core, memory and JavaScript per page
+matter. It now covers the Next.js feature set an app like this needs.
 
-**Next.js**: apps built around server components, streaming and Server Actions, apps that need
-image/font optimization, on-demand revalidation or the edge, and teams that want the ecosystem
-and managed hosting.
+**Next.js**: apps that lean on the RSC wire format (client router cache, Partial Prerendering,
+`"use cache"`), very large codebases that benefit from Turbopack, and teams that want the
+ecosystem, documentation and managed hosting around it.

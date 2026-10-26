@@ -37,9 +37,14 @@ export const setRevalidator = (r: Revalidator | null) => {
 };
 export const getRevalidator = () => revalidator;
 
+export const newStore = (init: Omit<RequestStore, "setCookies" | "after" | "revalidated">): RequestStore => ({ ...init, setCookies: [], after: [], revalidated: false });
+
 /** Runs `fn` with a fresh request store and applies its cookies and `after()` work. */
-export async function withStore(init: Omit<RequestStore, "setCookies" | "after" | "revalidated">, fn: (s: RequestStore) => Promise<Response>): Promise<Response> {
-  const s: RequestStore = { ...init, setCookies: [], after: [], revalidated: false };
+export const withStore = (init: Omit<RequestStore, "setCookies" | "after" | "revalidated">, fn: (s: RequestStore) => Promise<Response>) => inStore(newStore(init), fn);
+
+/** Runs `fn` inside the request's store (entered only where server code can use it: static
+ *  files skip it, which keeps them cheap) and applies its cookies and `after()` work. */
+export async function inStore(s: RequestStore, fn: (s: RequestStore) => Promise<Response>): Promise<Response> {
   const res = await als.run(s, () => fn(s));
   let out = res;
   if (s.setCookies.length) {

@@ -51,17 +51,31 @@ export function fnv(data: Uint8Array | string): string {
   return (h1 >>> 0).toString(36) + (h2 >>> 0).toString(36);
 }
 
+const heads = new WeakMap<StaticEntry, Record<string, Record<string, string>>>();
+
+/** Headers per encoding, built once per entry (Response copies them, so sharing is safe). */
+function headsOf(e: StaticEntry) {
+  let h = heads.get(e);
+  if (!h) {
+    const base = { "Content-Type": e.type, "Cache-Control": e.cache, ETag: e.etag, Vary: "Accept-Encoding" };
+    h = { raw: base, br: { ...base, "Content-Encoding": "br" }, gzip: { ...base, "Content-Encoding": "gzip" } };
+    heads.set(e, h);
+  }
+  return h;
+}
+
 export function send(e: StaticEntry, req: Request, status = 200, extra?: Record<string, string>): Response {
-  const h: Record<string, string> = { "Content-Type": e.type, "Cache-Control": e.cache, ETag: e.etag, Vary: "Accept-Encoding", ...extra };
-  if (status === 200 && req.headers.get("if-none-match") === e.etag) return new Response(null, { status: 304, headers: h });
+  const h = headsOf(e);
+  if (status === 200 && req.headers.get("if-none-match") === e.etag) return new Response(null, { status: 304, headers: extra ? { ...h.raw, ...extra } : h.raw });
   const ae = req.headers.get("accept-encoding") ?? "";
   let body = e.body;
+  let head = h.raw;
   if (e.br && ae.includes("br")) {
     body = e.br;
-    h["Content-Encoding"] = "br";
+    head = h.br;
   } else if (e.gz && ae.includes("gzip")) {
     body = e.gz;
-    h["Content-Encoding"] = "gzip";
+    head = h.gzip;
   }
-  return new Response(body as BodyInit, { status, headers: h });
+  return new Response(body as BodyInit, { status, headers: extra ? { ...head, ...extra } : head });
 }
