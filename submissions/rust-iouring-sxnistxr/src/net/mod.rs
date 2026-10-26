@@ -794,8 +794,26 @@ fn finish_close(sh: &mut Io, env: &mut Env, s: usize, slot: u32) {
         env.give_out(o);
     }
     c.state = State::Closed;
-    let e = opcode::Close::new(Fixed(slot)).build().user_data(ud(OP_CLOSE, s, slot, c.gen_));
-    push(&mut sh.ring, &e);
+    // Shut the TCP connection down before closing the slot. Before kernel 6.13, removing a
+    // direct descriptor is deferred until every older in-flight request on the ring completes,
+    // and idle connections' multishot recvs never do, so on Ubuntu 24.04 (6.8) a bare Close
+    // left a refused or `Connection: close` client waiting forever (found on the VPS).
+    // Hard-linked so the Close still runs if shutdown fails (e.g. ENOTCONN after a reset).
+    let shut = opcode::Shutdown::new(Fixed(slot), libc::SHUT_RDWR)
+        .build()
+        .flags(squeue::Flags::IO_HARDLINK)
+        .user_data(ud(OP_CANCEL, s, slot, c.gen_));
+    let close = opcode::Close::new(Fixed(slot)).build().user_data(ud(OP_CLOSE, s, slot, c.gen_));
+    // Both must land in the same submission for the link to hold.
+    let free = {
+        let sq = sh.ring.submission();
+        sq.capacity() - sq.len()
+    };
+    if free < 2 {
+        let _ = sh.ring.submit();
+    }
+    push(&mut sh.ring, &shut);
+    push(&mut sh.ring, &close);
 }
 
 trait RawFdCompat {
