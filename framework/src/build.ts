@@ -99,6 +99,11 @@ function precompress(dir: string) {
 
 const FRAMEWORK_CSS =
   "optz-island,optz-script{display:contents}html.optz-navigating{cursor:progress}" +
+  // Cross-document view transitions: a short cross-fade between pages (Chromium, Safari 18.2+).
+  // Only with scripting on: with JavaScript disabled, Chromium never finishes the transition and
+  // the page stops taking clicks.
+  "@media (scripting:enabled){@view-transition{navigation:auto}}::view-transition-old(root),::view-transition-new(root){animation-duration:.16s}" +
+  "@media (prefers-reduced-motion:reduce){::view-transition-group(*),::view-transition-old(*),::view-transition-new(*){animation:none!important}}" +
   ".optz-img{max-width:100%;height:auto}.optz-img-fill{position:absolute;inset:0;width:100%;height:100%;object-fit:cover}\n";
 
 async function buildCss(root: string, config: ResolvedConfig, assetsDir: string, dev?: boolean, extra = ""): Promise<string[]> {
@@ -141,6 +146,9 @@ export async function build({ root, config, dev, exportOnly }: BuildOptions): Pr
   const all = sortRoutes([...pages, ...apis]);
   const actions = config.features.actions ? scanActions(root) : {};
   if (!islandsMode && (table.slots.length || table.intercepts.length)) throw new Error("parallel and intercepting routes need client.mode \"islands\"");
+  // Prerendered pages arrive by real navigation, which can't keep parallel slots or open an
+  // intercepted route in place, so apps with either keep the HTML-swap navigation.
+  const speculate = islandsMode && config.client.speculation && !dev && !table.slots.length && !table.intercepts.length;
 
   interface Mode {
     render: RenderMode;
@@ -198,7 +206,9 @@ export async function build({ root, config, dev, exportOnly }: BuildOptions): Pr
       wrappers.push(w);
       lines.push(`  ${JSON.stringify(islandId(root, f))}: { load: () => import("./i${i}.tsx"), hydrate: ${JSON.stringify(mod.hydrate ?? "load")} },`);
     }
-    writeFileSync(entryFile, `${hot ? 'import "/assets/dev-vendor/refresh.js";\n' : ""}import { startIslands } from "optz/islands";\nstartIslands({\n${lines.join("\n")}\n}, ${JSON.stringify({ navigation: config.client.navigation, prefetch: config.client.prefetch })});\n`);
+    // Speculation rules (dev: off, so edits are never served from a stale prerender).
+    const speculation = speculate;
+    writeFileSync(entryFile, `${hot ? 'import "/assets/dev-vendor/refresh.js";\n' : ""}import { startIslands } from "optz/islands";\nstartIslands({\n${lines.join("\n")}\n}, ${JSON.stringify({ navigation: config.client.navigation, prefetch: config.client.prefetch, speculation })});\n`);
     const result = await bundle([entryFile, ...wrappers], assetsDir, dev, plugins, hot);
     urlOf = (file) => outputUrl(result, assetsDir, file);
     files.forEach((f, i) => (islands[islandId(root, f)] = urlOf(wrappers[i])!));
@@ -233,6 +243,13 @@ export async function build({ root, config, dev, exportOnly }: BuildOptions): Pr
   const fonts = config.fonts?.length && !dev ? await (await import("./fonts")).buildFonts(config.fonts, assetsDir) : { css: "", preload: [] as string[] };
   const css = await buildCss(root, config, assetsDir, dev, fonts.css);
   if (existsSync(join(root, "public"))) cpSync(join(root, "public"), staticDir, { recursive: true });
+  if (speculate) {
+    // Prerender same-site pages when a link is hovered or pressed (Chromium). Served as a file
+    // named by the Speculation-Rules response header: no inline script, so CSP stays strict.
+    write(join(staticDir, "_optz/speculation.json"), JSON.stringify({
+      prerender: [{ where: { and: [{ href_matches: "/*" }, { not: { href_matches: ["/api/*", "/_optz/*"] } }, { not: { selector_matches: "[data-reload], [download], [target=_blank]" } }] }, eagerness: "moderate" }],
+    }));
+  }
 
   const toManifest = (r: Route): ManifestRoute => {
     const m = modes.get(r);

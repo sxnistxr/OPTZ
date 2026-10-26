@@ -26,7 +26,9 @@ export default defineConfig({
 
   cache: { maxEntries: 200, maxBytes: 8 << 20 },
 
-  server: { idleTimeout: 30, maxRequestBodySize: 64 * 1024 },
+  // cdnMaxAge: Cloudflare (or any CDN) may serve pages for 5 minutes without asking this server;
+  // ops/deploy.sh purges it on every deploy when CF_ZONE_ID/CF_API_TOKEN are set.
+  server: { idleTimeout: 30, maxRequestBodySize: 64 * 1024, cdnMaxAge: 300 },
 
   // Downloaded at build time and served from /assets: no request to Google from visitors, and
   // size-matched fallbacks ("Newsreader Fallback") so text doesn't shift when they load.

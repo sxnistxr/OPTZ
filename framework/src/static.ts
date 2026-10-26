@@ -9,6 +9,8 @@ export interface StaticEntry {
   type: string;
   etag: string;
   cache: string;
+  /** Extra response headers (e.g. Speculation-Rules on HTML pages). */
+  headers?: Record<string, string>;
 }
 
 export const TYPES: Record<string, string> = {
@@ -34,7 +36,8 @@ export const TYPES: Record<string, string> = {
   webmanifest: "application/manifest+json",
 };
 
-export const typeOf = (path: string) => TYPES[path.slice(path.lastIndexOf(".") + 1).toLowerCase()] ?? "application/octet-stream";
+export const typeOf = (path: string) =>
+  path.endsWith("/_optz/speculation.json") ? "application/speculationrules+json" : (TYPES[path.slice(path.lastIndexOf(".") + 1).toLowerCase()] ?? "application/octet-stream");
 
 export const cacheFor = (url: string) =>
   url.startsWith("/assets/") ? "public, max-age=31536000, immutable" : /\.(html|json)$/.test(url) || url.startsWith("/_optz/api/") ? "no-cache" : "public, max-age=3600";
@@ -57,7 +60,7 @@ const heads = new WeakMap<StaticEntry, Record<string, Record<string, string>>>()
 function headsOf(e: StaticEntry) {
   let h = heads.get(e);
   if (!h) {
-    const base = { "Content-Type": e.type, "Cache-Control": e.cache, ETag: e.etag, Vary: "Accept-Encoding" };
+    const base = { "Content-Type": e.type, "Cache-Control": e.cache, ETag: e.etag, Vary: "Accept-Encoding", ...e.headers };
     h = { raw: base, br: { ...base, "Content-Encoding": "br" }, gzip: { ...base, "Content-Encoding": "gzip" } };
     heads.set(e, h);
   }

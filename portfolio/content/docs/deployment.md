@@ -35,7 +35,23 @@ itself if the new release isn't healthy within 30 seconds, and keeps the five ne
 Follow it with `journalctl -u optz-sync.service -f`.
 
 The site build downloads its fonts from Google at build time and renders Open Graph images, so
-the server needs outbound HTTPS while building (not while serving).
+the server needs outbound HTTPS while building (not while serving). Downloads are cached in
+`~/.cache/optz`, so later builds only fetch what changed.
+
+### Behind Cloudflare
+
+The site sends `Cache-Control: s-maxage=300, stale-while-revalidate=86400` on pages
+(`server.cdnMaxAge` in `optz.config.ts`), so a CDN in front serves them for five minutes and
+refreshes in the background. To clear Cloudflare's copy on every deploy, add a zone id and an API
+token with the "Cache Purge" permission to `/etc/optz/env`:
+
+```sh
+CF_ZONE_ID=...
+CF_API_TOKEN=...
+```
+
+`deploy.sh` purges the zone after the new release is live. Without them it skips the purge, and
+pages update at the CDN within five minutes.
 
 ## The domain and TLS
 

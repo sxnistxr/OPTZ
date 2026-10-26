@@ -169,7 +169,10 @@ export async function navigate(href: string, opts: { pop?: boolean; replace?: bo
   if (id !== seq) return;
   document.documentElement.classList.remove("optz-navigating");
   prefetched.delete(`${location.pathname}|${url.pathname + url.search}`);
-  await applyHtml(html, url, opts);
+  // A short cross-fade where the browser supports same-document view transitions.
+  const vt = (document as { startViewTransition?: (cb: () => Promise<void>) => { finished: Promise<void> } }).startViewTransition;
+  if (vt && !matchMedia("(prefers-reduced-motion: reduce)").matches) await vt.call(document, () => applyHtml(html, url, opts)).finished.catch(() => {});
+  else await applyHtml(html, url, opts);
   dispatchEvent(new CustomEvent("optz:navigate", { detail: { url: url.href } }));
 }
 
@@ -189,13 +192,19 @@ function eligible(a: HTMLAnchorElement | null): a is HTMLAnchorElement {
   return url.origin === location.origin && !url.pathname.startsWith("/api/") && !url.pathname.startsWith("/_optz/") && !/\.\w+$/.test(url.pathname);
 }
 
-export function startIslands(registry: Record<string, IslandEntry>, opts: { navigation: boolean; prefetch: boolean }) {
+/** Chromium with speculation rules: the server's Speculation-Rules header prerenders the next
+ *  page on hover, so a plain navigation is instant (and gets a CSS view transition). */
+const speculates = () => typeof HTMLScriptElement !== "undefined" && (HTMLScriptElement as { supports?: (t: string) => boolean }).supports?.("speculationrules") === true;
+
+export function startIslands(registry: Record<string, IslandEntry>, opts: { navigation: boolean; prefetch: boolean; speculation?: boolean }) {
   registryRef = registry;
   (globalThis as { __optz?: unknown }).__optz = { navigate: (h: string) => (opts.navigation ? navigate(h) : location.assign(h)), refresh };
   hydrateAll(registry, document);
   const boot = readBoot(document);
   if (boot?.dev) import("./dev-client").then((m) => m.connect({ refresh, roots, registry: () => registryRef }));
   if (!opts.navigation) return;
+  // The browser prerenders links itself: let navigations happen (no swap, no fetch prefetch).
+  if (opts.speculation && speculates()) return;
   history.scrollRestoration = "manual";
   document.addEventListener("click", (e) => {
     if (e.defaultPrevented || e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;

@@ -130,7 +130,13 @@ export default function Counter({ start }: { start: number }) { ... }
 
 - Props must be JSON. Islands inside islands render inline; the outer one owns them.
 - `useParams()`, `useRouter()`, `useLocale()` and `<Link>` work inside islands.
-- `client.navigation` swaps page HTML on link clicks (~2 KB) with prefetch on hover.
+- `client.navigation` swaps page HTML on link clicks (~2 KB) with prefetch on hover, inside a
+  view transition where the browser has them.
+- `client.speculation` (on): in browsers with speculation rules (Chromium), pages send a
+  `Speculation-Rules` header and the browser prerenders a link while it's hovered, so the click
+  is a real navigation that shows instantly, with a CSS cross-document view transition. Other
+  browsers use the HTML swap. Apps with parallel or intercepting routes keep the swap, since a
+  real navigation can't keep a slot or open an intercepted route in place.
 - `useRouter().refresh()` (and any Server Action that revalidates) re-fetches the page and keeps
   every island whose props didn't change mounted, state and all.
 - `client.runtime: "preact"` hydrates islands with Preact (~4 KB) instead of React (~60 KB).
@@ -211,6 +217,8 @@ await api("/api/nope");   // type error: no such route
 - **Fonts**: list Google Fonts css2 URLs in `fonts`; at build time they're downloaded into
   `/assets`, preloaded, and get a size-matched local fallback (`"Inter Fallback"`) computed from
   the font file, so text doesn't shift when they load. No request to Google at runtime.
+  Downloads are cached in `~/.cache/optz` (`OPTZ_CACHE_DIR`), so rebuilds don't fetch them again
+  and a build still works offline from a stale copy.
 - **`<Script>`** (`optz/script`): `beforeInteractive`, `afterInteractive` (default) or
   `lazyOnload`; each src loads once, across navigations too.
 
@@ -260,6 +268,7 @@ Every option is typed and documented on hover in `optz.config.ts`. The ones that
 | `client.mode` | `"islands"` | `"spa"` hydrates whole pages (more JS) |
 | `client.runtime` | `"react"` | `"preact"`: ~60 KB less JS on pages with islands |
 | `client.navigation` / `prefetch` | on | HTML-swap navigation / prefetch on hover |
+| `client.speculation` | on | prerender on hover via speculation rules where supported |
 | `features.dynamic` | on | off: per-request rendering is a build error and the renderer never loads (~13 MB less memory) |
 | `features.streaming` | on | off: dynamic pages are sent whole |
 | `features.actions`, `images`, `cache`, `middleware`, `api` | on | skip loading them entirely |
@@ -267,6 +276,7 @@ Every option is typed and documented on hover in `optz.config.ts`. The ones that
 | `features.requestLog` | off | one log line per request |
 | `cache.maxEntries` / `maxBytes` / `default` | 500 / 32 MB / none | response cache bounds, and a default for routes without `cache` |
 | `server.idleTimeout` / `maxRequestBodySize` | 30 s / 1 MB | connection and body limits |
+| `server.cdnMaxAge` | 0 | seconds a CDN may cache HTML pages (`s-maxage`, then `stale-while-revalidate`); browsers still revalidate |
 | `proxy[prefix].cacheSeconds` | 0 | nginx micro-cache for a proxied API (via `optz nginx`) |
 
 ## Dev server

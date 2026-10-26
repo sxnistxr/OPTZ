@@ -15,6 +15,14 @@ const check = (name, ok, detail = "") => results.push(`${ok ? "ok  " : "FAIL"} $
   pg.on("response", (r) => r.status() >= 400 && !r.url().endsWith("/social") && errs.push(`${r.status()} ${r.url()}`));
   const docs = [];
   pg.on("request", (r) => r.resourceType() === "document" && docs.push(r.url()));
+  // Chromium supports speculation rules, so the site navigates with real (prerendered) page
+  // loads there. This page turns them off to test the HTML-swap fallback other browsers use;
+  // the speculation path is checked on its own page below.
+  await pg.route("**/_optz/speculation.json", (r) => r.fulfill({ contentType: "application/speculationrules+json", body: "{}" }));
+  await pg.addInitScript(() => {
+    const s = HTMLScriptElement.supports;
+    HTMLScriptElement.supports = (t) => t !== "speculationrules" && s.call(HTMLScriptElement, t);
+  });
 
   // ---- home ----
   await pg.goto(base + "/");
@@ -72,6 +80,21 @@ const check = (name, ok, detail = "") => results.push(`${ok ? "ok  " : "FAIL"} $
   const idx = await (await pg.request.get(base + "/api/docs")).json();
   check("search index is prerendered", idx.docs.length >= 16);
   check("no errors under a strict CSP", errs.length === 0, JSON.stringify(errs));
+
+  // ---- speculation rules (Chromium): links prerender, clicks are real navigations ----
+  const sp = await b.newPage({ viewport: { width: 1440, height: 1000 } });
+  const spErrs = [];
+  sp.on("pageerror", (e) => spErrs.push(e.message));
+  const home = await sp.goto(base + "/");
+  check("pages send the Speculation-Rules header", home.headers()["speculation-rules"] === '"/_optz/speculation.json"');
+  const rules = await sp.request.get(base + "/_optz/speculation.json");
+  check("rules file has the speculation content type", rules.headers()["content-type"].startsWith("application/speculationrules+json") && (await rules.json()).prerender.length === 1);
+  check("HTML is cacheable at the CDN", home.headers()["cache-control"].includes("s-maxage="));
+  await sp.hover("nav[aria-label=Site] >> text=Lab");
+  await sp.waitForTimeout(600);
+  await sp.click("nav[aria-label=Site] >> text=Lab");
+  await sp.waitForURL(base + "/lab");
+  check("speculated navigation lands on the page", (await sp.textContent("h1")) === "Lab" && spErrs.length === 0, JSON.stringify(spErrs));
 
   // ---- small screens ----
   const m = await b.newPage({ viewport: { width: 390, height: 844 } });

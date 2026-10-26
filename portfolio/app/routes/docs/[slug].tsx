@@ -14,53 +14,60 @@ export const head = (d: Doc): Head => ({
 
 export default function DocPage({ data: d }: PageProps<Doc, "/docs/[slug]">) {
   const toc = d.toc.filter((t) => t.depth === 2);
+  const links = toc.map((t) => (
+    <li key={t.id}>
+      <a href={`#${t.id}`}>{t.text}</a>
+    </li>
+  ));
   return (
-    <article>
-      <header className="max-w-[46rem]">
-        <p className="text-sm text-muted">{d.section}</p>
-        <h1 className="mt-1 text-4xl font-semibold leading-[1.08] tracking-[-0.02em] md:text-5xl">{d.title}</h1>
-        {d.description && <p className="mt-4 text-lg leading-relaxed text-muted">{d.description}</p>}
-      </header>
+    <div className="xl:grid xl:grid-cols-[minmax(0,48rem)_12rem] xl:gap-14">
+      <article className="min-w-0">
+        <header>
+          <p className="text-sm text-muted">{d.section}</p>
+          <h1 className="mt-2 text-4xl font-semibold leading-[1.1] tracking-[-0.025em] md:text-[2.75rem]">{d.title}</h1>
+          {d.description && <p className="mt-4 max-w-[60ch] text-lg leading-relaxed text-muted">{d.description}</p>}
+        </header>
+        {toc.length > 2 && (
+          <details className="toc mt-8 border-l border-rule text-[0.92rem] xl:hidden">
+            <summary className="cursor-pointer pl-4 text-muted">On this page</summary>
+            <ul className="mt-2">{links}</ul>
+          </details>
+        )}
+        <div className="prose-docs mt-10" dangerouslySetInnerHTML={{ __html: d.html }} />
+        <footer className="mt-20 border-t border-rule pt-6">
+          <nav aria-label="More docs" className="grid gap-4 sm:grid-cols-2">
+            {d.prev ? (
+              <Link href={`/docs/${d.prev.slug}` as Href} className="group rounded-md border border-rule px-4 py-3 hover:border-ink">
+                <span className="block text-sm text-muted">Previous</span>
+                <span className="font-medium text-ink">{d.prev.title}</span>
+              </Link>
+            ) : (
+              <span />
+            )}
+            {d.next && (
+              <Link href={`/docs/${d.next.slug}` as Href} className="group rounded-md border border-rule px-4 py-3 text-right hover:border-ink">
+                <span className="block text-sm text-muted">Next</span>
+                <span className="font-medium text-ink">{d.next.title}</span>
+              </Link>
+            )}
+          </nav>
+          <p className="mt-6 text-sm text-muted">
+            Edit{" "}
+            <a href={`${site.repo}/blob/${site.branch}/${d.file}`} className="underline decoration-rule underline-offset-4 hover:text-ink">
+              {d.file}
+            </a>{" "}
+            on GitHub.
+          </p>
+        </footer>
+      </article>
       {toc.length > 2 && (
-        <nav aria-label="On this page" className="mt-8 max-w-[46rem] border-l-2 border-rule pl-5 text-[0.92rem]">
-          <p className="mb-1.5 text-xs font-medium text-muted">On this page</p>
-          <ul className="columns-1 gap-8 sm:columns-2">
-            {toc.map((t) => (
-              <li key={t.id} className="break-inside-avoid py-0.5">
-                <a href={`#${t.id}`} className="text-muted hover:text-ink">
-                  {t.text}
-                </a>
-              </li>
-            ))}
-          </ul>
-        </nav>
+        <aside className="hidden xl:block">
+          <nav aria-label="On this page" className="toc sticky top-8 border-l border-rule text-[0.88rem]">
+            <p className="mb-2 pl-4 text-xs font-medium text-muted">On this page</p>
+            <ul>{links}</ul>
+          </nav>
+        </aside>
       )}
-      <div className="prose-docs mt-10" dangerouslySetInnerHTML={{ __html: d.html }} />
-      <footer className="mt-16 max-w-[46rem] border-t border-rule pt-6">
-        <p className="text-sm text-muted">
-          From{" "}
-          <a href={`${site.repo}/blob/${site.branch}/${d.file}`} className="underline decoration-rule underline-offset-4 hover:text-ink">
-            {d.file}
-          </a>{" "}
-          in the repository.
-        </p>
-        <div className="mt-6 flex justify-between gap-6">
-          {d.prev ? (
-            <Link href={`/docs/${d.prev.slug}` as Href} className="group">
-              <span className="block text-sm text-muted">Previous</span>
-              <span className="font-medium group-hover:underline group-hover:decoration-rule group-hover:underline-offset-4">{d.prev.title}</span>
-            </Link>
-          ) : (
-            <span />
-          )}
-          {d.next && (
-            <Link href={`/docs/${d.next.slug}` as Href} className="group text-right">
-              <span className="block text-sm text-muted">Next</span>
-              <span className="font-medium group-hover:underline group-hover:decoration-rule group-hover:underline-offset-4">{d.next.title}</span>
-            </Link>
-          )}
-        </div>
-      </footer>
-    </article>
+    </div>
   );
 }

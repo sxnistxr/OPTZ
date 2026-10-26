@@ -1,8 +1,8 @@
 // Renders `*.og.tsx` components to PNG (satori draws the SVG, resvg rasterizes it). Static pages
 // get theirs at build time; others on first request, then from the response cache.
-import { createHash } from "node:crypto";
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { isAbsolute, join } from "node:path";
+import { cachedFetch } from "./net-cache";
 import type { OgFont, OgModule } from "./og-types";
 
 interface SatoriFont {
@@ -14,17 +14,7 @@ interface SatoriFont {
 
 const fontCache = new Map<string, Promise<SatoriFont[]>>();
 
-async function fetchCached(root: string, url: string, headers: Record<string, string> = {}): Promise<Uint8Array> {
-  const dir = join(root, ".optz/cache/fonts");
-  const file = join(dir, createHash("sha256").update(url + JSON.stringify(headers)).digest("hex").slice(0, 24));
-  if (existsSync(file)) return readFileSync(file);
-  const r = await fetch(url, { headers, signal: AbortSignal.timeout(15000) });
-  if (!r.ok) throw new Error(`${url}: ${r.status}`);
-  const b = new Uint8Array(await r.arrayBuffer());
-  mkdirSync(dir, { recursive: true });
-  writeFileSync(file, b);
-  return b;
-}
+const fetchCached = (_root: string, url: string, headers: Record<string, string> = {}) => cachedFetch(url, { headers, maxAgeDays: 30, sub: "og-fonts" });
 
 /** TTF files for a Google Fonts css2 URL (an old user agent gets TrueType instead of WOFF2). */
 async function googleTtf(root: string, cssUrl: string): Promise<SatoriFont[]> {

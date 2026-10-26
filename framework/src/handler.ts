@@ -110,6 +110,16 @@ export async function createApp({ manifest, config, files, platform, middleware 
   // Server Actions are tagged up front so pages that render <form action={fn}> get real URLs.
   if (F.actions) for (const [id, a] of Object.entries(manifest.actions ?? {})) await tagModule((await load<Record<string, unknown>>(a.file)) as Record<string, unknown>, id, a);
 
+  // HTML pages: speculation rules (prerender on hover in Chromium) and the CDN cache policy.
+  const SPECULATION = '"/_optz/speculation.json"';
+  const htmlCache = config.server.cdnMaxAge ? `public, max-age=0, s-maxage=${config.server.cdnMaxAge}, stale-while-revalidate=86400` : "no-cache";
+  const pageHeaders: Record<string, string> = config.client.speculation && config.client.mode === "islands" && live && files.has("/_optz/speculation.json") ? { "Speculation-Rules": SPECULATION } : {};
+  for (const [url, e] of files) {
+    if (!e.type.startsWith("text/html")) continue;
+    e.headers = { ...e.headers, ...pageHeaders };
+    if (!url.startsWith("/_optz/")) e.cache = htmlCache;
+  }
+
   // Prerendered API responses keep their content type.
   for (const s of Object.values(manifest.apiStatic ?? {})) {
     const f = files.get(s.file);
@@ -195,7 +205,7 @@ export async function createApp({ manifest, config, files, platform, middleware 
         const out = await renderPage(await renderInput(r, ctx, publicPath, inner, params, locale), assets(r), config);
         if (out.kind === "notFound") files.delete(htmlPath(publicPath));
         if (out.kind !== "page" || out.status !== 200) return;
-        files.set(htmlPath(publicPath), entryOf(new TextEncoder().encode(out.html), "text/html; charset=utf-8", "no-cache"));
+        files.set(htmlPath(publicPath), { ...entryOf(new TextEncoder().encode(out.html), "text/html; charset=utf-8", htmlCache), headers: pageHeaders });
       }
       renderedAt.set(publicPath, started);
     })()
@@ -266,7 +276,7 @@ export async function createApp({ manifest, config, files, platform, middleware 
   }
 
   function html(body: string, req: Request, status = 200, extra?: Record<string, string>): Response {
-    const h: Record<string, string> = { "Content-Type": "text/html; charset=utf-8", "Cache-Control": "no-cache", Vary: "Accept-Encoding", ...extra };
+    const h: Record<string, string> = { "Content-Type": "text/html; charset=utf-8", "Cache-Control": "no-cache", Vary: "Accept-Encoding", ...pageHeaders, ...extra };
     if (F.etag && status === 200) {
       const etag = `"${hash(body)}"`;
       h.ETag = etag;
@@ -432,6 +442,7 @@ export async function createApp({ manifest, config, files, platform, middleware 
     if (p.startsWith("/_optz/og/") && p.endsWith(".png")) return inStore(s, () => og(ctx));
     if (p === "/_optz/404" && prerender) return notFound(ctx, url.searchParams.get("locale") ?? undefined);
     if (p === "/_optz/image") return F.images && platform.images ? platform.images(req, url, files) : notFound(ctx);
+    if (p === "/_optz/speculation.json" && files.has(p)) return send(files.get(p)!, req);
     if (p.startsWith("/_optz/")) return notFound(ctx);
 
     // i18n: /fr/x -> locale fr, route /x. The default locale has no prefix unless prefixDefault.

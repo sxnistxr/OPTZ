@@ -3,38 +3,49 @@
 /* Scan everything under app/ for class names. */
 @source ".";
 
-
+/* dihlabs.lol: a lab notebook. Calm near-white paper, blue-grey ink, one warm signal colour
+   that only ever marks where you are or what's live. Reading comfort first: ~68 characters
+   per line, generous leading, space (not rules) between sections, code and tables set apart. */
 @theme {
   --font-sans: "Schibsted Grotesk", "Schibsted Grotesk Fallback", ui-sans-serif, system-ui, sans-serif;
   --font-serif: "Newsreader", "Newsreader Fallback", ui-serif, Georgia, serif;
+  --font-mono: ui-monospace, "SF Mono", "JetBrains Mono", Menlo, Consolas, monospace;
 
-  --color-paper: #eef1f4;
-  --color-ink: #1b2433;
-  --color-muted: #5b6878;
-  --color-rule: #c9d1da;
-  --color-signal: #e8a33d;
-  --color-panel: #e3e8ee;
+  --color-paper: #f6f7f9; /* page */
+  --color-ink: #18202c; /* headings, emphasis */
+  --color-body: #2c3646; /* running text: softer than ink, less glare */
+  --color-muted: #5d6a7b; /* secondary text, captions */
+  --color-rule: #d6dce4; /* hairlines */
+  --color-panel: #eaeef3; /* table heads, inline code, hover */
+  --color-code: #18202c; /* code blocks */
+  --color-code-ink: #e3e9f0;
+  --color-signal: #e8a33d; /* you are here / live */
 }
 
 @layer base {
   /* Dark scheme: same roles, inverted. The signal colour stays the one warm thing. */
   @media (prefers-color-scheme: dark) {
     :root {
-      --color-paper: #121821;
-      --color-ink: #e6ebf1;
-      --color-muted: #94a1b2;
-      --color-rule: #2a3442;
-      --color-panel: #1a222d;
+      --color-paper: #11161e;
+      --color-ink: #e9edf2;
+      --color-body: #c7cfd9;
+      --color-muted: #8f9cad;
+      --color-rule: #283240;
+      --color-panel: #19212c;
+      --color-code: #0b0f15;
+      --color-code-ink: #d9e1ea;
     }
   }
 
   html {
     background: var(--color-paper);
-    color: var(--color-ink);
+    color: var(--color-body);
     font-family: var(--font-sans);
     -webkit-font-smoothing: antialiased;
-    font-feature-settings: "tnum" 0;
+    text-rendering: optimizeLegibility;
   }
+  h1, h2, h3, h4, strong { color: var(--color-ink); }
+  ::selection { background: color-mix(in srgb, var(--color-signal) 35%, transparent); }
 
   :focus-visible {
     outline: 2px solid var(--color-signal);
@@ -48,88 +59,132 @@
 }
 
 @layer components {
-  /* Long-form blog text: serif, ~65 characters per line, generous leading. */
+  /* ---- shared reading rhythm ---- */
+  .prose-post, .prose-docs { color: var(--color-body); }
+  .prose-post > *, .prose-docs > * { margin-top: 0; margin-bottom: 0; }
+
+  /* ---- blog posts: serif, ~65 characters per line ---- */
   .prose-post {
     font-family: var(--font-serif);
     font-size: 1.1875rem;
-    line-height: 1.7;
-    max-width: 38rem;
+    line-height: 1.75;
+    max-width: 36rem;
   }
-  .prose-post > * + * { margin-top: 1.1em; }
+  .prose-post > * + * { margin-top: 1.15em; }
   .prose-post h2 {
     font-family: var(--font-sans);
     font-weight: 650;
-    font-size: 1.25rem;
+    font-size: 1.3rem;
     letter-spacing: -0.01em;
-    margin-top: 2em;
+    line-height: 1.3;
+    margin-top: 2.4em;
   }
-  .prose-post a { text-decoration: underline; text-underline-offset: 3px; text-decoration-color: var(--color-rule); }
-  .prose-post a:hover { text-decoration-color: var(--color-ink); }
-  .prose-post code {
-    font-size: 0.85em;
-    background: var(--color-panel);
-    padding: 0.1em 0.35em;
-    border-radius: 3px;
-  }
-  .prose-post pre { background: var(--color-panel); padding: 1rem; border-radius: 6px; overflow-x: auto; font-size: 0.9rem; }
-  .prose-post pre code { background: none; padding: 0; }
-  .prose-post blockquote { border-left: 2px solid var(--color-rule); padding-left: 1rem; color: var(--color-muted); }
-  .prose-post ul { list-style: disc; padding-left: 1.25rem; }
-  .prose-post ol { list-style: decimal; padding-left: 1.25rem; }
+  .prose-post h2 + * { margin-top: 0.7em; }
 
-  /* Documentation: sans-serif (it's technical), a wider measure for tables and code. */
+  /* ---- docs: sans, 17px, prose capped at ~68 characters, wide things use the full column ---- */
   .prose-docs {
     font-size: 1.0625rem;
-    line-height: 1.7;
-    max-width: 46rem;
+    line-height: 1.75;
   }
-  .prose-docs > * + * { margin-top: 1.05em; }
+  .prose-docs > :is(p, ul, ol, blockquote, h2, h3, h4) { max-width: 68ch; }
+  .prose-docs > * + * { margin-top: 1.25rem; }
   .prose-docs h2 {
-    font-size: 1.5rem;
+    font-size: 1.55rem;
     font-weight: 650;
-    letter-spacing: -0.015em;
+    letter-spacing: -0.018em;
     line-height: 1.25;
-    margin-top: 2.6em;
-    padding-top: 0.6em;
-    border-top: 1px solid var(--color-rule);
+    margin-top: 3.5rem;
   }
-  .prose-docs h3 { font-size: 1.15rem; font-weight: 650; margin-top: 2em; }
-  .prose-docs h4 { font-weight: 650; margin-top: 1.6em; }
-  .prose-docs h2, .prose-docs h3, .prose-docs h4 { scroll-margin-top: 1.5rem; }
-  .prose-docs .anchor { color: inherit; text-decoration: none; }
-  .prose-docs .anchor:hover::after { content: " #"; color: var(--color-muted); }
-  .prose-docs a:not(.anchor) { text-decoration: underline; text-underline-offset: 3px; text-decoration-color: var(--color-rule); }
-  .prose-docs a:not(.anchor):hover { text-decoration-color: var(--color-ink); }
-  .prose-docs strong { font-weight: 650; }
-  .prose-docs em { font-style: italic; }
-  .prose-docs ul { list-style: disc; padding-left: 1.25rem; }
-  .prose-docs ol { list-style: decimal; padding-left: 1.25rem; }
-  .prose-docs li + li { margin-top: 0.35em; }
-  .prose-docs blockquote { border-left: 2px solid var(--color-signal); padding-left: 1rem; color: var(--color-muted); }
-  .prose-docs code {
-    font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
-    font-size: 0.86em;
-    background: var(--color-panel);
-    padding: 0.12em 0.36em;
-    border-radius: 3px;
+  .prose-docs h3 { font-size: 1.15rem; font-weight: 650; line-height: 1.35; margin-top: 2.5rem; }
+  .prose-docs h4 { font-weight: 650; margin-top: 2rem; }
+  .prose-docs :is(h2, h3, h4) + * { margin-top: 0.85rem; }
+  .prose-docs :is(h2, h3, h4) { scroll-margin-top: 1.5rem; }
+
+  /* ---- shared inline elements ---- */
+  :is(.prose-post, .prose-docs) a:not(.anchor) {
+    color: var(--color-ink);
+    text-decoration: underline;
+    text-decoration-thickness: 1px;
+    text-underline-offset: 3px;
+    text-decoration-color: color-mix(in srgb, var(--color-muted) 55%, transparent);
   }
-  .prose-docs pre {
+  :is(.prose-post, .prose-docs) a:not(.anchor):hover { text-decoration-color: var(--color-signal); }
+  :is(.prose-post, .prose-docs) strong { font-weight: 650; }
+  :is(.prose-post, .prose-docs) em { font-style: italic; }
+  :is(.prose-post, .prose-docs) :is(ul, ol) { padding-left: 1.3rem; }
+  :is(.prose-post, .prose-docs) ul { list-style: disc; }
+  :is(.prose-post, .prose-docs) ol { list-style: decimal; }
+  :is(.prose-post, .prose-docs) li + li { margin-top: 0.5em; }
+  :is(.prose-post, .prose-docs) li::marker { color: var(--color-muted); }
+  :is(.prose-post, .prose-docs) :not(pre) > code {
+    font-family: var(--font-mono);
+    font-size: 0.84em;
     background: var(--color-panel);
-    border: 1px solid var(--color-rule);
-    padding: 0.9rem 1rem;
-    border-radius: 6px;
+    color: var(--color-ink);
+    padding: 0.14em 0.4em;
+    border-radius: 4px;
+    overflow-wrap: anywhere;
+  }
+  :is(.prose-post, .prose-docs) blockquote {
+    border-left: 3px solid var(--color-signal);
+    padding: 0.1rem 0 0.1rem 1.1rem;
+    color: var(--color-muted);
+  }
+
+  /* Heading anchors: the "#" shows on hover, in the margin. */
+  .prose-docs .anchor { color: inherit; text-decoration: none; position: relative; }
+  .prose-docs .anchor:hover::before {
+    content: "#";
+    position: absolute;
+    left: -1.1em;
+    color: var(--color-signal);
+  }
+
+  /* ---- code blocks: dark, so they read as a different thing from prose ---- */
+  :is(.prose-post, .prose-docs) pre {
+    font-family: var(--font-mono);
+    background: var(--color-code);
+    color: var(--color-code-ink);
+    padding: 1.1rem 1.25rem;
+    border-radius: 8px;
     overflow-x: auto;
-    font-size: 0.88rem;
-    line-height: 1.6;
+    font-size: 0.86rem;
+    line-height: 1.65;
+    tab-size: 2;
   }
-  .prose-docs pre code { background: none; padding: 0; font-size: inherit; }
-  .prose-docs .table-scroll { overflow-x: auto; }
-  .prose-docs table { width: 100%; border-collapse: collapse; font-size: 0.93rem; line-height: 1.5; }
-  .prose-docs th { text-align: left; font-weight: 600; border-bottom: 1px solid var(--color-ink); padding: 0.45rem 0.9rem 0.45rem 0; white-space: nowrap; }
-  .prose-docs td { border-bottom: 1px solid var(--color-rule); padding: 0.5rem 0.9rem 0.5rem 0; vertical-align: top; }
-  .prose-docs [data-align="right"] { text-align: right; }
+  :is(.prose-post, .prose-docs) pre code { background: none; padding: 0; color: inherit; font-size: inherit; }
+  .prose-docs pre + p, .prose-docs .table-scroll + p { margin-top: 1.5rem; }
+
+  /* ---- tables: framed, tinted head, roomy rows, numbers aligned ---- */
+  .prose-docs .table-scroll {
+    overflow-x: auto;
+    border: 1px solid var(--color-rule);
+    border-radius: 8px;
+    margin-top: 1.75rem;
+  }
+  .prose-docs table { width: 100%; border-collapse: collapse; font-size: 0.95rem; line-height: 1.55; }
+  .prose-docs th {
+    text-align: left;
+    font-weight: 600;
+    font-size: 0.86rem;
+    color: var(--color-ink);
+    background: var(--color-panel);
+    padding: 0.7rem 1rem;
+    white-space: nowrap;
+    border-bottom: 1px solid var(--color-rule);
+  }
+  .prose-docs td { padding: 0.75rem 1rem; vertical-align: top; border-top: 1px solid var(--color-rule); }
+  .prose-docs tr:first-child td { border-top: 0; }
+  .prose-docs td:first-child { color: var(--color-ink); font-weight: 500; }
+  .prose-docs tbody tr:hover { background: color-mix(in srgb, var(--color-panel) 55%, transparent); }
+  .prose-docs [data-align="right"] { text-align: right; font-variant-numeric: tabular-nums; }
   .prose-docs [data-align="center"] { text-align: center; }
   .prose-docs td code { white-space: nowrap; }
+
+  /* ---- docs page parts ---- */
+  .toc a { display: block; padding: 0.3rem 0 0.3rem 0.9rem; margin-left: -1px; border-left: 2px solid transparent; color: var(--color-muted); line-height: 1.35; }
+  .toc a:hover { color: var(--color-ink); }
+  .toc a[aria-current="true"] { color: var(--color-ink); border-left-color: var(--color-signal); }
 
   /* Lab status: amber while exploring, ink once shipped. */
   .status-dot { width: 0.45rem; height: 0.45rem; border-radius: 9999px; display: inline-block; background: var(--color-rule); }

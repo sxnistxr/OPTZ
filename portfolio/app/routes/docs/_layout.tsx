@@ -7,9 +7,9 @@ import { docSections } from "$lib/docs";
 export default function DocsLayout({ children }: { children: ReactNode }) {
   const { pathname } = useRouter();
   return (
-    <div className="lg:grid lg:grid-cols-[13rem_minmax(0,1fr)] lg:gap-12">
+    <div className="lg:grid lg:grid-cols-[14rem_minmax(0,1fr)] lg:gap-14">
       <aside className="mb-10 lg:mb-0">
-        <div className="lg:sticky lg:top-8">
+        <div className="lg:sticky lg:top-8 lg:max-h-[calc(100vh-4rem)] lg:overflow-y-auto lg:pb-8">
           <DocsSearch />
           {/* Small screens: the same menu, folded away under the search box. */}
           <details className="mt-3 text-[0.95rem] lg:hidden">

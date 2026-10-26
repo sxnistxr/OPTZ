@@ -11,6 +11,7 @@ import { brotliDecompressSync } from "node:zlib";
 import { createHash } from "node:crypto";
 import { writeFileSync } from "node:fs";
 import { join } from "node:path";
+import { cachedFetch } from "./net-cache";
 import type { Config } from "./types";
 
 const UA = "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/141.0.0.0 Safari/537.36";
@@ -165,9 +166,8 @@ export async function buildFonts(fonts: NonNullable<Config["fonts"]>, assetsDir:
   const preload: string[] = [];
   const downloaded = new Map<string, Uint8Array>();
   for (const font of fonts) {
-    const res = await fetch(font.google, { headers: { "User-Agent": UA }, signal: AbortSignal.timeout(20000) });
-    if (!res.ok) throw new Error(`fonts: ${font.google} answered ${res.status}`);
-    const sheet = await res.text();
+    // Google's CSS changes rarely; the font files at a URL never do.
+    const sheet = new TextDecoder().decode(await cachedFetch(font.google, { headers: { "User-Agent": UA }, maxAgeDays: 7, sub: "fonts" }));
     const want = new Set(font.preload ?? ["latin"]);
     const metricsFor = new Map<string, FontMetrics>();
     // Google's CSS: "/* latin */\n@font-face { font-family: 'X'; ... src: url(...) format('woff2'); ... }"
@@ -179,9 +179,7 @@ export async function buildFonts(fonts: NonNullable<Config["fonts"]>, assetsDir:
       // Variable fonts: several weights share one file.
       let bytes = downloaded.get(url);
       if (!bytes) {
-        const r = await fetch(url, { signal: AbortSignal.timeout(20000) });
-        if (!r.ok) throw new Error(`fonts: ${url} answered ${r.status}`);
-        bytes = new Uint8Array(await r.arrayBuffer());
+        bytes = await cachedFetch(url, { maxAgeDays: 365, sub: "fonts" });
         downloaded.set(url, bytes);
       }
       const name = `${family.toLowerCase().replace(/[^a-z0-9]+/g, "-")}-${subset}-${createHash("sha256").update(bytes).digest("hex").slice(0, 10)}.woff2`;

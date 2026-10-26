@@ -75,6 +75,18 @@ for _ in $(seq 30); do
       echo "deploy: warning: nginx isn't serving the site" >&2
     fi
     echo "deploy: $SHA is live"
+    # Cloudflare caches pages when the site sets server.cdnMaxAge: drop them so the new release
+    # shows at once. Optional: set CF_ZONE_ID and CF_API_TOKEN (Zone > Cache Purge) in /etc/optz/env.
+    CF_ZONE_ID="$(sed -n 's/^CF_ZONE_ID=//p' /etc/optz/env 2>/dev/null || true)"
+    CF_API_TOKEN="$(sed -n 's/^CF_API_TOKEN=//p' /etc/optz/env 2>/dev/null || true)"
+    if [ -n "$CF_ZONE_ID" ] && [ -n "$CF_API_TOKEN" ]; then
+      if curl -fsS --max-time 15 -X POST "https://api.cloudflare.com/client/v4/zones/$CF_ZONE_ID/purge_cache" \
+           -H "Authorization: Bearer $CF_API_TOKEN" -H "Content-Type: application/json" --data '{"purge_everything":true}' >/dev/null; then
+        echo "deploy: Cloudflare cache purged"
+      else
+        echo "deploy: warning: Cloudflare cache purge failed" >&2
+      fi
+    fi
     # Keep the five newest releases.
     ls -1dt /opt/optz/releases/* | tail -n +6 | grep -v -x -F "$REL" | xargs -r rm -rf
     exit 0

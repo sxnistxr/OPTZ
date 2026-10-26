@@ -246,6 +246,11 @@ export interface Config {
     /** islands mode: the library islands hydrate with. "preact" ships ~4 KB instead of ~60 KB;
      *  your components still use the React API through preact/compat. Default "react". */
     runtime?: "react" | "preact";
+    /** Let Chromium browsers prerender the next page while a link is hovered or pressed (the
+     *  Speculation Rules API, sent as a response header, so a strict CSP is fine). Where it's
+     *  supported, links do real navigations into the prerendered page (instant, with a
+     *  cross-document view transition); elsewhere HTML-swap navigation is used. Default true. */
+    speculation?: boolean;
   };
 
   /** Turn off what you don't use; each one saves memory or work per request. */
@@ -287,6 +292,10 @@ export interface Config {
     idleTimeout?: number;
     /** Largest request body accepted, in bytes. Default 1 MB. */
     maxRequestBodySize?: number;
+    /** Let a CDN (Cloudflare, ...) cache built HTML pages for this many seconds (`s-maxage`, with
+     *  stale-while-revalidate). Browsers still revalidate every time. Purge the CDN on deploy.
+     *  Default 0 (off). */
+    cdnMaxAge?: number;
   };
 }
 
@@ -301,9 +310,9 @@ export interface ResolvedConfig extends Config {
 export function resolveConfig(c: Config = {}): ResolvedConfig {
   return {
     ...c,
-    client: { mode: "islands", navigation: true, prefetch: true, runtime: "react", ...c.client },
+    client: { mode: "islands", navigation: true, prefetch: true, runtime: "react", speculation: true, ...c.client },
     features: { middleware: true, dynamic: true, api: true, cache: true, dynamicCompression: true, etag: true, requestLog: false, streaming: true, actions: true, images: true, ...c.features },
     cache: { maxEntries: 500, maxBytes: 32 << 20, ...c.cache },
-    server: { idleTimeout: 30, maxRequestBodySize: 1 << 20, ...c.server },
+    server: { idleTimeout: 30, maxRequestBodySize: 1 << 20, cdnMaxAge: 0, ...c.server },
   };
 }
