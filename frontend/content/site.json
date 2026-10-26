@@ -1,0 +1,9 @@
+{
+  "name": "sxnistxr",
+  "title": "sxnistxr",
+  "about": "I build fast software on small machines. Right now that's a social network running on a $12 server with one CPU and 2 GB of memory, written in Rust on raw io_uring and SQLite.",
+  "links": [
+    { "label": "GitHub", "href": "https://github.com/sxnistxr" }
+  ],
+  "url": "http://162.35.162.49"
+}

@@ -5,6 +5,8 @@ for. Everything needed to run it as a real service lives here.
 
 | file | what it does |
 |---|---|
+| `nginx/optz.conf` | Serves the built site (`frontend/`) on :80 and proxies `/api/*` to the API on 127.0.0.1:3000, with CSP and security headers |
+| `mint-token.py` | Signs a posting token for a username (creating its user row) with the server's secret |
 | `install-prod.sh` | One-time install on Ubuntu 24.04: `optz` user, `/var/lib/optz`, `/etc/optz/env` (with a random JWT secret unless given), the database (empty schema or `--seed`), toolchain, units, journald limit, first deploy |
 | `deploy.sh` | Builds the current commit as the `optz` user (shared cargo cache, so later builds are incremental), installs it as `/opt/optz/releases/<sha>`, switches `/opt/optz/current`, restarts, and **rolls back if `/health` isn't OK within 30 s**. Keeps 5 releases |
 | `systemd/optz.service` | `Restart=on-failure`, `LimitNOFILE=65535`, `CAP_NET_BIND_SERVICE` only, `MemoryHigh/Max`, `ProtectSystem=strict`, `NoNewPrivileges`, syscall filter (with io_uring), etc. |
@@ -21,7 +23,7 @@ gets built and deployed, and a bad commit is rolled back automatically.
 
 ```sh
 # on the VPS, once:
-sudo bash /srv/optz/ops/install-prod.sh --port 3000      # port 80 is used by the test runner
+sudo bash /srv/optz/ops/install-prod.sh                  # site on :80, API on 127.0.0.1:3000
 ```
 
 ## Verified here

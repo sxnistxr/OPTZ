@@ -28,6 +28,11 @@ if [ ! -x "$REL/bin/twelve-iouring" ]; then
   mkdir -p "$REL/bin"
   install -m 0755 "$CACHE/target/release/twelve-iouring" "$REL/bin/twelve-iouring"
   cp -r "$src/ops" "$REL/ops"
+  if [ -f "$src/frontend/package.json" ]; then
+    echo "deploy: building the site"
+    runuser -u optz -- env HOME="$CACHE" PATH="/opt/node/bin:$PATH" bash -c "cd '$src/frontend' && npm ci --no-audit --no-fund --loglevel=error && node build.mjs"
+    cp -r "$src/frontend/dist" "$REL/site"
+  fi
   echo "$SHA" > "$REL/REVISION"
 fi
 
@@ -40,6 +45,9 @@ ln -sfn "$REL" /opt/optz/current.new && mv -T /opt/optz/current.new /opt/optz/cu
 systemctl restart optz
 for _ in $(seq 30); do
   if curl -fsS --max-time 2 "http://127.0.0.1:$PORT/health" >/dev/null 2>&1; then
+    if systemctl is-active --quiet nginx && ! curl -fsS --max-time 2 -o /dev/null http://127.0.0.1/; then
+      echo "deploy: warning: nginx isn't serving the site" >&2
+    fi
     echo "deploy: $SHA is live"
     # Keep the five newest releases.
     ls -1dt /opt/optz/releases/* | tail -n +6 | grep -v -x -F "$REL" | xargs -r rm -rf
