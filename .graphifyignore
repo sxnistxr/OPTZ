@@ -1,0 +1,7 @@
+# graphify: skip vendored and generated code
+portfolio/engine/.cargo-home/
+portfolio/engine/vendor/
+bench/nextjs-portfolio/
+**/dist/
+**/.optz/
+submissions/
