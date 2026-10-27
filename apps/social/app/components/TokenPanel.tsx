@@ -51,7 +51,7 @@ export function TokenPanel() {
         <span className="text-sm text-muted">The site's owner signs tokens. Yours stays in this browser.</span>
         <button className="rounded-md bg-ink px-4 py-2 text-sm font-medium text-paper hover:opacity-90">Use this token</button>
       </div>
-      <p role="alert" className="mt-2 text-sm text-[#c2483d]">
+      <p role="alert" className="mt-2 text-sm text-danger">
         {error || (auth?.expired ? `Your saved token expired on ${fmt(auth.claims.exp)}. Paste a new one.` : "")}
       </p>
     </form>

@@ -20,6 +20,8 @@
   --color-code: #18202c; /* code blocks */
   --color-code-ink: #e3e9f0;
   --color-signal: #e8a33d; /* you are here / live */
+  /* Focus rings need 3:1 against the page: the signal amber is 2:1 on light paper. */
+  --color-focus: #a8650f;
 }
 
 @layer base {
@@ -32,6 +34,7 @@
       --color-muted: #8f9cad;
       --color-rule: #283240;
       --color-panel: #19212c;
+      --color-focus: #e8a33d;
       --color-code: #0b0f15;
       --color-code-ink: #d9e1ea;
     }
@@ -48,7 +51,7 @@
   ::selection { background: color-mix(in srgb, var(--color-signal) 35%, transparent); }
 
   :focus-visible {
-    outline: 2px solid var(--color-signal);
+    outline: 2px solid var(--color-focus);
     outline-offset: 3px;
     border-radius: 2px;
   }

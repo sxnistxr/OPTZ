@@ -40,7 +40,7 @@ jobs:
         run: bun framework/scripts/check-package.ts
       - name: Every app type-checks and builds
         run: |
-          for app in apps/example apps/features apps/social portfolio; do
+          for app in apps/example apps/features apps/social apps/spa portfolio; do
             echo "::group::$app"
             (cd "$app" && bun "$GITHUB_WORKSPACE/framework/src/cli.ts" check)
             echo "::endgroup::"
@@ -95,6 +95,15 @@ jobs:
           for i in $(seq 30); do curl -sf -o /dev/null http://127.0.0.1:3002/ && break; sleep 0.5; done
           node e2e.cjs http://127.0.0.1:3002 | tee e2e.txt
           ! grep -q '^FAIL' e2e.txt
+      - name: SPA mode in a browser
+        env:
+          NODE_PATH: /tmp/pw/node_modules
+        working-directory: apps/spa
+        run: |
+          bun ../../framework/src/cli.ts build
+          bun ../../framework/src/cli.ts start &
+          for i in $(seq 30); do curl -sf -o /dev/null http://127.0.0.1:3006/ && break; sleep 0.5; done
+          node e2e.cjs http://127.0.0.1:3006
       - name: Portfolio in a browser
         env:
           NODE_PATH: /tmp/pw/node_modules

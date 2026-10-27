@@ -32,6 +32,23 @@ const check = (name, ok, detail = "") => results.push(`${ok ? "ok  " : "FAIL"} $
   check("home: the lab's experiments", (await pg.locator("#lab ~ ol > li").count()) === 5 && (await pg.textContent("main")).includes("SDXL"));
   check("home: no social feed left", !(await pg.textContent("main")).includes("Latest on the feed"));
 
+  // ---- keyboard: skip link and focus ring ----
+  await pg.keyboard.press("Tab");
+  const skip = await pg.evaluate(() => document.activeElement?.textContent);
+  await pg.keyboard.press("Enter");
+  await pg.waitForTimeout(100);
+  check("skip link moves focus to the main content", skip === "Skip to content" && (await pg.evaluate(() => document.activeElement?.id)) === "main", skip);
+  await pg.keyboard.press("Tab");
+  const ring = await pg.evaluate(() => {
+    const rgb = (s) => s.match(/\d+(\.\d+)?/g).slice(0, 3).map(Number);
+    const lum = (c) => 0.2126 * f(c[0]) + 0.7152 * f(c[1]) + 0.0722 * f(c[2]);
+    const f = (v) => ((v /= 255) <= 0.03928 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4);
+    const a = lum(rgb(getComputedStyle(document.activeElement).outlineColor));
+    const b = lum(rgb(getComputedStyle(document.body).backgroundColor === "rgba(0, 0, 0, 0)" ? getComputedStyle(document.documentElement).backgroundColor : getComputedStyle(document.body).backgroundColor));
+    return (Math.max(a, b) + 0.05) / (Math.min(a, b) + 0.05);
+  });
+  check("focus ring contrast is at least 3:1", ring >= 3, ring.toFixed(2));
+
   // ---- navigation by HTML swap ----
   const d0 = docs.length;
   await pg.click("nav[aria-label=Site] >> text=Lab");
@@ -55,14 +72,15 @@ const check = (name, ok, detail = "") => results.push(`${ok ? "ok  " : "FAIL"} $
   await pg.keyboard.press("/");
   check('"/" focuses the search box', await pg.evaluate(() => document.activeElement?.id === "docs-search"));
   await pg.keyboard.type("deploy targets");
-  await pg.waitForSelector("#docs-search-results li a");
-  const firstHit = await pg.textContent("#docs-search-results li a");
+  await pg.waitForSelector('#docs-search-results [role="option"]');
+  const firstHit = await pg.textContent('#docs-search-results [role="option"]');
   check("search finds headings", /Deploy targets/.test(firstHit), firstHit);
   await pg.keyboard.type(" zzzz");
   await pg.waitForTimeout(100);
-  check("search says when nothing matches", (await pg.textContent("#docs-search-results")).includes("Nothing matches"));
+  check("search says when nothing matches (in a status region)", (await pg.textContent('[role="search"] [role="status"]')).includes("Nothing matches"));
+  check("search box is a combobox with its state", (await pg.getAttribute("#docs-search", "role")) === "combobox" && (await pg.getAttribute("#docs-search", "aria-expanded")) === "false");
   await pg.fill("#docs-search", "architecture");
-  await pg.waitForSelector("#docs-search-results li a");
+  await pg.waitForSelector('#docs-search-results [role="option"]');
   await pg.keyboard.press("Enter");
   await pg.waitForURL(/\/docs\/architecture/);
   check("Enter opens the result without a reload", docs.length === d0 && (await pg.textContent("h1")) === "Architecture and tech");

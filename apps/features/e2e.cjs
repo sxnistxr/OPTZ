@@ -53,6 +53,13 @@ const check = (name, ok, detail = "") => results.push(`${ok ? "ok  " : "FAIL"} $
   check("action set a cookie", (await ctx.cookies()).some((c) => c.name === "name" && c.value === "ada" && c.httpOnly));
   check("notes page: no errors", errs.length === 0, JSON.stringify(errs));
 
+  // ---- accessibility of in-app navigation ----
+  await pg.click("nav >> text=ISR");
+  await pg.waitForURL(base + "/isr");
+  await pg.waitForTimeout(200);
+  const nav = await pg.evaluate(() => ({ tag: document.activeElement?.tagName, live: document.getElementById("optz-announcer")?.textContent, title: document.title }));
+  check("navigation moves focus to <main> and announces the page", nav.tag === "MAIN" && nav.live === nav.title, JSON.stringify(nav));
+
   // ---- the same forms without JavaScript ----
   const nojs = await b.newContext({ javaScriptEnabled: false });
   const np = await nojs.newPage();
@@ -71,10 +78,19 @@ const check = (name, ok, detail = "") => results.push(`${ok ? "ok  " : "FAIL"} $
   await pg.goto(base + "/gallery");
   await pg.waitForTimeout(200);
   const d1 = docs.length;
-  await pg.click("text=Photo 2");
+  await pg.focus("text=Photo 2");
+  await pg.keyboard.press("Enter");
   await pg.waitForSelector('[data-testid="photo-modal"]');
   check("intercepted: photo opens as a modal over the gallery", (await pg.locator('[data-testid="gallery"]').isVisible()) && pg.url() === base + "/gallery/photo/2" && docs.length === d1);
-  await pg.reload();
+  await pg.waitForTimeout(150);
+  const modal = await pg.$eval('[data-testid="photo-modal"]', (d) => ({ modal: d.matches(":modal"), name: d.getAttribute("aria-label"), focusInside: d.contains(document.activeElement) }));
+  check("the modal is a real modal dialog: named, focus inside, page behind inert", modal.modal && modal.name === "Photo 2" && modal.focusInside, JSON.stringify(modal));
+  await pg.keyboard.press("Escape");
+  await pg.waitForURL(base + "/gallery");
+  await pg.waitForTimeout(200);
+  const after = await pg.evaluate(() => ({ open: !!document.querySelector('[data-testid="photo-modal"]'), focused: document.activeElement?.textContent }));
+  check("Escape closes the modal and returns focus to the photo's link", !after.open && after.focused === "Photo 2", JSON.stringify(after));
+  await pg.goto(base + "/gallery/photo/2");
   check("reload shows the real photo page", await pg.locator('[data-testid="photo-page"]').isVisible());
   await pg.goto(base + "/dashboard");
   check("parallel slots render with the page", (await pg.textContent('[data-testid="stats-slot"]')).includes("visits 42") && (await pg.textContent('[data-testid="feed-slot"]')).includes("feed for the dashboard"));

@@ -497,12 +497,13 @@ export async function createApp({ manifest, config, files, platform, middleware 
     const route = m.route;
     const input = await renderInput(route, ctx, target, inner, m.params, locale, draft);
     const produce = async () => {
-      const { loadData } = await render();
+      const { loadData, headTags } = await render();
       const r = await loadData(input);
       const extra = draft ? { "Cache-Control": "private, no-store" } : undefined;
       if (r.kind === "redirect") return jsonRes({ redirect: r.response.headers.get("Location") }, 200, extra);
       if (r.kind === "notFound") return jsonRes({ error: "not found" }, 404, extra);
-      return jsonRes(r.payload, 200, extra);
+      // The SPA router swaps the same head tags a full page load would have.
+      return jsonRes({ ...r.payload, headHtml: headTags(r.payload.head, config, target, localeInfo(locale)), lang: locale ?? config.lang }, 200, extra);
     };
     // Draft data is per viewer: never from or into the shared cache.
     return draft ? produce() : withCache(ctx, input.page.cache, produce);

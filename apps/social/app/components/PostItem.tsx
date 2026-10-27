@@ -48,7 +48,10 @@ export function PostItem({ post }: { post: Post }) {
             {liked ? "Liked" : "Like"}
           </button>
         )}
-        <span className="text-sm tabular-nums text-muted">{error || plural(likes, "like")}</span>
+        {/* Announced when a like (or its error) changes it. */}
+        <span role="status" className="text-sm tabular-nums text-muted">
+          {error || plural(likes, "like")}
+        </span>
       </div>
     </li>
   );

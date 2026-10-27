@@ -27,7 +27,7 @@ export default function Pulse() {
     <section aria-label="Live server status" className="mt-10 border-l-2 border-rule pl-5">
       <p className="flex items-center gap-2.5 text-sm text-muted">
         <span className="signal-dot" data-state={s.state === "checking" ? "idle" : s.state} />
-        <span>{s.state === "live" ? "Live, timed from your browser" : s.state === "down" ? "The server isn't answering right now" : "Checking the server"}</span>
+        <span role="status">{s.state === "live" ? "Live, timed from your browser" : s.state === "down" ? "The server isn't answering right now" : "Checking the server"}</span>
       </p>
       <p className="mt-2 text-2xl leading-snug tracking-tight md:text-3xl">
         The server behind this page answered in <strong className="font-semibold tabular-nums">{ms}</strong>.

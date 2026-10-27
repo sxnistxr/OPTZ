@@ -13,6 +13,10 @@
   --color-muted: #5b6878;
   --color-rule: #c9d1da;
   --color-signal: #e8a33d;
+  /* Focus rings need 3:1 against the page (the signal amber is 2:1 on light paper); error text
+     4.5:1. */
+  --color-focus: #a8650f;
+  --color-danger: #b03a2e;
   --color-panel: #e3e8ee;
 }
 
@@ -25,6 +29,8 @@
       --color-muted: #94a1b2;
       --color-rule: #2a3442;
       --color-panel: #1a222d;
+      --color-focus: #e8a33d;
+      --color-danger: #f08a7e;
     }
   }
 
@@ -37,7 +43,7 @@
   }
 
   :focus-visible {
-    outline: 2px solid var(--color-signal);
+    outline: 2px solid var(--color-focus);
     outline-offset: 3px;
     border-radius: 2px;
   }

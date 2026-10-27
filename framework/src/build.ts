@@ -104,7 +104,10 @@ const FRAMEWORK_CSS =
   // the page stops taking clicks.
   "@media (scripting:enabled){@view-transition{navigation:auto}}::view-transition-old(root),::view-transition-new(root){animation-duration:.16s}" +
   "@media (prefers-reduced-motion:reduce){::view-transition-group(*),::view-transition-old(*),::view-transition-new(*){animation:none!important}}" +
-  ".optz-img{max-width:100%;height:auto}.optz-img-fill{position:absolute;inset:0;width:100%;height:100%;object-fit:cover}\n";
+  ".optz-img{max-width:100%;height:auto}.optz-img-fill{position:absolute;inset:0;width:100%;height:100%;object-fit:cover}" +
+  // Navigation moves focus to <main> (tabindex=-1) for screen readers: no ring for that.
+  "[tabindex='-1']:focus:not(:focus-visible){outline:none}" +
+  ".optz-sr-only{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0}\n";
 
 /** Build tools are optional peers: found in the project, else next to optz, else a clear error. */
 export function resolvePeer(spec: string, root: string, what: string, install: string): string {

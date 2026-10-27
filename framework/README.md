@@ -152,6 +152,32 @@ export default function Counter({ start }: { start: number }) { ... }
 
 (JS per page load, compressed / parsed.)
 
+### Accessible navigation and modals
+
+In-app navigation (the islands HTML swap and the SPA router) does what a full page load does
+for assistive technology: focus moves to the new page's `<main>` (or the `#hash` target), the
+new title is announced through a polite live region, and every per-page head tag, `<html lang>`
+included, is replaced. In-page links, skip links included, move focus to their target, also when
+speculation rules make navigations real ones.
+
+`optz/dialog`'s `<Modal>` is a modal that needs no island: the runtime opens it with
+`showModal()` (focus moves in and stays, the page behind is inert, `aria-modal`), Escape or a
+`<CloseModal>` goes back, and focus returns to the link that opened it. Without JavaScript it's an
+open `<dialog>` whose close link still works. It's made for intercepted routes:
+
+```tsx
+// gallery/@modal/(.)photo/[id].tsx
+import { CloseModal, Modal } from "optz/dialog";
+export default function PhotoModal({ params }: PageProps<unknown, "/gallery/photo/[id]">) {
+  return (
+    <Modal label={`Photo ${params.id}`}>
+      <h2>Photo {params.id}</h2>
+      <CloseModal href="/gallery">Close</CloseModal>
+    </Modal>
+  );
+}
+```
+
 ## Server Actions
 
 Modules that start with `"use server"` export functions the browser can call. Islands import
@@ -367,4 +393,5 @@ nginx serving the same files: the same speed ([docs/NATIVE.md](../docs/NATIVE.md
 `bun test` in `framework/`: routing (optional catch-alls, slots, intercepts), the cache, islands,
 actions, fonts, SEO files, MCP (schemas, the stdio server, `optz agents`), and the whole `apps/features` app in-process (streaming with nonces,
 actions and CSRF, ISR, dynamicParams, intercepts, draft mode, i18n, MCP over HTTP, llms.txt). Browser checks:
-`node apps/features/e2e.cjs` (22) and `node apps/features/hmr.cjs` (dev server, 6).
+`node apps/features/e2e.cjs` (25), `node apps/spa/e2e.cjs` (SPA mode, 7), `node portfolio/e2e.cjs`
+(30) and `node apps/features/hmr.cjs` (dev server, 6). CI runs all of them.
