@@ -4,7 +4,7 @@ import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
 import { join, relative } from "node:path";
 import { brotliCompressSync, constants as zc } from "node:zlib";
 import { createApp, type Platform } from "./handler";
-import { outDirFor, type Manifest } from "./manifest";
+import { outDirFor, parseManifest, type Manifest } from "./manifest";
 import { registerIslandLoader } from "./plugin";
 import { cacheFor, typeOf, type StaticEntry } from "./static";
 import type { Middleware, ResolvedConfig } from "./types";
@@ -67,7 +67,7 @@ export interface ServeOptions {
 
 export async function serve({ root, config, dev, port, hostname }: ServeOptions) {
   const out = outDirFor(root, dev);
-  const manifest: Manifest = JSON.parse(readFileSync(join(out, "manifest.json"), "utf8"));
+  const manifest: Manifest = parseManifest(readFileSync(join(out, "manifest.json"), "utf8"));
   if (manifest.mode === "islands") registerIslandLoader(root);
   const files = loadStatic(join(out, "static"));
   const app = await createApp({ manifest, config, files, platform: bunPlatform(root, config), middleware: await loadMiddleware(root, config), dev });

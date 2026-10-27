@@ -21,7 +21,7 @@ export function create(dir: string) {
         type: "module",
         scripts: { dev: "optz dev", build: "optz build", start: "optz start", check: "optz check" },
         dependencies: { optz: optzDep, react: "19.3.1", "react-dom": "19.3.1" },
-        devDependencies: { "@types/bun": "1.4.4", "@types/react": "19.3.0", "@types/react-dom": "19.3.0" },
+        devDependencies: { "@types/bun": "1.4.4", "@types/react": "19.3.0", "@types/react-dom": "19.3.0", typescript: "7.0.2", tailwindcss: "4.3.3", "@tailwindcss/cli": "4.3.3" },
       },
       null,
       2,

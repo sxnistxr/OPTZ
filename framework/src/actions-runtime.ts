@@ -26,7 +26,8 @@ export function tagAction(fn: Tagged, id: string, name: string, bound: unknown[]
         data = new FormData();
         data.set(BOUND_FIELD, JSON.stringify(bound));
       }
-      return { name: undefined, action: actionUrl(id, name), encType: "multipart/form-data", method: "POST", target: undefined, data };
+      // React renders a hidden input with this name; the server drops "$ACTION…" fields.
+      return { name: `$ACTION_optz_${id}_${name}`, action: actionUrl(id, name), encType: "multipart/form-data", method: "POST", target: undefined, data };
     },
   });
   Object.defineProperty(fn, "bind", {

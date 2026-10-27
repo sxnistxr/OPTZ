@@ -6,7 +6,7 @@
 //   dist/manifest.json      routes, render modes, chunks and redirects, for `optz start`
 import { brotliCompressSync, constants as zc, gzipSync } from "node:zlib";
 import { createHash } from "node:crypto";
-import { appendFileSync, cpSync, existsSync, mkdirSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { appendFileSync, cpSync, existsSync, mkdirSync, readdirSync, readFileSync, renameSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { dirname, join, relative } from "node:path";
 import type { BunPlugin } from "bun";
 import { writeTypes } from "./codegen";
@@ -106,11 +106,21 @@ const FRAMEWORK_CSS =
   "@media (prefers-reduced-motion:reduce){::view-transition-group(*),::view-transition-old(*),::view-transition-new(*){animation:none!important}}" +
   ".optz-img{max-width:100%;height:auto}.optz-img-fill{position:absolute;inset:0;width:100%;height:100%;object-fit:cover}\n";
 
+/** Build tools are optional peers: found in the project, else next to optz, else a clear error. */
+export function resolvePeer(spec: string, root: string, what: string, install: string): string {
+  for (const from of [root, import.meta.dir]) {
+    try {
+      return Bun.resolveSync(spec, from);
+    } catch {}
+  }
+  throw new Error(`optz: ${what} needs ${install.split(" ")[0]}. Install it: bun add -d ${install}`);
+}
+
 async function buildCss(root: string, config: ResolvedConfig, assetsDir: string, dev?: boolean, extra = ""): Promise<string[]> {
   const entry = join(root, config.css ?? "app/styles.css");
   let css: Buffer | string = FRAMEWORK_CSS + extra;
   if (existsSync(entry)) {
-    const cliPkg = Bun.resolveSync("@tailwindcss/cli/package.json", import.meta.dir);
+    const cliPkg = resolvePeer("@tailwindcss/cli/package.json", root, `${config.css ?? "app/styles.css"} (Tailwind CSS)`, "tailwindcss @tailwindcss/cli");
     const pkg = JSON.parse(readFileSync(cliPkg, "utf8"));
     const bin = join(dirname(cliPkg), typeof pkg.bin === "string" ? pkg.bin : (Object.values(pkg.bin)[0] as string));
     const tmp = join(assetsDir, "styles.tmp.css");
@@ -128,7 +138,10 @@ async function buildCss(root: string, config: ResolvedConfig, assetsDir: string,
 export async function build({ root, config, dev, exportOnly }: BuildOptions): Promise<Manifest> {
   const t0 = performance.now();
   const routesDir = join(root, "app/routes");
-  const out = outDirFor(root, dev);
+  // Production builds go to dist.next and replace dist only when everything succeeded, so a
+  // failed build leaves the last good one in place (and a running server's files untouched).
+  const final = outDirFor(root, dev);
+  const out = dev ? final : `${final}.next`;
   const staticDir = join(out, "static");
   const assetsDir = join(staticDir, "assets");
   const gen = join(root, ".optz/gen");
@@ -218,7 +231,7 @@ export async function build({ root, config, dev, exportOnly }: BuildOptions): Pr
     // Speculation rules (dev: off, so edits are never served from a stale prerender).
     const speculation = speculate;
     writeFileSync(entryFile, `${hot ? 'import "/assets/dev-vendor/refresh.js";\n' : ""}import { startIslands } from "optz/islands";\nstartIslands({\n${lines.join("\n")}\n}, ${JSON.stringify({ navigation: config.client.navigation, prefetch: config.client.prefetch, speculation })});\n`);
-    const result = await bundle([entryFile, ...wrappers], assetsDir, dev, plugins, hot);
+    const result = await bundle([entryFile, ...wrappers], assetsDir, dev, plugins, hot, config);
     urlOf = (file) => outputUrl(result, assetsDir, file);
     files.forEach((f, i) => (islands[islandId(root, f)] = urlOf(wrappers[i])!));
   } else {
@@ -244,7 +257,7 @@ export async function build({ root, config, dev, exportOnly }: BuildOptions): Pr
         })
         .join("\n")}\n], ${JSON.stringify(i18n ?? null)});\n`,
     );
-    const result = await bundle([entryFile, ...pageW, ...layoutW, ...errorW], assetsDir, dev, [...plugins, stripServerExports(routesDir)]);
+    const result = await bundle([entryFile, ...pageW, ...layoutW, ...errorW], assetsDir, dev, [...plugins, stripServerExports(routesDir)], false, config);
     urlOf = (file) => outputUrl(result, assetsDir, file);
     pages.forEach((r, i) => preloadOf.set(r, [urlOf(pageW[i]), ...r.layouts.map((l) => urlOf(layoutW[layoutFiles.indexOf(l)]))].filter(Boolean) as string[]));
   }
@@ -382,9 +395,30 @@ export async function build({ root, config, dev, exportOnly }: BuildOptions): Pr
     rendered += await buildSeoFiles(root, config, staticDir);
     const { buildLlmsFiles } = await import("./llms");
     rendered += await buildLlmsFiles(root, config, staticDir);
+    // Static hosts never read the manifest: redirects become a page that forwards (any host)
+    // and a _redirects file (Netlify, Cloudflare Pages).
+    const redirects = Object.entries(manifest.redirects);
+    if (exportOnly && redirects.length) {
+      const esc = (u: string) => u.replace(/[&<>"]/g, (c) => `&#${c.charCodeAt(0)};`);
+      for (const [from, r] of redirects) {
+        write(
+          join(staticDir, htmlPath(from)),
+          `<!doctype html><meta charset="utf-8"><title>Moved</title><meta http-equiv="refresh" content="0; url=${esc(r.location)}"><link rel="canonical" href="${esc(r.location)}"><p><a href="${esc(r.location)}">Moved here</a></p>\n`,
+        );
+      }
+      appendFileSync(join(staticDir, "_redirects"), redirects.map(([from, r]) => `${from} ${r.location} ${r.status === 308 ? 301 : r.status === 307 ? 302 : r.status}`).join("\n") + "\n");
+      console.log(`optz: ${redirects.length} redirect${redirects.length === 1 ? "" : "s"} as forwarding pages and _redirects:\n${redirects.map(([f, r]) => `  ${f} -> ${r.location} (${r.status})`).join("\n")}`);
+    }
     precompress(staticDir);
   }
   writeFileSync(join(out, "manifest.json"), JSON.stringify(manifest, null, 1));
+  if (out !== final) {
+    const old = `${final}.old`;
+    rmSync(old, { recursive: true, force: true });
+    if (existsSync(final)) renameSync(final, old);
+    renameSync(out, final);
+    rmSync(old, { recursive: true, force: true });
+  }
   const ms = Math.round(performance.now() - t0);
   const extras = [
     Object.keys(actions).length && `${Object.values(actions).reduce((n, a) => n + a.exports.length, 0)} actions`,
@@ -402,7 +436,7 @@ export async function build({ root, config, dev, exportOnly }: BuildOptions): Pr
   return manifest;
 }
 
-async function bundle(entrypoints: string[], outdir: string, dev: boolean | undefined, plugins: BunPlugin[], reactFastRefresh = false) {
+async function bundle(entrypoints: string[], outdir: string, dev: boolean | undefined, plugins: BunPlugin[], reactFastRefresh = false, config?: ResolvedConfig) {
   const result = await Bun.build({
     reactFastRefresh,
     entrypoints,
@@ -413,7 +447,11 @@ async function bundle(entrypoints: string[], outdir: string, dev: boolean | unde
     minify: !dev,
     sourcemap: dev ? "inline" : "none",
     naming: { entry: "[name]-[hash].[ext]", chunk: "c-[hash].[ext]", asset: "[name]-[hash].[ext]" },
-    define: { "process.env.NODE_ENV": JSON.stringify(dev ? "development" : "production") },
+    define: {
+      "process.env.NODE_ENV": JSON.stringify(dev ? "development" : "production"),
+      // <Image> in islands offers the same widths the optimizer produces.
+      ...(config?.images?.sizes ? { "globalThis.__OPTZ_IMAGE_SIZES__": JSON.stringify(config.images.sizes) } : {}),
+    },
     plugins,
   });
   if (!result.success) throw new AggregateError(result.logs, "client build failed");

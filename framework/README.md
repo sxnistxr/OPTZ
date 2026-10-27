@@ -182,8 +182,10 @@ must come from the same site (CSRF check). Errors other than `ActionError` are r
 ## Server functions (`optz/server`)
 
 `cookies()` (read, set, delete), `headers()`, `after(fn)` (run after the response is sent),
-`draftMode()`, `revalidatePath()`, `revalidateTag()`, `locale()`. They work in API routes, Server
-Actions and dynamic pages.
+`waitUntil(promise)`, `env()`, `draftMode()`, `revalidatePath()`, `revalidateTag()`, `locale()`.
+They work in API routes, Server Actions, dynamic pages and MCP tools. A cached response whose
+code reads a header (through `headers()` or `cookies()`) that the route's `cache.vary` doesn't
+list is treated as personal: it's sent `private, no-store` and never shared.
 
 **Draft mode**: an API route your CMS calls turns it on with `draftMode().enable()`; while the
 signed cookie is set, static pages render per request and `ctx.draft` is true in loaders.
@@ -311,6 +313,11 @@ Re-running `optz agents` updates the optz parts and keeps everything else in tho
 | Edge worker | `optz build --target edge` | `dist/edge/worker.js` + `wrangler.toml`: Cloudflare Workers, Deno Deploy, Vercel Edge |
 | Static site | `optz export` | `dist/static` for any static host (no server features) |
 
+On edge workers, `fetch(request, env, ctx)` gets the platform's bindings: read them with
+`env()` from `optz/server`; `after()` and `waitUntil()` use `ctx.waitUntil`, and
+`app/scheduled.ts` (default export `(event, env, ctx)`) runs on Cron Triggers. `optz/edge`'s
+`createWorker()` is the same worker, for wrapping in your own code.
+
 The request handler is the same web-standard code everywhere; `apps/features/e2e.cjs` passes on
 all three servers. Image optimization needs sharp: the executable uses it when it can find it,
 edge workers serve originals. Open Graph images for static pages are prebuilt everywhere.
@@ -333,7 +340,11 @@ Every option is typed and documented on hover in `optz.config.ts`. The ones that
 | `cache.maxEntries` / `maxBytes` / `default` | 500 / 32 MB / none | response cache bounds, and a default for routes without `cache` |
 | `server.idleTimeout` / `maxRequestBodySize` | 30 s / 1 MB | connection and body limits |
 | `server.cdnMaxAge` | 0 | seconds a CDN may cache HTML pages (`s-maxage`, then `stale-while-revalidate`); browsers still revalidate |
+| `proxy[prefix]` | | `{ target, strip, bypassMiddleware, timeoutMs, maxBodySize, cacheSeconds }`: the target's path is kept; middleware runs unless `bypassMiddleware` (then `optz nginx` routes it without Bun) |
 | `proxy[prefix].cacheSeconds` | 0 | nginx micro-cache for a proxied API (via `optz nginx`) |
+| `server.trustProxy` | off | trust `X-Forwarded-Host/-Proto/-For` (only behind a proxy you control); CSRF checks use `site.url` either way |
+| `images.cacheDir` / `concurrency` | `.optz/cache/images` / cores − 1 | where optimized images go on disk (or `OPTZ_IMAGE_CACHE_DIR`; read-only falls back to memory), encodes at once |
+| `draft.maxAge` | 86400 | seconds a draft-mode cookie stays valid |
 | `mcp` / `features.mcp` | on with `app/mcp` | the MCP endpoint (`path`, `instructions`, `pages`, `allowedOrigins`); loaded on its first request |
 | `llms` | on | `/llms.txt` and `/llms-full.txt` at build time (`false`, `exclude`, `full`) |
 

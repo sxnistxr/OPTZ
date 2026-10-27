@@ -1,5 +1,5 @@
 // The isomorphic public API: safe to import from pages, layouts, islands and API routes.
-import type { ApiContext, Config, Middleware, Params, RouteCache, TypedResponse } from "./types";
+import type { ApiContext, Config, Middleware, Params, PatternParams, RouteCache, TypedResponse } from "./types";
 
 export type * from "./types";
 export { resolveConfig } from "./types";
@@ -65,19 +65,21 @@ export type { RouteCache };
 // ---- typed API client ----------------------------------------------------------------------
 
 type Method = "GET" | "POST" | "PUT" | "PATCH" | "DELETE";
-type ApiPath = keyof import("./types").ApiRegistry & string;
-type Mod<P extends ApiPath> = import("./types").ApiRegistry[P];
-type MethodsOf<P extends ApiPath> = Extract<keyof Mod<P>, Method>;
+type Registry = import("./types").ApiRegistry;
+/** Until `optz check`/`build` generates the registry, any path (and any method) is allowed. */
+type Untyped = keyof Registry extends never ? true : false;
+type ApiPath = Untyped extends true ? string : keyof Registry & string;
+type Mod<P extends string> = P extends keyof Registry ? Registry[P] : Record<Method, (...a: never[]) => unknown>;
+type MethodsOf<P extends string> = Untyped extends true ? Method : Extract<keyof Mod<P>, Method>;
 type Out<H> = H extends (...a: never[]) => infer R ? (Awaited<R> extends TypedResponse<infer T> ? T : unknown) : unknown;
 type In<H> = H extends { readonly __body?: infer B } ? B : unknown;
 type HasParams<P extends string> = P extends `${string}[${string}]${string}` ? true : false;
-
-export type ApiOptions<P extends ApiPath, M extends MethodsOf<P>> = {
+export type ApiOptions<P extends string, M extends MethodsOf<P>> = {
   method?: M;
   query?: Record<string, string | number | boolean>;
   headers?: Record<string, string>;
   signal?: AbortSignal;
-} & (HasParams<P> extends true ? { params: Params } : { params?: undefined }) &
+} & (HasParams<P> extends true ? { params: PatternParams<P> } : { params?: undefined }) &
   (M extends "GET" ? { body?: undefined } : { body?: In<Mod<P>[M]> });
 
 export class ApiError extends Error {
@@ -93,12 +95,28 @@ export class ApiError extends Error {
 /** Calls one of this app's API routes with types from the route file:
  *  const stats = await api("/api/stats");            // typed from app/api/stats.ts's GET
  *  await api("/api/posts/[id]", { method: "POST", params: { id: "1" }, body: { text } }); */
+/** Fills an API pattern: [x] is one segment (a "/" in it is escaped), [...x] one or more and
+ *  [[...x]] zero or more (slashes kept). A missing required param is an error, not an empty
+ *  segment. */
+export function apiUrl(pattern: string, params: Params = {}): string {
+  return pattern
+    .replace(/\/\[\[\.\.\.(\w+)\]\]/g, (_m, k: string) => (params[k] ? "/" + params[k].split("/").map(encodeURIComponent).join("/") : ""))
+    .replace(/\[\.\.\.(\w+)\]/g, (_m, k: string) => {
+      if (!params[k]) throw new TypeError(`api(${pattern}): missing param "${k}"`);
+      return params[k].split("/").map(encodeURIComponent).join("/");
+    })
+    .replace(/\[(\w+)\]/g, (_m, k: string) => {
+      if (params[k] === undefined || params[k] === "") throw new TypeError(`api(${pattern}): missing param "${k}"`);
+      return encodeURIComponent(params[k]);
+    });
+}
+
 export async function api<P extends ApiPath, M extends MethodsOf<P> = Extract<"GET", MethodsOf<P>>>(
   path: P,
   ...[opts]: HasParams<P> extends true ? [ApiOptions<P, M>] : [ApiOptions<P, M>?]
 ): Promise<Out<Mod<P>[M]>> {
   const o = (opts ?? {}) as { method?: string; params?: Params; query?: Record<string, unknown>; body?: unknown; headers?: Record<string, string>; signal?: AbortSignal };
-  let url = (path as string).replace(/\[\[?(?:\.\.\.)?(\w+)\]?\]/g, (_: string, k: string) => encodeURIComponent(o.params?.[k] ?? "")).replace(/%2F/g, "/");
+  let url = apiUrl(path as string, o.params);
   if (o.query) url += "?" + new URLSearchParams(Object.entries(o.query).map(([k, v]) => [k, String(v)]));
   const res = await fetch(url, {
     method: o.method ?? "GET",

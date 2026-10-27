@@ -99,6 +99,8 @@ export function pickLocale(header: string | null, locales: string[]): string | u
 
 export async function createApp({ manifest, config, files, platform, middleware = [], dev, prerender }: AppOptions): Promise<App> {
   const F = config.features;
+  // <Image> rendered on the server offers the widths the optimizer produces.
+  if (config.images?.sizes) (globalThis as { __OPTZ_IMAGE_SIZES__?: number[] }).__OPTZ_IMAGE_SIZES__ = config.images.sizes;
   /** Serve built files (production) rather than rendering (dev, build). */
   const live = !dev && !prerender;
   const hash = platform.hash ?? fnv;
@@ -268,9 +270,22 @@ export async function createApp({ manifest, config, files, platform, middleware 
   // after `revalidate` seconds, or when revalidatePath/revalidateTag names them; the next
   // request gets the stale copy while one background render replaces it.
   const renderedAt = new Map<string, number>();
+  // Bounded: past MAX_STAMPS the oldest are dropped and `floor` remembers them (a page rendered
+  // before the floor counts as stale, which at worst costs an extra regeneration).
   const pathStamps = new Map<string, number>();
-  const prefixStamps: Array<[string, number]> = [];
+  const prefixStamps = new Map<string, number>();
   const tagStamps = new Map<string, number>();
+  const MAX_STAMPS = 5000;
+  let floor = 0;
+  const stamp = (m: Map<string, number>, k: string, t: number) => {
+    m.delete(k);
+    m.set(k, t);
+    while (m.size > MAX_STAMPS) {
+      const [oldest, at] = m.entries().next().value as [string, number];
+      m.delete(oldest);
+      floor = Math.max(floor, at);
+    }
+  };
   const regenerating = new Set<string>();
 
   setRevalidator({
@@ -278,8 +293,10 @@ export async function createApp({ manifest, config, files, platform, middleware 
       const now = Date.now();
       const p = path.length > 1 ? path.replace(/\/+$/, "") : path;
       anyStamps = true;
-      if (type === "layout") prefixStamps.push([p === "/" ? "/" : p + "/", now], [p, now]);
-      else pathStamps.set(p, now);
+      if (type === "layout") {
+        stamp(prefixStamps, p === "/" ? "/" : p + "/", now);
+        stamp(pathStamps, p, now);
+      } else stamp(pathStamps, p, now);
       cache?.invalidate((k) => {
         const kp = k.split("\n")[0].split("?")[0];
         return type === "layout" ? kp === p || kp.startsWith(p === "/" ? "/" : p + "/") : kp === p;
@@ -287,7 +304,7 @@ export async function createApp({ manifest, config, files, platform, middleware 
     },
     tag(tag) {
       anyStamps = true;
-      tagStamps.set(tag, Date.now());
+      stamp(tagStamps, tag, Date.now());
       cache?.invalidate((_k, rc) => !!rc.tags?.includes(tag));
     },
   });
@@ -298,6 +315,7 @@ export async function createApp({ manifest, config, files, platform, middleware 
     if (r.revalidate === undefined && !anyStamps) return false;
     const at = renderedAt.get(path) ?? manifest.builtAt;
     if (r.revalidate !== undefined && Date.now() - at > r.revalidate * 1000) return true;
+    if (floor > at) return true;
     if ((pathStamps.get(path) ?? 0) > at) return true;
     for (const [prefix, t] of prefixStamps) if (t > at && (path === prefix || path.startsWith(prefix))) return true;
     for (const t of r.tags ?? []) if ((tagStamps.get(t) ?? 0) > at) return true;

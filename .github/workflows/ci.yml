@@ -1,0 +1,150 @@
+# Every push and pull request: the framework's tests and types, every app's types and build, the
+# package's exports, the edge worker in workerd, the browser suites, the generated nginx config,
+# and the Rust engine. Actions are pinned to commit SHAs (the tag is in the comment).
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  BUN_VERSION: 1.4.4
+  PLAYWRIGHT_VERSION: 1.63.0
+
+jobs:
+  framework:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+        with:
+          bun-version: ${{ env.BUN_VERSION }}
+      - run: bun install --frozen-lockfile
+      - name: Dependency audit
+        run: bun audit
+      - name: Framework types
+        run: bunx tsc --noEmit -p framework/tsconfig.json
+      - name: Framework tests (with coverage)
+        working-directory: framework
+        run: bun test --coverage
+      - name: Package exports and tarball
+        run: bun framework/scripts/check-package.ts
+      - name: Every app type-checks and builds
+        run: |
+          for app in apps/example apps/features apps/social portfolio; do
+            echo "::group::$app"
+            (cd "$app" && bun "$GITHUB_WORKSPACE/framework/src/cli.ts" check)
+            echo "::endgroup::"
+          done
+          (cd apps/features && bun ../../framework/src/cli.ts build --target edge)
+          (cd portfolio && bun ../framework/src/cli.ts build)
+      - name: Edge worker in workerd
+        run: |
+          mkdir -p /tmp/wd && cd /tmp/wd
+          bun add workerd@latest >/dev/null
+          cp "$GITHUB_WORKSPACE/apps/features/dist/edge/worker.js" .
+          cat > config.capnp <<'EOF'
+          using Workerd = import "/workerd/workerd.capnp";
+          const config :Workerd.Config = (
+            services = [(name = "main", worker = .w)],
+            sockets = [(name = "http", address = "127.0.0.1:8799", http = (), service = "main")],
+          );
+          const w :Workerd.Worker = (
+            modules = [(name = "worker.js", esModule = embed "worker.js")],
+            compatibilityDate = "2026-09-01",
+            compatibilityFlags = ["nodejs_als"],
+          );
+          EOF
+          ./node_modules/.bin/workerd serve config.capnp > workerd.log 2>&1 &
+          for i in $(seq 30); do curl -sf -o /dev/null http://127.0.0.1:8799/ && break; sleep 0.5; done
+          test "$(curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:8799/)" = 200
+          test "$(curl -s -o /dev/null -w '%{http_code}' 'http://127.0.0.1:8799/_optz/image?url=https://evil.example/p.png')" = 404
+          test "$(curl -s -o /dev/null -w '%{http_code}' 'http://127.0.0.1:8799/products/%zz')" = 404
+          curl -sf http://127.0.0.1:8799/mcp -H 'Content-Type: application/json' -d '{"jsonrpc":"2.0","id":1,"method":"tools/list"}' | grep -q '"add"'
+          curl -sf -o /dev/null http://127.0.0.1:8799/api/whoami && sleep 1 && grep -q "logged after the response" workerd.log
+
+  browser:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+        with:
+          bun-version: ${{ env.BUN_VERSION }}
+      - run: bun install --frozen-lockfile
+      - name: Playwright (Chromium)
+        run: |
+          npm install --no-save --prefix /tmp/pw playwright@${{ env.PLAYWRIGHT_VERSION }}
+          npx --prefix /tmp/pw playwright install --with-deps chromium
+      - name: Features app in a browser
+        env:
+          NODE_PATH: /tmp/pw/node_modules
+        working-directory: apps/features
+        run: |
+          bun ../../framework/src/cli.ts build
+          bun ../../framework/src/cli.ts start &
+          for i in $(seq 30); do curl -sf -o /dev/null http://127.0.0.1:3002/ && break; sleep 0.5; done
+          node e2e.cjs http://127.0.0.1:3002 | tee e2e.txt
+          ! grep -q '^FAIL' e2e.txt
+      - name: Portfolio in a browser
+        env:
+          NODE_PATH: /tmp/pw/node_modules
+        working-directory: portfolio
+        run: |
+          bun ../framework/src/cli.ts build
+          bun ../framework/src/cli.ts start &
+          for i in $(seq 30); do curl -sf -o /dev/null http://127.0.0.1:3001/ && break; sleep 0.5; done
+          node e2e.cjs http://127.0.0.1:3001 | tee e2e.txt
+          ! grep -q '^FAIL' e2e.txt
+
+  nginx:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+        with:
+          bun-version: ${{ env.BUN_VERSION }}
+      - run: bun install --frozen-lockfile
+      - name: Generated configs pass nginx -t
+        run: |
+          sudo apt-get install -y -qq nginx >/dev/null
+          sudo mkdir -p /tmp/cert && sudo openssl req -x509 -newkey rsa:2048 -nodes -keyout /tmp/cert/privkey.pem -out /tmp/cert/fullchain.pem -days 1 -subj /CN=test 2>/dev/null
+          for app in portfolio apps/social; do
+            (cd "$app" && bun "$GITHUB_WORKSPACE/framework/src/cli.ts" nginx /srv/dist --tls /tmp/cert) | sudo tee /etc/nginx/sites-enabled/optz >/dev/null
+            sudo mkdir -p /var/cache/nginx/optz
+            sudo nginx -t
+          done
+
+  engine:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    defaults:
+      run:
+        working-directory: portfolio/engine
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            portfolio/engine/target
+            portfolio/engine/vendor
+          key: engine-${{ hashFiles('portfolio/engine/Cargo.lock', 'portfolio/engine/rust-toolchain.toml', 'portfolio/engine/vendor.sha256') }}
+      - name: Toolchain (from rust-toolchain.toml)
+        run: rustup show active-toolchain || rustup toolchain install
+      - name: SQLite amalgamation (checksum-verified)
+        run: ./fetch-sqlite.sh
+      - run: cargo fmt --check
+      - run: cargo clippy --all-targets -- -D warnings
+      - run: cargo test --release

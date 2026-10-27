@@ -108,7 +108,7 @@ const check = (name, ok, detail = "") => results.push(`${ok ? "ok  " : "FAIL"} $
 
   // ---- errors ----
   const res = await pg.goto(base + "/boom");
-  check("a page that throws: 500 with _error.tsx", res.status() === 500 && (await pg.textContent('[data-testid="error"]')).includes("kaboom"));
+  check("a page that throws: 500 with _error.tsx (no internals)", res.status() === 500 && (await pg.textContent('[data-testid="error"]')).includes("Something went wrong") && !(await pg.content()).includes("kaboom"));
 
   await b.close();
   console.log(results.join("\n"));

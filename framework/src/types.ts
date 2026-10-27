@@ -159,8 +159,21 @@ export type Middleware = (ctx: MiddlewareContext, next: () => Promise<Response>)
 /** A Response that remembers the type of its JSON body, for the typed API client. */
 export type TypedResponse<T> = Response & { readonly __json?: T };
 
+/** "/api/posts/[id]/[...rest]" -> { id: string; rest: string } (optional catch-alls optional). */
+export type PatternParams<P extends string> = P extends `${string}[${infer Rest}`
+  ? Rest extends `[...${infer N}]]${infer R}`
+    ? { [K in N]?: string } & PatternParams<R>
+    : Rest extends `...${infer N}]${infer R}`
+      ? { [K in N]: string } & PatternParams<R>
+      : Rest extends `${infer N}]${infer R}`
+        ? { [K in N]: string } & PatternParams<R>
+        : unknown
+  : unknown;
+
+/** What an API route gets. Type the params with an object (`ApiContext<{ id: string }>`) or the
+ *  route's pattern (`ApiContext<"/api/posts/[id]">`). */
 export interface ApiContext<P = Params> extends MiddlewareContext {
-  params: P;
+  params: P extends string ? PatternParams<P> & Params : P;
 }
 export type ApiHandler<T = unknown, P = Params> = (ctx: ApiContext<P>) => TypedResponse<T> | Promise<TypedResponse<T>>;
 
@@ -214,6 +227,11 @@ export interface Config {
     quality?: number;
     /** Max optimized images kept on disk, in MB. Default 256. */
     cacheMB?: number;
+    /** Where optimized images are kept on disk (relative to the project or absolute). Default
+     *  the OPTZ_IMAGE_CACHE_DIR env var, else .optz/cache/images. */
+    cacheDir?: string;
+    /** Images encoded at the same time. Default the CPU cores minus one (1 to 4). */
+    concurrency?: number;
   };
   /** Self-hosted web fonts: Google Fonts CSS URLs downloaded at build time and served from
    *  /assets, with size-matched fallbacks so text doesn't shift when they load. */
@@ -361,6 +379,10 @@ export interface ProxyRule {
 
 /** Config with every default filled in. */
 export interface ResolvedConfig extends Config {
+  lang: string;
+  port: number;
+  hostname: string;
+  images: NonNullable<Config["images"]> & { sizes: number[]; formats: Array<"avif" | "webp">; quality: number; cacheMB: number };
   client: Required<NonNullable<Config["client"]>>;
   features: Required<NonNullable<Config["features"]>>;
   cache: { maxEntries: number; maxBytes: number; default?: RouteCache };
@@ -370,6 +392,10 @@ export interface ResolvedConfig extends Config {
 export function resolveConfig(c: Config = {}): ResolvedConfig {
   return {
     ...c,
+    lang: c.lang ?? "en",
+    port: c.port ?? 3001,
+    hostname: c.hostname ?? "127.0.0.1",
+    images: { sizes: [384, 640, 828, 1080, 1200, 1920, 2048], formats: ["avif", "webp"], quality: 75, cacheMB: 256, ...c.images },
     client: { mode: "islands", navigation: true, prefetch: true, runtime: "react", speculation: true, ...c.client },
     features: { middleware: true, dynamic: true, api: true, cache: true, dynamicCompression: true, etag: true, requestLog: false, streaming: true, actions: true, images: true, mcp: true, ...c.features },
     cache: { maxEntries: 500, maxBytes: 32 << 20, ...c.cache },

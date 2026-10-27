@@ -5,5 +5,11 @@
     "framework",
     "portfolio",
     "apps/*"
-  ]
+  ],
+  "overrides": {
+    "fflate": "0.7.5"
+  },
+  "scripts": {
+    "test": "cd framework && bun test"
+  }
 }

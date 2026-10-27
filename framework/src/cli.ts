@@ -71,7 +71,8 @@ switch (cmd) {
     const { scanApi, scanRoutes } = await import("./routes");
     const config = await loadConfig();
     writeTypes(root, scanRoutes(join(root, "app/routes")).routes, config.features.api ? scanApi(join(root, "app/api")) : []);
-    const tsPkg = Bun.resolveSync("typescript/package.json", import.meta.dir);
+    const { resolvePeer } = await import("./build");
+    const tsPkg = resolvePeer("typescript/package.json", root, "optz check", "typescript");
     const tsc = join(tsPkg, "..", (JSON.parse(await Bun.file(tsPkg).text()) as { bin: { tsc: string } }).bin.tsc);
     const p = Bun.spawnSync([process.execPath, tsc, "--noEmit", "-p", "tsconfig.json"], { cwd: root, stdio: ["inherit", "inherit", "inherit"] });
     if (p.exitCode === 0) console.log("optz: types ok");

@@ -60,6 +60,15 @@ export interface Manifest {
   mcp?: string[];
 }
 
+export const MANIFEST_VERSION = 3;
+
+/** Parses dist/manifest.json, refusing one written by another optz version. */
+export function parseManifest(text: string): Manifest {
+  const m = JSON.parse(text) as Manifest;
+  if (m?.version !== MANIFEST_VERSION) throw new Error(`optz: dist/ was built by a different optz version (manifest ${m?.version ?? "?"}, expected ${MANIFEST_VERSION}). Run \`optz build\` again.`);
+  return m;
+}
+
 export const outDirFor = (root: string, dev?: boolean) => `${root.replace(/\/$/, "")}/${dev ? ".optz/dev" : "dist"}`;
 
 /** Where a page's HTML lives in dist/static. */

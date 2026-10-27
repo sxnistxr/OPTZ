@@ -120,7 +120,14 @@ describe("features app", () => {
   test("a page that throws renders _error.tsx with status 500", async () => {
     const r = await get("/boom");
     expect(r.status).toBe(500);
-    expect(await r.text()).toContain("kaboom");
+    const html = await r.text();
+    // Production: a generic message (the real one is logged with the same digest).
+    expect(html).toContain("Something went wrong.");
+    expect(html).not.toContain("kaboom");
+    // A loader that throws gets the same _error page.
+    const l = await get("/boom-loader");
+    expect(l.status).toBe(500);
+    expect(await l.text()).toContain('data-testid="error"');
   });
 
   test("Server Actions: JSON calls, ActionError, CSRF and no-JS form posts", async () => {

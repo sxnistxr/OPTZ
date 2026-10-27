@@ -2,9 +2,15 @@
 // WebP, whichever the browser accepts), once per size: results are kept in memory and on disk.
 // Only widths from config.images.sizes, local files and allowed remote hosts are served, so the
 // endpoint can't be used to make the server encode arbitrary images at arbitrary sizes.
+//
+// Encodes run in a small pool (images.concurrency, default the cores minus one, at least one)
+// and all disk I/O is async. The disk cache is images.cacheDir, OPTZ_IMAGE_CACHE_DIR or
+// .optz/cache/images; if it can't be written (a read-only deploy), images are still served
+// from memory.
 import { createHash } from "node:crypto";
-import { existsSync, mkdirSync, readdirSync, readFileSync, statSync, unlinkSync, writeFileSync } from "node:fs";
-import { join } from "node:path";
+import { mkdir, readdir, readFile, stat, unlink, writeFile } from "node:fs/promises";
+import { availableParallelism } from "node:os";
+import { isAbsolute, join } from "node:path";
 import type { StaticEntry } from "./static";
 import type { ResolvedConfig } from "./types";
 
@@ -25,13 +31,27 @@ interface Out {
 const memory = new Map<string, Out>();
 let memoryBytes = 0;
 const inflight = new Map<string, Promise<Out>>();
-// One encode at a time: image encoding is CPU-bound, and the box may have one core.
-let queue: Promise<unknown> = Promise.resolve();
-const serial = <T,>(f: () => Promise<T>): Promise<T> => {
-  const p = queue.then(f, f);
-  queue = p.catch(() => {});
-  return p;
-};
+// Encoding is CPU-bound: a few at a time, leaving a core for serving requests.
+let running = 0;
+const waiting: Array<() => void> = [];
+async function pooled<T>(limit: number, f: () => Promise<T>): Promise<T> {
+  if (running >= limit) await new Promise<void>((r) => waiting.push(r));
+  running++;
+  try {
+    return await f();
+  } finally {
+    running--;
+    waiting.shift()?.();
+  }
+}
+const defaultConcurrency = () => Math.max(1, Math.min(4, availableParallelism() - 1));
+let diskWarned = false;
+
+/** Where optimized images are kept on disk. */
+export function imageCacheDir(root: string, config: ResolvedConfig): string {
+  const d = config.images?.cacheDir ?? (typeof process !== "undefined" ? process.env.OPTZ_IMAGE_CACHE_DIR : undefined);
+  return d ? (isAbsolute(d) ? d : join(root, d)) : join(root, ".optz/cache/images");
+}
 
 const bad = (msg: string, status = 400) => new Response(msg, { status, headers: { "Content-Type": "text/plain", "Cache-Control": "no-store" } });
 
@@ -92,22 +112,31 @@ export async function handleImage(req: Request, url: URL, { root, config, files 
     return new Response(hit.body as BodyInit, { headers: headers(hit) });
   }
 
-  const dir = join(root, ".optz/cache/images");
+  const dir = imageCacheDir(root, config);
   const file = join(dir, `${key}.${fmt}`);
   let p = inflight.get(key);
   if (!p) {
     p = (async (): Promise<Out> => {
-      if (existsSync(file)) return { body: readFileSync(file), type: `image/${fmt}`, etag: `"${key}"` };
+      const cached = await readFile(file).catch(() => null);
+      if (cached) return { body: new Uint8Array(cached), type: `image/${fmt}`, etag: `"${key}"` };
       const sharp = await loadSharp();
       if (!sharp) return { body: input, type: srcType, etag: `"${key}-orig"` };
-      const body = await serial(async () => {
+      const body = await pooled(o.concurrency ?? defaultConcurrency(), async () => {
         const img = sharp(input, { failOn: "error", limitInputPixels: 40_000_000 }).rotate().resize({ width, withoutEnlargement: true });
         const enc = fmt === "avif" ? img.avif({ quality: Math.max(1, q - 20), effort: 3 }) : fmt === "webp" ? img.webp({ quality: q }) : fmt === "png" ? img.png({ palette: true, quality: q }) : img.jpeg({ quality: q, mozjpeg: true });
         return new Uint8Array(await enc.toBuffer());
       });
-      mkdirSync(dir, { recursive: true });
-      writeFileSync(file, body);
-      trimDisk(dir, (o.cacheMB ?? 256) << 20);
+      // The disk copy is an optimization: a read-only cache directory only costs re-encodes.
+      try {
+        await mkdir(dir, { recursive: true });
+        await writeFile(file, body);
+        void trimDisk(dir, (o.cacheMB ?? 256) << 20).catch(() => {});
+      } catch (e) {
+        if (!diskWarned) {
+          diskWarned = true;
+          console.warn(`optz: can't write the image cache in ${dir} (${(e as Error).message}); keeping optimized images in memory only. Set images.cacheDir or OPTZ_IMAGE_CACHE_DIR to a writable directory.`);
+        }
+      }
       return { body, type: `image/${fmt}`, etag: `"${key}"` };
     })();
     inflight.set(key, p);
@@ -143,17 +172,19 @@ const loadSharp = () =>
   ));
 
 let lastTrim = 0;
-function trimDisk(dir: string, max: number) {
+async function trimDisk(dir: string, max: number) {
   if (Date.now() - lastTrim < 60_000) return;
   lastTrim = Date.now();
-  const files = readdirSync(dir).map((f) => {
-    const s = statSync(join(dir, f));
-    return { f, size: s.size, at: s.atimeMs };
-  });
+  const files = await Promise.all(
+    (await readdir(dir)).map(async (f) => {
+      const s = await stat(join(dir, f));
+      return { f, size: s.size, at: s.atimeMs };
+    }),
+  );
   let total = files.reduce((n, x) => n + x.size, 0);
   for (const x of files.sort((a, b) => a.at - b.at)) {
     if (total <= max) break;
-    unlinkSync(join(dir, x.f));
+    await unlink(join(dir, x.f)).catch(() => {});
     total -= x.size;
   }
 }
