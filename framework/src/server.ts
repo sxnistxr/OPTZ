@@ -1,3 +1,4 @@
+import { readFileSnapshot } from "./file-io";
 // `optz start` (and the dev server): the request handler (handler.ts) on Bun.serve, with
 // static files loaded from dist/static into memory and Bun's native hashing and compression.
 import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
@@ -20,7 +21,7 @@ export function loadStatic(dir: string): Map<string, StaticEntry> {
       }
       if (f.endsWith(".gz") || f.endsWith(".br")) continue;
       const url = "/" + relative(dir, f).split("\\").join("/");
-      const body = readFileSync(f);
+      const body = readFileSnapshot(f).body;
       map.set(url, {
         body,
         br: existsSync(`${f}.br`) ? readFileSync(`${f}.br`) : undefined,

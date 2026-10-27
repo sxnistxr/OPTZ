@@ -105,3 +105,11 @@ export function fillDestination(dest: string, params: Params): string {
     .replace(/\[(\w+)\]/g, (_m, k: string) => encodeURIComponent(params[k] ?? ""));
 }
 
+
+/** Strip boundary slashes in linear time, including for long untrusted paths. */
+export function trimSlashes(path: string): string {
+  let start = 0, end = path.length;
+  while (start < end && path[start] === "/") start++;
+  while (end > start && path[end - 1] === "/") end--;
+  return path.slice(start, end);
+}

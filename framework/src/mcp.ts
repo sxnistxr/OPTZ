@@ -17,6 +17,9 @@
 //
 // Web-standard code only (no node: imports).
 import type { Locals, ResolvedConfig } from "./types";
+import { trimSlashes } from "./match";
+import { pageText } from "./html";
+export { htmlText, pageText } from "./html";
 
 // ---- JSON Schema, and the argument types it implies -----------------------------------------
 
@@ -338,7 +341,7 @@ export function createMcpServer({ config, modules, pages, canRead, dev }: McpSer
     try {
       if (/^https?:\/\//.test(p)) p = new URL(p).pathname;
     } catch {}
-    p = "/" + p.replace(/^\/+|\/+$/g, "");
+    p = "/" + trimSlashes(p);
     return allPages().find((x) => x.path === p);
   };
   if (usePages) {
@@ -527,36 +530,7 @@ export const decodeEntities = (s: string) =>
     e[0] === "#" ? String.fromCodePoint(e[1] === "x" || e[1] === "X" ? parseInt(e.slice(2), 16) : Number(e.slice(1))) : (ENTITIES[e.toLowerCase()] ?? m),
   );
 
-/** A page's title, description and main content as Markdown-ish text, for AI clients and
- *  llms.txt. Not a full HTML parser: it reads what optz renders. */
-export function pageText(html: string): { title: string; description: string; text: string } {
-  const title = decodeEntities(html.match(/<title[^>]*>([\s\S]*?)<\/title>/i)?.[1]?.trim() ?? "");
-  const description = decodeEntities(html.match(/<meta\s+name="description"\s+content="([^"]*)"/i)?.[1] ?? "");
-  let body = html.match(/<main[^>]*>([\s\S]*)<\/main>/i)?.[1] ?? html.match(/<body[^>]*>([\s\S]*)<\/body>/i)?.[1] ?? html;
-  body = body
-    .replace(/<(script|style|template|noscript|svg|nav|header|footer|aside|form|button)\b[\s\S]*?<\/\1>/gi, "")
-    .replace(/<!--[\s\S]*?-->/g, "")
-    .replace(/<pre[^>]*>([\s\S]*?)<\/pre>/gi, (_m, c: string) => `\n\n\`\`\`\n${c.replace(/<[^>]+>/g, "")}\n\`\`\`\n\n`)
-    .replace(/<h([1-6])[^>]*>([\s\S]*?)<\/h\1>/gi, (_m, n: string, t: string) => `\n\n${"#".repeat(Number(n))} ${t.replace(/<[^>]+>/g, "").trim()}\n\n`)
-    .replace(/<a\s[^>]*href="([^"]*)"[^>]*>([\s\S]*?)<\/a>/gi, (_m, href: string, t: string) => {
-      const label = t.replace(/<[^>]+>/g, "").trim();
-      return label && !href.startsWith("#") ? `[${label}](${href})` : label;
-    })
-    .replace(/<code[^>]*>([\s\S]*?)<\/code>/gi, "`$1`")
-    .replace(/<(strong|b)\b[^>]*>([\s\S]*?)<\/\1>/gi, "**$2**")
-    .replace(/<li[^>]*>/gi, "\n- ")
-    .replace(/<\/(td|th)>/gi, " | ")
-    .replace(/<br\s*\/?>/gi, "\n")
-    .replace(/<\/(p|div|section|article|ul|ol|li|tr|table|blockquote|figure|dl|dd|dt)>/gi, "\n")
-    .replace(/<[^>]+>/g, "");
-  const text = decodeEntities(body)
-    .split("\n")
-    .map((l) => l.replace(/[ \t]+/g, " ").trimEnd())
-    .join("\n")
-    .replace(/\n{3,}/g, "\n\n")
-    .trim();
-  return { title, description, text };
-}
+
 
 /** Ranks pages by how often and where the query's words appear. */
 export function searchPages(pages: McpPage[], query: string, limit = 8) {
