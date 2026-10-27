@@ -5,6 +5,7 @@
 import { existsSync, readFileSync } from "node:fs";
 import { join, posix } from "node:path";
 import { Marked, type Tokens } from "marked";
+import { htmlText } from "optz/mcp";
 import sections from "$content/docs/index.json";
 import site from "./site";
 
@@ -43,9 +44,9 @@ const bySlug = new Map(entries.map((e) => [e.slug, e]));
 const byFile = new Map(entries.map((e) => [e.file, e]));
 
 export const slugify = (s: string) =>
-  s
+  htmlText(s, false)
     .toLowerCase()
-    .replace(/<[^>]+>|`/g, "")
+    .replace(/`/g, "")
     .replace(/&[a-z]+;/g, "")
     .replace(/[^\p{L}\p{N}\s-]/gu, "")
     .trim()
@@ -100,7 +101,7 @@ function render(e: Entry, body: string): { html: string; toc: TocEntry[] } {
         const n = used.get(id) ?? 0;
         used.set(id, n + 1);
         if (n) id = `${id}-${n}`;
-        if (t.depth <= 3) toc.push({ id, text: plain(inner.replace(/<[^>]+>/g, "")), depth: t.depth });
+        if (t.depth <= 3) toc.push({ id, text: plain(htmlText(inner, false)), depth: t.depth });
         return `<h${t.depth} id="${id}"><a class="anchor" href="#${id}">${inner}</a></h${t.depth}>\n`;
       },
       link(this: { parser: { parseInline(t: Tokens.Generic[]): string } }, t: Tokens.Link) {

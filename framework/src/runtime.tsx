@@ -174,10 +174,22 @@ type LinkProps = Omit<AnchorHTMLAttributes<HTMLAnchorElement>, "href"> & {
   locale?: string | false;
 };
 
+/** Reject executable URL schemes after URL parsing has normalized whitespace and controls. */
+export function safeLinkHref(href: string): string {
+  try {
+    const protocol = new URL(href, "https://optz.invalid").protocol;
+    if (protocol === "http:" || protocol === "https:" || protocol === "mailto:" || protocol === "tel:") {
+      // Encode URL delimiters without double-encoding existing percent escapes.
+      return href.replace(/[<>"']/g, (c) => `%${c.charCodeAt(0).toString(16).toUpperCase()}`);
+    }
+  } catch {}
+  return "#";
+}
+
 /** An <a> that navigates without a full page load and prefetches on hover/focus. */
 export function Link({ href: rawHref, replace, scroll, prefetch = true, locale, onClick, onMouseEnter, onFocus, onTouchStart, ...rest }: LinkProps) {
   const r = useContext(RouterContext);
-  const href = locale === false ? rawHref : localizeHref(rawHref, r?.state.i18n, locale);
+  const href = safeLinkHref(locale === false ? rawHref : localizeHref(rawHref, r?.state.i18n, locale));
   const pre = () => prefetch && r?.prefetch(href);
   const click = (e: MouseEvent<HTMLAnchorElement>) => {
     onClick?.(e);

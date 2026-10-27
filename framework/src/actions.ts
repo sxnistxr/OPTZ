@@ -1,3 +1,4 @@
+import { readFileSnapshot } from "./file-io";
 // Server Actions: modules that start with "use server" export async functions the browser can
 // call. In browser bundles each export becomes a stub that POSTs its arguments to
 // /_optz/action/<id>/<name>; on the server the real function runs. Types come from the real
@@ -6,16 +7,31 @@
 // They also work without JavaScript: <form action={saveNote}> rendered on the server posts to
 // the same URL, and the server redirects back when the action finishes.
 import { createHash } from "node:crypto";
-import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
+import { existsSync, readdirSync, statSync } from "node:fs";
 import { join, relative } from "node:path";
 import type { BunPlugin } from "bun";
 
 import type { ActionModule } from "./actions-runtime";
 export * from "./actions-runtime";
 
-const DIRECTIVE = /^(?:\s|\/\/[^\n]*\n|\/\*[\s\S]*?\*\/)*["']use server["']/;
+/** Scan leading whitespace/comments once; ambiguous repeated comment regexes can backtrack. */
+export function isActionSource(src: string): boolean {
+  let i = 0;
+  while (i < src.length) {
+    if (/\s/u.test(src[i])) { i++; continue; }
+    if (src.startsWith("//", i)) {
+      const end = src.indexOf("\n", i + 2);
+      if (end < 0) return false;
+      i = end + 1;
+    } else if (src.startsWith("/*", i)) {
+      const end = src.indexOf("*/", i + 2);
+      if (end < 0) return false;
+      i = end + 2;
+    } else break;
+  }
+  return src.startsWith('"use server"', i) || src.startsWith("'use server'", i);
+}
 
-export const isActionSource = (src: string) => DIRECTIVE.test(src);
 export const actionId = (relFile: string) => createHash("sha256").update(relFile).digest("hex").slice(0, 12);
 
 /** Every "use server" module under app/, keyed by id. */
@@ -31,7 +47,7 @@ export function scanActions(root: string): Record<string, ActionModule> {
         continue;
       }
       if (!/\.(ts|tsx|js|jsx)$/.test(e) || e.endsWith(".d.ts")) continue;
-      const src = readFileSync(f, "utf8");
+      const src = readFileSnapshot(f).body.toString("utf8");
       if (!isActionSource(src)) continue;
       const rel = relative(root, f).split("\\").join("/");
       const exports = scanner.scan(src).exports;

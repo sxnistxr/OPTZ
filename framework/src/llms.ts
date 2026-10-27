@@ -1,7 +1,8 @@
+import { readFileSnapshot } from "./file-io";
 // /llms.txt and /llms-full.txt (llmstxt.org): what a language model should read about the site,
 // written at build time from the pre-rendered pages, like sitemap.xml is for search engines.
 //   app/llms.ts   export default (pages) => string    replaces the generated /llms.txt
-import { existsSync, readdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
+import { existsSync, readdirSync, statSync, writeFileSync } from "node:fs";
 import { join, relative } from "node:path";
 import { sitePages, type McpPage } from "./mcp";
 import type { ResolvedConfig } from "./types";
@@ -46,7 +47,7 @@ function builtPages(staticDir: string, exclude: string[]): McpPage[] {
     for (const e of readdirSync(d)) {
       const f = join(d, e);
       if (statSync(f).isDirectory()) walk(f);
-      else if (e === "index.html") files.push(["/" + relative(staticDir, f).split("\\").join("/"), readFileSync(f)]);
+      else if (e === "index.html") files.push(["/" + relative(staticDir, f).split("\\").join("/"), readFileSnapshot(f).body]);
     }
   };
   if (existsSync(staticDir)) walk(staticDir);

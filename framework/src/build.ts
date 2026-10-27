@@ -1,3 +1,4 @@
+import { codeLiteral } from "./code-literal";
 // `optz build`: everything a production server (or a plain static host) needs, in dist/.
 //
 //   dist/static/            servable as-is: pre-rendered pages (path/index.html), their data
@@ -227,13 +228,13 @@ export async function build({ root, config, dev, exportOnly }: BuildOptions): Pr
     for (const [i, f] of files.entries()) {
       const mod = (await import(f)) as { hydrate?: Hydrate };
       const w = join(gen, `i${i}.tsx`);
-      writeFileSync(w, `import C from ${JSON.stringify(f)};\nimport { hydrateIsland } from "optz/hydrate";\nexport default (el: Element, props: Record<string, unknown>, ctx: any) => hydrateIsland(el, C as any, props, ctx);\n`);
+      writeFileSync(w, `import C from ${codeLiteral(f)};\nimport { hydrateIsland } from "optz/hydrate";\nexport default (el: Element, props: Record<string, unknown>, ctx: any) => hydrateIsland(el, C as any, props, ctx);\n`);
       wrappers.push(w);
-      lines.push(`  ${JSON.stringify(islandId(root, f))}: { load: () => import("./i${i}.tsx"), hydrate: ${JSON.stringify(mod.hydrate ?? "load")} },`);
+      lines.push(`  ${codeLiteral(islandId(root, f))}: { load: () => import("./i${i}.tsx"), hydrate: ${codeLiteral(mod.hydrate ?? "load")} },`);
     }
     // Speculation rules (dev: off, so edits are never served from a stale prerender).
     const speculation = speculate;
-    writeFileSync(entryFile, `${hot ? 'import "/assets/dev-vendor/refresh.js";\n' : ""}import { startIslands } from "optz/islands";\nstartIslands({\n${lines.join("\n")}\n}, ${JSON.stringify({ navigation: config.client.navigation, prefetch: config.client.prefetch, speculation })});\n`);
+    writeFileSync(entryFile, `${hot ? 'import "/assets/dev-vendor/refresh.js";\n' : ""}import { startIslands } from "optz/islands";\nstartIslands({\n${lines.join("\n")}\n}, ${codeLiteral({ navigation: config.client.navigation, prefetch: config.client.prefetch, speculation })});\n`);
     const result = await bundle([entryFile, ...wrappers], assetsDir, dev, plugins, hot, config);
     urlOf = (file) => outputUrl(result, assetsDir, file);
     files.forEach((f, i) => (islands[islandId(root, f)] = urlOf(wrappers[i])!));
@@ -243,22 +244,22 @@ export async function build({ root, config, dev, exportOnly }: BuildOptions): Pr
     const errorFiles = [...new Set(pages.flatMap((r) => (r.error ? [r.error] : [])))];
     const wrapper = (name: string, file: string) => {
       const p = join(gen, `${name}.tsx`);
-      writeFileSync(p, `export * from ${JSON.stringify(file)};\nexport { default } from ${JSON.stringify(file)};\n`);
+      writeFileSync(p, `export * from ${codeLiteral(file)};\nexport { default } from ${codeLiteral(file)};\n`);
       return p;
     };
     const pageW = pages.map((r, i) => wrapper(`p${i}`, r.file));
     const layoutW = layoutFiles.map((f, i) => wrapper(`l${i}`, f));
     const errorW = errorFiles.map((f, i) => wrapper(`e${i}`, f));
-    const imp = (p: string) => `() => import(${JSON.stringify("./" + relative(gen, p))})`;
+    const imp = (p: string) => `() => import(${codeLiteral("./" + relative(gen, p))})`;
     const i18n = config.i18n ? { locales: config.i18n.locales, defaultLocale: config.i18n.defaultLocale, prefixDefault: config.i18n.prefixDefault } : undefined;
     writeFileSync(
       entryFile,
       `import { start } from "optz/runtime";\nstart([\n${pages
         .map((r, i) => {
           const m = modes.get(r)!;
-          return `  { pattern: ${JSON.stringify(r.pattern)}, segments: ${JSON.stringify(r.segments)}, render: ${JSON.stringify(m.render === "static" && (m.revalidate !== undefined || m.dynamicParams) ? "dynamic" : m.render)}, hasLoader: ${m.hasLoader}, load: ${imp(pageW[i])}, layouts: [${r.layouts.map((l) => imp(layoutW[layoutFiles.indexOf(l)])).join(", ")}]${r.error ? `, error: ${imp(errorW[errorFiles.indexOf(r.error)])}` : ""} },`;
+          return `  { pattern: ${codeLiteral(r.pattern)}, segments: ${codeLiteral(r.segments)}, render: ${codeLiteral(m.render === "static" && (m.revalidate !== undefined || m.dynamicParams) ? "dynamic" : m.render)}, hasLoader: ${m.hasLoader}, load: ${imp(pageW[i])}, layouts: [${r.layouts.map((l) => imp(layoutW[layoutFiles.indexOf(l)])).join(", ")}]${r.error ? `, error: ${imp(errorW[errorFiles.indexOf(r.error)])}` : ""} },`;
         })
-        .join("\n")}\n], ${JSON.stringify(i18n ?? null)});\n`,
+        .join("\n")}\n], ${codeLiteral(i18n ?? null)});\n`,
     );
     const result = await bundle([entryFile, ...pageW, ...layoutW, ...errorW], assetsDir, dev, [...plugins, stripServerExports(routesDir)], false, config);
     urlOf = (file) => outputUrl(result, assetsDir, file);
@@ -456,9 +457,9 @@ async function bundle(entrypoints: string[], outdir: string, dev: boolean | unde
     sourcemap: dev ? "inline" : "none",
     naming: { entry: "[name]-[hash].[ext]", chunk: "c-[hash].[ext]", asset: "[name]-[hash].[ext]" },
     define: {
-      "process.env.NODE_ENV": JSON.stringify(dev ? "development" : "production"),
+      "process.env.NODE_ENV": codeLiteral(dev ? "development" : "production"),
       // <Image> in islands offers the same widths the optimizer produces.
-      ...(config?.images?.sizes ? { "globalThis.__OPTZ_IMAGE_SIZES__": JSON.stringify(config.images.sizes) } : {}),
+      ...(config?.images?.sizes ? { "globalThis.__OPTZ_IMAGE_SIZES__": codeLiteral(config.images.sizes) } : {}),
     },
     plugins,
   });

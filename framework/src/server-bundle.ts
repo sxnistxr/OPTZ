@@ -1,3 +1,4 @@
+import { codeLiteral } from "./code-literal";
 // One-file servers from a build:
 //
 //   optz build --compile       dist/server: a single executable (the Bun runtime, your code, the
@@ -65,7 +66,7 @@ export async function buildServerBundle({ root, config, manifest, target }: Serv
   const gen = join(root, ".optz/gen/server");
   mkdirSync(gen, { recursive: true });
   const fw = import.meta.dir;
-  const imp = (p: string) => JSON.stringify(p);
+  const imp = (p: string) => codeLiteral(p);
   const modules = serverModules(root, manifest);
   const configFile = ["optz.config.ts", "optz.config.js"].map((f) => join(root, f)).find(existsSync);
 
@@ -111,7 +112,7 @@ const list: [string, string][] = [
 ${entries.join("\n")}
 ];
 const dec = (s: string) => Uint8Array.from(atob(s), (c) => c.charCodeAt(0));
-const types = ${JSON.stringify(Object.fromEntries(files.map((f) => ["/" + relative(staticDir, f), [typeOf(f), cacheFor("/" + relative(staticDir, f))]])))};
+const types = ${codeLiteral(Object.fromEntries(files.map((f) => ["/" + relative(staticDir, f), [typeOf(f), cacheFor("/" + relative(staticDir, f))]])))};
 export async function staticFiles() {
   const map = new Map();
   for (const [url, b] of list) {
@@ -130,7 +131,7 @@ export async function staticFiles() {
 import { resolveConfig } from ${imp(join(fw, "types.ts"))};
 import { staticFiles } from "./static-files.ts";
 ${configFile ? `import userConfig from ${imp(configFile)};` : "const userConfig = {};"}
-const manifest = ${JSON.stringify(manifest)};
+const manifest = ${codeLiteral(manifest)};
 const modules: Record<string, () => Promise<unknown>> = {
 ${loaders}
 };
@@ -178,7 +179,7 @@ console.log("optz: serving on http://" + server.hostname + ":" + server.port + "
 import { resolveConfig } from ${imp(join(fw, "types.ts"))};
 import { staticFiles } from "./static-files.ts";
 ${configFile ? `import userConfig from ${imp(configFile)};` : "const userConfig = {};"}
-const manifest = ${JSON.stringify(manifest)};
+const manifest = ${codeLiteral(manifest)};
 // fetch(request, env, ctx) and scheduled(event, env, ctx), with env and waitUntil passed to the app.
 export default createWorker({
   manifest: manifest as never,
@@ -203,7 +204,7 @@ ${loaders}
     // Edge runtimes: React's web-streams server build, Node built-ins from the platform.
     conditions: target === "edge" ? ["workerd", "worker", "edge-light", "browser"] : [],
     external: target === "edge" ? ["node:*", "sharp", "satori", "@resvg/resvg-js"] : ["sharp", "satori", "@resvg/resvg-js"],
-    define: { "process.env.NODE_ENV": JSON.stringify("production") },
+    define: { "process.env.NODE_ENV": codeLiteral("production") },
     plugins,
     ...(target === "bun" ? { compile: { outfile: out } } : { outdir: join(root, "dist/edge"), naming: "worker.js" }),
   } as Parameters<typeof Bun.build>[0]);

@@ -1,3 +1,5 @@
+import { readTextIfPresent, writeFileAtomic } from "./file-io";
+import { trimSlashes } from "./match";
 // optz and coding agents (Claude Code, Codex, Cursor, VS Code Copilot, Gemini CLI, ...):
 //
 //   optz mcp      an MCP server over stdio with tools for working on this project: what's in
@@ -101,9 +103,9 @@ export function writeAgentFiles(root: string, clients: AgentClient[] = AGENT_CLI
   const changed: string[] = [];
   for (const [f, content] of Object.entries(files)) {
     const full = join(root, f);
-    if (existsSync(full) && readFileSync(full, "utf8") === content) continue;
+    if (readTextIfPresent(full) === content) continue;
     mkdirSync(dirname(full), { recursive: true });
-    writeFileSync(full, content);
+    writeFileAtomic(full, content);
     changed.push(f);
   }
   if (!quiet) {
@@ -374,13 +376,17 @@ export function projectModules(root: string, loadConfig: () => Promise<ResolvedC
     },
     annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true },
     run: ({ kind, path }) => {
-      const clean = path.replace(/^\/+|\/+$/g, "").replace(/\.(tsx?|jsx?)$/, "");
+      const clean = trimSlashes(path).replace(/\.(tsx?|jsx?)$/, "");
       if (clean.split("/").includes("..")) throw new ToolError("path can't go up a folder");
       const t = TEMPLATES[kind](clean || "index");
       const full = join(root, t.file);
-      if (existsSync(full)) throw new ToolError(`${t.file} already exists`);
       mkdirSync(dirname(full), { recursive: true });
-      writeFileSync(full, t.content);
+      try {
+        writeFileSync(full, t.content, { flag: "wx" });
+      } catch (e) {
+        if ((e as NodeJS.ErrnoException).code === "EEXIST") throw new ToolError(`${t.file} already exists`);
+        throw e;
+      }
       return { created: t.file, content: t.content };
     },
   });
