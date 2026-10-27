@@ -330,6 +330,47 @@ project: `optz_project` (pages, render modes, APIs, actions, islands, config), `
 overwrites), `optz_check`, `optz_build` and `optz_fetch` (requests to the running dev server).
 Re-running `optz agents` updates the optz parts and keeps everything else in those files.
 
+## Redirects, rewrites, headers and middleware matchers
+
+In `optz.config.ts`, in the same `[param]` syntax as routes:
+
+```ts
+redirects: [{ source: "/old-blog/[slug]", destination: "/blog/[slug]", permanent: true }],   // 308 (307 if not permanent)
+rewrites: [{ source: "/docs/[...rest]", destination: "/guide/[...rest]" }],                  // served from another path (or proxied, for a URL)
+headers: [{ source: "/api/[...rest]", headers: { "Access-Control-Allow-Origin": "*" } }],
+```
+
+`app/middleware.ts` can limit itself to some paths: `export const matcher = ["/admin/[...rest]"]`.
+
+## Caching data, and revalidating everywhere
+
+`cache(fn, { tags, revalidate })` from `optz/server` memoizes a server function across requests
+(one call per distinct arguments, shared while it runs, failures not kept), and
+`revalidateTag()` drops it with the pages and responses that have the tag.
+
+Revalidation reaches beyond one process with `revalidation` in the config:
+
+```ts
+revalidation: {
+  peers: ["http://10.0.0.2:3001"],          // other instances: each change is POSTed to their /_optz/revalidate
+  secret: process.env.OPTZ_REVALIDATE_SECRET, // signs those requests (HMAC; replays over 60 s are refused)
+  purge: cloudflarePurge({ zoneId: process.env.CF_ZONE_ID!, token: process.env.CF_API_TOKEN! }),  // optz/cdn
+},
+```
+
+With `server.cdnMaxAge` set, pages carry `Cache-Tag` and `Surrogate-Key` headers
+(`optz-path:<path>` and the page's tags), so a purge reaches exactly the pages that changed.
+
+## Testing an app
+
+```ts
+import { createTestApp } from "optz/test";
+const app = await createTestApp({ root: import.meta.dir + "/.." });   // builds it, serves it in-process
+expect(await (await app.get("/api/stats")).json()).toEqual({ ... });
+expect(await app.html("/blog/hello")).toContain("<h1>Hello</h1>");
+await app.post("/api/notes", { text: "hi" });                         // JSON body
+```
+
 ## Deploy targets
 
 | | command | what you get |

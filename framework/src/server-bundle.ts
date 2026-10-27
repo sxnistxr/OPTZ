@@ -126,7 +126,7 @@ export async function staticFiles() {
 
   // ---- the entry ----
   const loaders = modules.map((f) => `  ${imp(f)}: () => import(${imp(join(root, f))}),`).join("\n");
-  const common = `import { createApp } from ${imp(join(fw, "handler.ts"))};
+  const common = `import { createApp, middlewareFrom } from ${imp(join(fw, "handler.ts"))};
 import { resolveConfig } from ${imp(join(fw, "types.ts"))};
 import { staticFiles } from "./static-files.ts";
 ${configFile ? `import userConfig from ${imp(configFile)};` : "const userConfig = {};"}
@@ -143,8 +143,7 @@ const load = (f: string) => {
 const mwFile = ${imp(modules.find((f) => f.startsWith("app/middleware.")) ?? "")};
 const middleware = async () => {
   if (!config.features.middleware || !mwFile) return [];
-  const m = (await load(mwFile)) as { default?: unknown };
-  return m.default ? (Array.isArray(m.default) ? m.default : [m.default]) : [];
+  return middlewareFrom((await load(mwFile)) as never);
 };
 `;
   const entry =

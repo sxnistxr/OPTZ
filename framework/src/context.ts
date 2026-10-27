@@ -82,3 +82,16 @@ export async function inStore(s: RequestStore, fn: (s: RequestStore) => Promise<
   }
   return out;
 }
+
+/** Data caches made with cache() (optz/server): dropped by revalidateTag() for their tags. */
+export interface DataCache {
+  tags: string[];
+  clear(): void;
+}
+export const dataCaches = new Set<DataCache>();
+/** Drops every data cache that has one of `tags`. */
+export function clearDataCaches(tags: string[]) {
+  if (!tags.length) return;
+  for (const c of dataCaches) if (c.tags.some((t) => tags.includes(t))) c.clear();
+}
+

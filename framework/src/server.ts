@@ -3,7 +3,7 @@
 import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
 import { join, relative } from "node:path";
 import { brotliCompressSync, constants as zc } from "node:zlib";
-import { createApp, type Platform } from "./handler";
+import { createApp, middlewareFrom, type Platform } from "./handler";
 import { outDirFor, parseManifest, type Manifest } from "./manifest";
 import { registerIslandLoader } from "./plugin";
 import { cacheFor, typeOf, type StaticEntry } from "./static";
@@ -51,8 +51,7 @@ export async function loadMiddleware(root: string, config: ResolvedConfig): Prom
   if (!config.features.middleware) return [];
   for (const f of ["app/middleware.ts", "app/middleware.tsx", "app/middleware.js"]) {
     if (!existsSync(join(root, f))) continue;
-    const m = (await import(join(root, f))) as { default?: Middleware | Middleware[] };
-    return m.default ? (Array.isArray(m.default) ? m.default : [m.default]) : [];
+    return middlewareFrom((await import(join(root, f))) as Parameters<typeof middlewareFrom>[0]);
   }
   return [];
 }

@@ -338,6 +338,30 @@ export interface Config {
         exclude?: string[];
       };
 
+  /** Redirects for URLs no page answers anymore, in route syntax: { source: "/old/[slug]",
+   *  destination: "/blog/[slug]", permanent: true }. Checked before pages; 308 if permanent,
+   *  else 307 (the method is kept). */
+  redirects?: Array<{ source: string; destination: string; permanent?: boolean }>;
+  /** Serve another path's response (or proxy a URL) under this one, without a redirect:
+   *  { source: "/docs/[...rest]", destination: "/guide/[...rest]" }. */
+  rewrites?: Array<{ source: string; destination: string }>;
+  /** Response headers by path: { source: "/api/[...rest]", headers: { "Access-Control-Allow-Origin": "*" } }. */
+  headers?: Array<{ source: string; headers: Record<string, string> }>;
+
+  /** Beyond this process: revalidatePath()/revalidateTag() reach the other instances of the
+   *  app and the CDN in front of it. */
+  revalidation?: {
+    /** Base URLs of the other instances (e.g. ["http://10.0.0.2:3001"]). Each change is POSTed
+     *  to their /_optz/revalidate, signed with `secret`, so every instance drops the same pages. */
+    peers?: string[];
+    /** Signs and checks those requests. Default the OPTZ_REVALIDATE_SECRET env var. Required
+     *  for peers (and for accepting /_optz/revalidate at all). */
+    secret?: string;
+    /** Called with what changed, once per revalidatePath/revalidateTag on the instance where it
+     *  happened: purge a CDN here (see cloudflarePurge() in optz/cdn). */
+    purge?: (change: RevalidationChange) => unknown;
+  };
+
   cache?: {
     /** Max cached responses. Default 500. */
     maxEntries?: number;
@@ -357,8 +381,9 @@ export interface Config {
      *  send them. Default false. */
     trustProxy?: boolean;
     /** Let a CDN (Cloudflare, ...) cache built HTML pages for this many seconds (`s-maxage`, with
-     *  stale-while-revalidate). Browsers still revalidate every time. Purge the CDN on deploy.
-     *  Default 0 (off). */
+     *  stale-while-revalidate). Browsers still revalidate every time. Pages then carry Cache-Tag and
+     *  Surrogate-Key headers ("optz-path:<path>" and their tags); purge the CDN on deploy, and on
+     *  revalidation with `revalidation.purge`. Default 0 (off). */
     cdnMaxAge?: number;
   };
 }
@@ -375,6 +400,13 @@ export interface ProxyRule {
   maxBodySize?: number;
   /** nginx micro-cache for GETs, in seconds (0 = off). */
   cacheSeconds?: number;
+}
+
+/** What revalidatePath()/revalidateTag() changed. Paths are absolute URL paths; `prefix`
+ *  marks a layout revalidation (everything under the path). */
+export interface RevalidationChange {
+  paths: Array<{ path: string; prefix: boolean }>;
+  tags: string[];
 }
 
 /** Config with every default filled in. */

@@ -79,3 +79,29 @@ export function inScope(scope: Segment[], pathname: string): boolean {
   }
   return true;
 }
+
+/** "/blog/[slug]", "/docs/[...rest]", "/shop/[[...path]]" -> segments (route syntax, for config
+ *  patterns: redirects, rewrites, headers and middleware matchers). */
+export function compilePattern(pattern: string): Segment[] {
+  return pattern
+    .split("/")
+    .filter(Boolean)
+    .map((s): Segment => {
+      let m = s.match(/^\[\[\.\.\.(\w+)\]\]$/);
+      if (m) return { kind: "optional", name: m[1] };
+      m = s.match(/^\[\.\.\.(\w+)\]$/);
+      if (m) return { kind: "rest", name: m[1] };
+      m = s.match(/^\[(\w+)\]$/);
+      if (m) return { kind: "param", name: m[1] };
+      return { kind: "static", value: s };
+    });
+}
+
+/** Fills [name] and [...name] in a destination ("/new/[slug]", "https://x.dev/[...rest]") with
+ *  params; single segments are escaped, catch-alls keep their slashes. */
+export function fillDestination(dest: string, params: Params): string {
+  return dest
+    .replace(/\[\[?\.\.\.(\w+)\]?\]/g, (_m, k: string) => (params[k] ?? "").split("/").map(encodeURIComponent).join("/"))
+    .replace(/\[(\w+)\]/g, (_m, k: string) => encodeURIComponent(params[k] ?? ""));
+}
+

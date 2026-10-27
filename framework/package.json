@@ -47,7 +47,9 @@
     "./edge": "./src/edge.ts",
     "./seo": "./src/seo.ts",
     "./mcp": "./src/mcp.ts",
-    "./dialog": "./src/dialog.tsx"
+    "./dialog": "./src/dialog.tsx",
+    "./cdn": "./src/cdn.ts",
+    "./test": "./src/testing.ts"
   },
   "scripts": {
     "test": "bun test",

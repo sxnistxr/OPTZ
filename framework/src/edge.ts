@@ -6,7 +6,7 @@
 //
 // Each request gets the platform's `env` (read with env() from optz/server) and `waitUntil`
 // (after() and waitUntil() use it), and `scheduled` runs app/scheduled.ts on Cron Triggers.
-import { createApp, type App, type Platform } from "./handler";
+import { createApp, middlewareFrom, type App, type Platform } from "./handler";
 import type { Manifest } from "./manifest";
 import { send, type StaticEntry } from "./static";
 import type { Middleware, ResolvedConfig } from "./types";
@@ -48,8 +48,7 @@ export function createWorker({ manifest, config, files, modules }: WorkerOptions
   const mwFile = Object.keys(modules).find((f) => /^app\/middleware\.(ts|tsx|js)$/.test(f));
   const middleware = async (): Promise<Middleware[]> => {
     if (!config.features.middleware || !mwFile) return [];
-    const m = (await load(mwFile)) as { default?: Middleware | Middleware[] };
-    return m.default ? (Array.isArray(m.default) ? m.default : [m.default]) : [];
+    return middlewareFrom((await load(mwFile)) as Parameters<typeof middlewareFrom>[0]);
   };
   let app: Promise<App> | undefined;
   const start = async () => {

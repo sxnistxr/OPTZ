@@ -1,6 +1,6 @@
 // optz/server: functions for server code (API routes, Server Actions, dynamic pages, loaders).
 // Never import this from an island or other browser code.
-import { getRevalidator, store } from "./context";
+import { dataCaches, getRevalidator, store } from "./context";
 
 export { NotFound, notFound, redirect } from "./index";
 
@@ -180,3 +180,28 @@ export class ActionError extends Error {
     this.name = "ActionError";
   }
 }
+
+/** Memoizes a server function across requests: one call per distinct arguments (JSON) is shared
+ *  by everyone until `revalidate` seconds pass or revalidateTag() names one of its `tags`.
+ *  Concurrent calls share one promise; a call that fails isn't kept.
+ *
+ *    export const getPosts = cache(async (limit: number) => db.posts(limit), { tags: ["posts"], revalidate: 60 });
+ *
+ *  Only for data that's the same for every visitor: nothing request-specific goes in. */
+export function cache<A extends unknown[], R>(fn: (...args: A) => R | Promise<R>, opts: { tags?: string[]; revalidate?: number; maxEntries?: number } = {}): (...args: A) => Promise<Awaited<R>> {
+  const entries = new Map<string, { at: number; value: Promise<Awaited<R>> }>();
+  const max = opts.maxEntries ?? 1000;
+  dataCaches.add({ tags: opts.tags ?? [], clear: () => entries.clear() });
+  return (...args: A) => {
+    const key = JSON.stringify(args);
+    const hit = entries.get(key);
+    if (hit && (opts.revalidate === undefined || Date.now() - hit.at < opts.revalidate * 1000)) return hit.value;
+    const value = Promise.resolve().then(() => fn(...args)) as Promise<Awaited<R>>;
+    value.catch(() => entries.get(key)?.value === value && entries.delete(key));
+    entries.delete(key);
+    entries.set(key, { at: Date.now(), value });
+    if (entries.size > max) entries.delete(entries.keys().next().value as string);
+    return value;
+  };
+}
+

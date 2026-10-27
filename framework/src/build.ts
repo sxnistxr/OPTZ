@@ -363,17 +363,17 @@ export async function build({ root, config, dev, exportOnly }: BuildOptions): Pr
       }
       for (const locale of locales) {
         const sets = page.paths ? await page.paths({ locale }) : needsPaths ? [] : [{}];
-        for (const params of sets) {
+        const one = async (params: Record<string, string>) => {
           const path = localized(fillPattern(mr.segments, params), locale);
           const res = await get(path);
           if (res.status >= 300 && res.status < 400) {
             const location = res.headers.get("Location") ?? "/";
             manifest.redirects[path] = { status: res.status, location };
             write(join(staticDir, dataPath(path)), JSON.stringify({ redirect: location }));
-            continue;
+            return;
           }
           if (res.status >= 500) throw new Error(`${mr.file}: rendering ${path} failed (see the error above)`);
-          if (res.status !== 200) continue;
+          if (res.status !== 200) return;
           write(join(staticDir, htmlPath(path)), await res.text());
           if (!islandsMode) {
             const d = await get(dataPath(path));
@@ -384,7 +384,9 @@ export async function build({ root, config, dev, exportOnly }: BuildOptions): Pr
             if (og.status === 200) write(join(staticDir, ogPath(path)), new Uint8Array(await og.arrayBuffer()));
           }
           rendered++;
-        }
+        };
+        // A few at a time: loaders that wait on I/O (a CMS, a database) overlap.
+        for (let i = 0; i < sets.length; i += PRERENDER_CONCURRENCY) await Promise.all(sets.slice(i, i + PRERENDER_CONCURRENCY).map(one));
       }
     }
     if (manifest.notFound) {
@@ -438,6 +440,9 @@ export async function build({ root, config, dev, exportOnly }: BuildOptions): Pr
   );
   return manifest;
 }
+
+/** Pages of one route pre-rendered at the same time. */
+const PRERENDER_CONCURRENCY = 8;
 
 async function bundle(entrypoints: string[], outdir: string, dev: boolean | undefined, plugins: BunPlugin[], reactFastRefresh = false, config?: ResolvedConfig) {
   const result = await Bun.build({

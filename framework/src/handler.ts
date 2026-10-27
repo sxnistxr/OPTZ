@@ -8,14 +8,14 @@
 // them is a map lookup. React's server renderer isn't even loaded until a dynamic page needs it.
 import { BOUND_FIELD, tagModule } from "./actions-runtime";
 import { cacheControl, ResponseCache } from "./cache";
-import { als, inStore, newStore, setRevalidator, type RequestStore } from "./context";
+import { als, clearDataCaches, inStore, newStore, setRevalidator, type RequestStore } from "./context";
 import { apiStaticPath, htmlPath, ogPath, type Manifest, type ManifestRoute, type ManifestSlot } from "./manifest";
-import { inScope, matchRoute, matchSegments, safeDecode } from "./match";
+import { compilePattern, fillDestination, inScope, matchRoute, matchSegments, safeDecode } from "./match";
 import { fnv, send, type StaticEntry } from "./static";
 import type { LocaleInfo } from "./runtime";
 import type { RenderInput, Rendered, SlotInput } from "./render";
 import { DRAFT_COOKIE, setDraftToken } from "./server-api";
-import type { ApiContext, ApiModule, ErrorModule, LayoutModule, Locals, Middleware, MiddlewareContext, PageModule, ResolvedConfig, RouteCache } from "./types";
+import type { ApiContext, ApiModule, ErrorModule, LayoutModule, Locals, Middleware, MiddlewareContext, PageModule, ResolvedConfig, RevalidationChange, RouteCache } from "./types";
 
 export interface Platform {
   /** Loads a project module by its path relative to the project root ("app/routes/x.tsx"). */
@@ -49,6 +49,16 @@ export interface RequestPlatform {
 export interface App {
   fetch(req: Request, platform?: RequestPlatform): Promise<Response>;
   cache: ResponseCache | null;
+}
+
+/** A middleware module's functions, limited to its `matcher` paths when it exports one:
+ *  export const matcher = ["/admin/[...rest]", "/api/[...rest]"]   (route syntax). */
+export function middlewareFrom(mod: { default?: Middleware | Middleware[]; matcher?: string | string[] }): Middleware[] {
+  const list = mod.default ? (Array.isArray(mod.default) ? mod.default : [mod.default]) : [];
+  if (!mod.matcher) return list;
+  const patterns = (Array.isArray(mod.matcher) ? mod.matcher : [mod.matcher]).map(compilePattern);
+  const matches = (p: string) => patterns.some((seg) => matchSegments(seg, p) !== null);
+  return list.map((mw): Middleware => (ctx, next) => (matches(ctx.url.pathname) ? mw(ctx, next) : next()));
 }
 
 /** Hop-by-hop headers (RFC 9110) and forwarding headers a client could forge: never passed on. */
@@ -118,6 +128,18 @@ export async function createApp({ manifest, config, files, platform, middleware 
     .sort((a, b) => b[0].length - a[0].length)
     .map(([prefix, rule]) => ({ prefix, rule, target: new URL(rule.target) }));
   const proxyFor = (p: string) => proxies.find((x) => p === x.prefix || p.startsWith(x.prefix + "/"));
+  // Config redirects, rewrites and headers, compiled once.
+  const compiled = <T extends { source: string }>(list: T[] = []) => list.map((r) => ({ ...r, segments: compilePattern(r.source) }));
+  const redirectRules = compiled(config.redirects);
+  const rewriteRules = compiled(config.rewrites);
+  const headerRules = compiled(config.headers);
+  const firstMatch = <R extends { segments: ReturnType<typeof compilePattern> }>(rules: R[], path: string) => {
+    for (const r of rules) {
+      const params = matchSegments(r.segments, path);
+      if (params) return { rule: r, params };
+    }
+    return null;
+  };
 
   /** Forwards a request to a proxy target: the target's path is kept, hop-by-hop and
    *  client-sent forwarding headers are dropped (and set from what this server knows), bodies
@@ -168,9 +190,18 @@ export async function createApp({ manifest, config, files, platform, middleware 
   const SPECULATION = '"/_optz/speculation.json"';
   const htmlCache = config.server.cdnMaxAge ? `public, max-age=0, s-maxage=${config.server.cdnMaxAge}, stale-while-revalidate=86400` : "no-cache";
   const pageHeaders: Record<string, string> = config.client.speculation && config.client.mode === "islands" && live && files.has("/_optz/speculation.json") ? { "Speculation-Rules": SPECULATION } : {};
+  // With a CDN caching pages, each carries tags to purge it by: its path and the page's tags.
+  const cdnTagged = !!config.server.cdnMaxAge;
+  const pageHeadersFor = (path: string): Record<string, string> => {
+    if (!cdnTagged) return pageHeaders;
+    const route = matchRoute(manifest.routes, splitLocale(path).inner)?.route;
+    const tags = [`optz-path:${path}`, ...(route?.tags ?? [])];
+    return { ...pageHeaders, "Cache-Tag": tags.join(","), "Surrogate-Key": tags.join(" ") };
+  };
   for (const [url, e] of files) {
     if (!e.type.startsWith("text/html")) continue;
-    e.headers = { ...e.headers, ...pageHeaders };
+    const internal = url.startsWith("/_optz/") || /(^|\/)404\.html$/.test(url);
+    e.headers = { ...e.headers, ...(internal ? pageHeaders : pageHeadersFor(url === "/index.html" ? "/" : url.replace(/\/index\.html$/, ""))) };
     if (!url.startsWith("/_optz/")) e.cache = htmlCache;
   }
 
@@ -288,24 +319,82 @@ export async function createApp({ manifest, config, files, platform, middleware 
   };
   const regenerating = new Set<string>();
 
-  setRevalidator({
-    path(path, type) {
-      const now = Date.now();
-      const p = path.length > 1 ? path.replace(/\/+$/, "") : path;
-      anyStamps = true;
-      if (type === "layout") {
-        stamp(prefixStamps, p === "/" ? "/" : p + "/", now);
-        stamp(pathStamps, p, now);
-      } else stamp(pathStamps, p, now);
+  /** Applies a change in this process: ISR stamps and the response cache. */
+  function applyChange(change: RevalidationChange) {
+    const now = Date.now();
+    anyStamps = true;
+    for (const { path: p, prefix } of change.paths) {
+      if (prefix) stamp(prefixStamps, p === "/" ? "/" : p + "/", now);
+      stamp(pathStamps, p, now);
       cache?.invalidate((k) => {
         const kp = k.split("\n")[0].split("?")[0];
-        return type === "layout" ? kp === p || kp.startsWith(p === "/" ? "/" : p + "/") : kp === p;
+        return prefix ? kp === p || kp.startsWith(p === "/" ? "/" : p + "/") : kp === p;
       });
+    }
+    for (const tag of change.tags) {
+      stamp(tagStamps, tag, now);
+      cache?.invalidate((_k, rc) => !!rc.tags?.includes(tag));
+    }
+    clearDataCaches(change.tags);
+  }
+
+  // ---- revalidation beyond this process: peers and the CDN ----
+  const rv = config.revalidation;
+  const rvSecret = rv?.secret || (typeof process !== "undefined" ? process.env.OPTZ_REVALIDATE_SECRET : undefined) || "";
+  const rvKey = rvSecret ? await crypto.subtle.importKey("raw", new TextEncoder().encode(rvSecret), { name: "HMAC", hash: "SHA-256" }, false, ["sign", "verify"]) : null;
+  const hex = (b: ArrayBuffer) => [...new Uint8Array(b)].map((x) => x.toString(16).padStart(2, "0")).join("");
+  if (rv?.peers?.length && !rvKey) console.warn("optz: revalidation.peers needs revalidation.secret (or OPTZ_REVALIDATE_SECRET); changes stay on this instance");
+
+  /** A change made here: applied, sent to the peers and the CDN. */
+  function publish(change: RevalidationChange) {
+    applyChange(change);
+    if (rvKey && rv?.peers?.length) {
+      const body = JSON.stringify({ at: Date.now(), change });
+      void crypto.subtle.sign("HMAC", rvKey, new TextEncoder().encode(body)).then((sig) => {
+        for (const peer of rv.peers!) {
+          globalThis
+            .fetch(new URL("/_optz/revalidate", peer), { method: "POST", headers: { "Content-Type": "application/json", "X-Optz-Signature": hex(sig) }, body, signal: AbortSignal.timeout(5000) })
+            .then((r) => r.ok || console.error(`optz: revalidating ${peer} answered ${r.status}`))
+            .catch((e: Error) => console.error(`optz: revalidating ${peer} failed: ${e.message}`));
+        }
+      });
+    }
+    if (rv?.purge) {
+      try {
+        void Promise.resolve((rv.purge as (c: RevalidationChange, origin?: string) => unknown)(change, siteOrigin)).catch((e: Error) => console.error("optz: revalidation.purge:", e));
+      } catch (e) {
+        console.error("optz: revalidation.purge:", e);
+      }
+    }
+  }
+
+  /** POST /_optz/revalidate from a peer: a signed change, applied here only. */
+  async function receiveRevalidation(req: Request): Promise<Response> {
+    if (req.method !== "POST" || !rvKey) return jsonRes({ error: "not found" }, 404);
+    const body = await req.text();
+    const sig = req.headers.get("x-optz-signature") ?? "";
+    const bytes = sig.match(/^[0-9a-f]{64}$/) ? Uint8Array.from(sig.match(/../g)!, (h) => parseInt(h, 16)) : null;
+    if (!bytes || !(await crypto.subtle.verify("HMAC", rvKey, bytes, new TextEncoder().encode(body)))) return jsonRes({ error: "bad signature" }, 403);
+    let msg: { at?: number; change?: RevalidationChange };
+    try {
+      msg = JSON.parse(body);
+    } catch {
+      return jsonRes({ error: "bad body" }, 400);
+    }
+    // Replays of an old message are refused.
+    if (typeof msg.at !== "number" || Math.abs(Date.now() - msg.at) > 60_000 || !msg.change) return jsonRes({ error: "stale or malformed" }, 400);
+    const paths = (msg.change.paths ?? []).filter((p) => typeof p?.path === "string" && p.path.startsWith("/"));
+    const tags = (msg.change.tags ?? []).filter((t) => typeof t === "string");
+    applyChange({ paths: paths.map((p) => ({ path: p.path, prefix: !!p.prefix })), tags });
+    return jsonRes({ ok: true });
+  }
+
+  setRevalidator({
+    path(path, type) {
+      publish({ paths: [{ path: path.length > 1 ? path.replace(/\/+$/, "") : path, prefix: type === "layout" }], tags: [] });
     },
     tag(tag) {
-      anyStamps = true;
-      stamp(tagStamps, tag, Date.now());
-      cache?.invalidate((_k, rc) => !!rc.tags?.includes(tag));
+      publish({ paths: [], tags: [tag] });
     },
   });
 
@@ -351,7 +440,7 @@ export async function createApp({ manifest, config, files, platform, middleware 
         const out = await renderPage(await renderInput(r, ctx, publicPath, inner, params, locale), assets(r), config);
         if (out.kind === "notFound") files.delete(htmlPath(publicPath));
         if (out.kind !== "page" || out.status !== 200) return;
-        files.set(htmlPath(publicPath), { ...entryOf(new TextEncoder().encode(out.html), "text/html; charset=utf-8", htmlCache), headers: pageHeaders });
+        files.set(htmlPath(publicPath), { ...entryOf(new TextEncoder().encode(out.html), "text/html; charset=utf-8", htmlCache), headers: pageHeadersFor(publicPath) });
       }
       renderedAt.set(publicPath, started);
     })()
@@ -639,7 +728,7 @@ export async function createApp({ manifest, config, files, platform, middleware 
   }
 
   // ---- routing ------------------------------------------------------------------------------
-  async function route(ctx: MiddlewareContext, s: RequestStore): Promise<Response> {
+  async function route(ctx: MiddlewareContext, s: RequestStore, rewrites = 0): Promise<Response> {
     const { request: req, url } = ctx;
     const p = url.pathname;
     if (proxies.length) {
@@ -652,6 +741,7 @@ export async function createApp({ manifest, config, files, platform, middleware 
     s.draft = await isDraft(req);
     s.locale = splitLocale(p).locale;
     if (mcpOn && p === mcpPath) return inStore(s, async () => (await mcp()).handle(ctx));
+    if (p === "/_optz/revalidate") return receiveRevalidation(req);
     if (p.startsWith("/_optz/action/")) return inStore(s, () => action(ctx, s));
     if (p.startsWith("/_optz/data/") && p.endsWith(".json")) return inStore(s, () => data(ctx, s));
     if (p.startsWith("/_optz/og/") && p.endsWith(".png")) return inStore(s, () => og(ctx));
@@ -659,6 +749,26 @@ export async function createApp({ manifest, config, files, platform, middleware 
     if (p === "/_optz/image") return F.images && platform.images ? platform.images(req, url, files) : notFound(ctx);
     if (p === "/_optz/speculation.json" && files.has(p)) return send(files.get(p)!, req);
     if (p.startsWith("/_optz/")) return notFound(ctx);
+
+    // Config redirects and rewrites, in route syntax.
+    if (redirectRules.length) {
+      const r = firstMatch(redirectRules, p);
+      if (r) return new Response(null, { status: r.rule.permanent ? 308 : 307, headers: { Location: fillDestination(r.rule.destination, r.params) + (r.rule.destination.includes("?") ? "" : url.search) } });
+    }
+    if (rewriteRules.length && rewrites < 4) {
+      const r = firstMatch(rewriteRules, p);
+      if (r) {
+        const dest = new URL(fillDestination(r.rule.destination, r.params), url);
+        for (const [k, v] of url.searchParams) if (!dest.searchParams.has(k)) dest.searchParams.append(k, v);
+        if (dest.origin !== url.origin) {
+          // Another site: proxied like a proxy prefix (headers filtered, timeout, body cap).
+          return proxy(new Request(dest, req), dest, { prefix: "", rule: { target: dest.origin, timeoutMs: 30_000 }, target: new URL(dest.origin) });
+        }
+        const next = new Request(dest, req);
+        s.url = dest;
+        return route({ request: next, url: dest, locals: ctx.locals }, s, rewrites + 1);
+      }
+    }
 
     // i18n: /fr/x -> locale fr, route /x. The default locale has no prefix unless prefixDefault.
     const { locale, inner, prefixed } = splitLocale(p);
@@ -837,6 +947,12 @@ export async function createApp({ manifest, config, files, platform, middleware 
       if (nonce) {
         res.headers.delete(NONCE);
         withNonce(res, nonce);
+      }
+      if (headerRules.length) {
+        for (const r of headerRules) {
+          if (!matchSegments(r.segments, p)) continue;
+          for (const [k, v] of Object.entries(r.headers)) res.headers.set(k, v);
+        }
       }
       if (F.requestLog) console.log(`${req.method} ${p} ${res.status} ${(performance.now() - t0).toFixed(1)}ms`);
       return res;
