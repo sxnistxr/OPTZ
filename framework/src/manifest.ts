@@ -56,6 +56,8 @@ export interface Manifest {
   fonts: string[];
   /** Prerendered API responses: URL path -> static file and content type. */
   apiStatic: Record<string, { file: string; type: string }>;
+  /** MCP tools, prompts and resources: files in app/mcp. */
+  mcp?: string[];
 }
 
 export const outDirFor = (root: string, dev?: boolean) => `${root.replace(/\/$/, "")}/${dev ? ".optz/dev" : "dist"}`;

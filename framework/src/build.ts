@@ -16,7 +16,7 @@ import { actionStubs, scanActions } from "./actions";
 import { createApp } from "./handler";
 import { apiStaticPath, htmlPath, ogPath, type ManifestSlot } from "./manifest";
 import { islandId, registerIslandLoader } from "./plugin";
-import { dataPath, fillPattern, scanApi, scanRoutes, sortRoutes, type Route } from "./routes";
+import { dataPath, fillPattern, scanApi, scanMcp, scanRoutes, sortRoutes, type Route } from "./routes";
 import { bunPlatform } from "./server";
 import type { ApiModule, Hydrate, PageModule, RenderMode, ResolvedConfig } from "./types";
 
@@ -145,6 +145,14 @@ export async function build({ root, config, dev, exportOnly }: BuildOptions): Pr
   writeTypes(root, pages, apis);
   const all = sortRoutes([...pages, ...apis]);
   const actions = config.features.actions ? scanActions(root) : {};
+  const mcpFiles = config.features.mcp ? scanMcp(root) : [];
+  // Load them now so a broken definition fails the build, not the first AI client.
+  let mcpCounts = { tools: 0, prompts: 0, resources: 0 };
+  if (mcpFiles.length) {
+    const { createMcpServer } = await import("./mcp");
+    const s = createMcpServer({ config, modules: await Promise.all(mcpFiles.map(async (file) => ({ file, mod: await import(join(root, file)) }))) });
+    mcpCounts = { tools: s.tools.size, prompts: s.prompts.size, resources: s.resources.length };
+  }
   if (!islandsMode && (table.slots.length || table.intercepts.length)) throw new Error("parallel and intercepting routes need client.mode \"islands\"");
   // Prerendered pages arrive by real navigation, which can't keep parallel slots or open an
   // intercepted route in place, so apps with either keep the HTML-swap navigation.
@@ -175,6 +183,7 @@ export async function build({ root, config, dev, exportOnly }: BuildOptions): Pr
       ...apis.filter((r) => !apiMods.get(r)!.prerender).map((r) => `  ${r.pattern} (API route)`),
       ...dynamic.map((r) => `  ${r.pattern} (rendered at request time)`),
       ...Object.values(actions).map((a) => `  ${a.file} (Server Actions)`),
+      ...mcpFiles.map((f) => `  ${f} (MCP)`),
     ];
     if (needServer.length) throw new Error(`optz export makes a static site, but these need a server:\n${needServer.join("\n")}`);
   }
@@ -291,6 +300,7 @@ export async function build({ root, config, dev, exportOnly }: BuildOptions): Pr
     actions,
     fonts: fonts.preload,
     apiStatic: {},
+    ...(mcpFiles.length ? { mcp: mcpFiles } : {}),
   };
 
   // ---- pre-render static pages, client shells, API routes and OG images (production only) ----
@@ -370,6 +380,8 @@ export async function build({ root, config, dev, exportOnly }: BuildOptions): Pr
     }
     const { buildSeoFiles } = await import("./seo");
     rendered += await buildSeoFiles(root, config, staticDir);
+    const { buildLlmsFiles } = await import("./llms");
+    rendered += await buildLlmsFiles(root, config, staticDir);
     precompress(staticDir);
   }
   writeFileSync(join(out, "manifest.json"), JSON.stringify(manifest, null, 1));
@@ -378,6 +390,11 @@ export async function build({ root, config, dev, exportOnly }: BuildOptions): Pr
     Object.keys(actions).length && `${Object.values(actions).reduce((n, a) => n + a.exports.length, 0)} actions`,
     table.slots.length && `${table.slots.length} slots`,
     fonts.preload.length && `${fonts.preload.length} fonts`,
+    mcpFiles.length &&
+      `MCP ${Object.entries(mcpCounts)
+        .filter(([, n]) => n)
+        .map(([k, n]) => `${n} ${n === 1 ? k.slice(0, -1) : k}`)
+        .join(", ")}`,
   ].filter(Boolean);
   console.log(
     `optz: built ${pages.length} pages, ${apis.length} API routes, ${Object.keys(islands).length} islands${extras.length ? ", " + extras.join(", ") : ""} (${config.client.mode}, ${config.client.runtime})${dev ? "" : `, pre-rendered ${rendered}`} in ${ms} ms`,

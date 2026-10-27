@@ -55,6 +55,7 @@ function serverModules(root: string, m: Manifest): string[] {
   add(m.notFound);
   m.rootLayouts.forEach(add);
   Object.values(m.actions).forEach((a) => add(a.file));
+  (m.mcp ?? []).forEach(add);
   for (const f of ["app/middleware.ts", "app/middleware.tsx", "app/middleware.js"]) if (existsSync(join(root, f))) add(f);
   return [...files];
 }

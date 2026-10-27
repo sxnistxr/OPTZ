@@ -39,7 +39,7 @@ const check = (name, ok, detail = "") => results.push(`${ok ? "ok  " : "FAIL"} $
   check("lab page via swap", docs.length === d0 && (await pg.textContent("h1")) === "Lab" && (await pg.textContent("main")).includes("LLMs"));
   await pg.click("nav[aria-label=Site] >> text=Docs");
   await pg.waitForURL(base + "/docs");
-  check("docs index lists every section", docs.length === d0 && (await pg.locator("main section").count()) === 6);
+  check("docs index lists every section", docs.length === d0 && (await pg.locator("main section").count()) === 7);
 
   // ---- a docs page ----
   await pg.click("main section >> text=Framework reference");

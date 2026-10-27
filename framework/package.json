@@ -19,7 +19,8 @@
     "./islands": "./src/islands.ts",
     "./action-client": "./src/action-client.ts",
     "./edge": "./src/edge.ts",
-    "./seo": "./src/seo.ts"
+    "./seo": "./src/seo.ts",
+    "./mcp": "./src/mcp.ts"
   },
   "peerDependencies": {
     "react": "^19",

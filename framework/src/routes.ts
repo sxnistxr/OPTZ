@@ -230,3 +230,22 @@ export function scanApi(apiDir: string, prefix = "/api"): Route[] {
   if (existsSync(apiDir)) walk(apiDir);
   return out;
 }
+
+/** MCP modules: every .ts/.js/.tsx file under app/mcp (folders starting with "_" are helpers). */
+export function scanMcp(root: string): string[] {
+  const dir = join(root, "app/mcp");
+  const out: string[] = [];
+  const walk = (d: string) => {
+    for (const e of readdirSync(d).sort()) {
+      const full = join(d, e);
+      if (statSync(full).isDirectory()) {
+        if (!e.startsWith("_")) walk(full);
+        continue;
+      }
+      if (e.startsWith("_") || e.endsWith(".d.ts") || /\.(test|spec)\./.test(e) || !/\.(ts|tsx|js|jsx)$/.test(e)) continue;
+      out.push(relative(root, full).split(sep).join("/"));
+    }
+  };
+  if (existsSync(dir)) walk(dir);
+  return out;
+}

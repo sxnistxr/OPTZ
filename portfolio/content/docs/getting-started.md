@@ -25,6 +25,8 @@ The commands every optz app has:
 | `bun run start` | serves the build (`PORT` and `HOST` override the config) |
 | `bunx optz nginx` | prints the nginx config for the app |
 | `bunx optz export` | a static site in `dist/static`, for any static host |
+| `bunx optz agents` | `AGENTS.md`, agent skills and MCP configs for Claude Code, Codex, Cursor, VS Code and Gemini CLI ([optz with AI](ai.md)) |
+| `bunx optz mcp` | an MCP server (stdio) with the project's tools, for coding agents |
 
 ## Edit the site
 

@@ -126,6 +126,36 @@ export async function createApp({ manifest, config, files, platform, middleware 
     if (f) files.set(s.file, { ...f, type: s.type, cache: "no-cache" });
   }
 
+  // ---- MCP: app/mcp tools, prompts and resources for AI clients (loaded on first request) ----
+  const mcpPath = config.mcp?.path ?? "/mcp";
+  const mcpOn = F.mcp && !prerender && (!!manifest.mcp?.length || !!config.mcp);
+  let mcpServer: Promise<ReturnType<typeof import("./mcp").createMcpServer>> | undefined;
+  const mcp = () =>
+    (mcpServer ??= import("./mcp").then(async ({ createMcpServer, sitePages }) =>
+      createMcpServer({
+        config,
+        dev,
+        modules: await Promise.all((manifest.mcp ?? []).map(async (file) => ({ file, mod: await load(file) }))),
+        pages: () => sitePages([...files].map(([u, e]): [string, Uint8Array] => [u, e.body]), (config.llms || undefined)?.exclude),
+        // With middleware, a page is only readable over MCP if a GET for it, with the caller's
+        // cookies and credentials, gets through: what the middleware protects stays protected.
+        canRead: middleware.length
+          ? async (path, c) => {
+              const headers = new Headers();
+              for (const h of ["cookie", "authorization"]) {
+                const v = c.request.headers.get(h);
+                if (v) headers.set(h, v);
+              }
+              const req = new Request(new URL(path, c.url), { headers });
+              const url = new URL(req.url);
+              const res = await run({ request: req, url, locals: {} as Locals }, newStore({ request: req, url, locals: {} as Locals, draft: false }), 0);
+              await res.body?.cancel();
+              return res.status === 200;
+            }
+          : undefined,
+      }),
+    ));
+
   // ---- draft mode: a cookie signed with the secret ----
   const secret = config.draft?.secret ?? (typeof process !== "undefined" ? process.env.OPTZ_DRAFT_SECRET : undefined) ?? crypto.randomUUID();
   const key = await crypto.subtle.importKey("raw", new TextEncoder().encode(secret), { name: "HMAC", hash: "SHA-256" }, false, ["sign"]);
@@ -437,6 +467,7 @@ export async function createApp({ manifest, config, files, platform, middleware 
     const { request: req, url } = ctx;
     const p = url.pathname;
     if (p.length > 1 && p.endsWith("/")) return new Response(null, { status: 308, headers: { Location: p.replace(/\/+$/, "") + url.search } });
+    if (mcpOn && p === mcpPath) return inStore(s, async () => (await mcp()).handle(ctx));
     if (p.startsWith("/_optz/action/")) return inStore(s, () => action(ctx, s));
     if (p.startsWith("/_optz/data/") && p.endsWith(".json")) return inStore(s, () => data(ctx));
     if (p.startsWith("/_optz/og/") && p.endsWith(".png")) return inStore(s, () => og(ctx));

@@ -276,7 +276,44 @@ export interface Config {
     actions?: boolean;
     /** The /_optz/image optimizer. Default true. */
     images?: boolean;
+    /** The MCP endpoint (see `mcp`). Default true: on when app/mcp has files or `mcp` is set. */
+    mcp?: boolean;
   };
+
+  /** The app as a Model Context Protocol server, so AI clients (Claude, ChatGPT, Codex, Cursor,
+   *  VS Code, ...) can use it. Files in app/mcp are its tools, prompts and resources (see
+   *  "optz/mcp"). Setting this turns the endpoint on even without app/mcp (pages only). */
+  mcp?: {
+    /** Where it's served. Default "/mcp". */
+    path?: string;
+    /** Server name clients show. Default site.url's host name. */
+    name?: string;
+    title?: string;
+    version?: string;
+    /** Told to the model when it connects: what the server is for and how to use its tools. */
+    instructions?: string;
+    /** Pre-rendered pages as resources, with `search_pages` and `read_page` tools. Default true. */
+    pages?: boolean;
+    /** Browser origins allowed to call it (site.url's origin always is). Clients that aren't
+     *  browsers send no Origin and are always allowed; use middleware to authenticate them. */
+    allowedOrigins?: string[];
+  };
+
+  /** /llms.txt (an index of the site for language models, llmstxt.org) and /llms-full.txt (every
+   *  page as text), written at build time from the pre-rendered pages. app/llms.ts can return the
+   *  llms.txt text instead. `false` turns both off. Default on. */
+  llms?:
+    | false
+    | {
+        /** Default the home page's title. */
+        title?: string;
+        /** Default the home page's description. */
+        description?: string;
+        /** Also write /llms-full.txt. Default true. */
+        full?: boolean;
+        /** Leave out pages whose path starts with one of these. */
+        exclude?: string[];
+      };
 
   cache?: {
     /** Max cached responses. Default 500. */
@@ -311,7 +348,7 @@ export function resolveConfig(c: Config = {}): ResolvedConfig {
   return {
     ...c,
     client: { mode: "islands", navigation: true, prefetch: true, runtime: "react", speculation: true, ...c.client },
-    features: { middleware: true, dynamic: true, api: true, cache: true, dynamicCompression: true, etag: true, requestLog: false, streaming: true, actions: true, images: true, ...c.features },
+    features: { middleware: true, dynamic: true, api: true, cache: true, dynamicCompression: true, etag: true, requestLog: false, streaming: true, actions: true, images: true, mcp: true, ...c.features },
     cache: { maxEntries: 500, maxBytes: 32 << 20, ...c.cache },
     server: { idleTimeout: 30, maxRequestBodySize: 1 << 20, cdnMaxAge: 0, ...c.server },
   };

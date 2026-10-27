@@ -181,4 +181,49 @@ describe("features app", () => {
     expect(await (await get("/sitemap.xml")).text()).toContain("<loc>https://features.example/</loc>");
     expect(await (await get("/robots.txt")).text()).toContain("Disallow: /api/");
   });
+  test("MCP: app/mcp tools, prompts and resources, plus the site's pages, at /mcp", async () => {
+    const rpc = async (method: string, params?: unknown, headers: Record<string, string> = {}) =>
+      (await (await post("/mcp", JSON.stringify({ jsonrpc: "2.0", id: 1, method, params }), { "Content-Type": "application/json", Accept: "application/json, text/event-stream", ...headers })).json()) as {
+        result?: any;
+        error?: { code: number; message: string };
+      };
+    const init = await rpc("initialize", { protocolVersion: "2025-06-18", capabilities: {}, clientInfo: { name: "test", version: "1" } });
+    expect(init.result.protocolVersion).toBe("2025-06-18");
+    expect(init.result.serverInfo.name).toBe("features.example");
+    expect(Object.keys(init.result.capabilities).sort()).toEqual(["logging", "prompts", "resources", "tools"]);
+    expect((await post("/mcp", JSON.stringify({ jsonrpc: "2.0", method: "notifications/initialized" }))).status).toBe(202);
+
+    const tools = (await rpc("tools/list")).result.tools.map((t: { name: string }) => t.name);
+    expect(tools).toEqual(["add", "search_pages", "read_page"]);
+    const sum = (await rpc("tools/call", { name: "add", arguments: { numbers: [1, 2, 3.5] } }, { "User-Agent": "claude" })).result;
+    expect(sum.structuredContent).toEqual({ sum: 6.5, agent: "claude" });
+    const bad = (await rpc("tools/call", { name: "add", arguments: { numbers: ["x"] } })).result;
+    expect(bad).toMatchObject({ isError: true, content: [{ text: "Invalid arguments: arguments.numbers[0] must be a number" }] });
+    expect((await rpc("tools/call", { name: "nope" })).error!.code).toBe(-32602);
+
+    const found = (await rpc("tools/call", { name: "search_pages", arguments: { query: "setup" } })).result.structuredContent.results;
+    expect(found[0].path).toBe("/docs/guide/setup");
+    const page = (await rpc("tools/call", { name: "read_page", arguments: { path: "https://features.example/docs/guide/setup" } })).result;
+    expect(page.content[0].text).toContain("Source: https://features.example/docs/guide/setup");
+    expect((await rpc("tools/call", { name: "read_page", arguments: { path: "/missing" } })).result.isError).toBe(true);
+
+    expect((await rpc("prompts/get", { name: "explain", arguments: { path: "/" } })).result.messages[0].content.text).toContain("read_page");
+    expect((await rpc("resources/templates/list")).result.resourceTemplates[0].uriTemplate).toBe("notes://{id}");
+    expect((await rpc("resources/read", { uri: "notes://42" })).result.contents[0]).toEqual({ uri: "notes://42", mimeType: "text/plain", text: "Note 42" });
+    expect((await rpc("resources/list")).result.resources.some((r: { uri: string }) => r.uri === "https://features.example/docs/guide/setup")).toBe(true);
+    expect((await rpc("bogus")).error!.code).toBe(-32601);
+
+    // A web page elsewhere can't drive it (DNS rebinding); the site's own origin can.
+    expect((await post("/mcp", "{}", { Origin: "https://evil.example" })).status).toBe(403);
+    expect((await rpc("ping", undefined, { Origin: "https://features.example" })).result).toEqual({});
+    expect((await post("/mcp", "not json")).status).toBe(400);
+    expect((await get("/mcp")).status).toBe(405);
+  });
+
+  test("llms.txt and llms-full.txt list the pages for language models", async () => {
+    const txt = await (await get("/llms.txt")).text();
+    expect(txt).toContain("This site is also an MCP server: https://features.example/mcp");
+    expect(txt).toMatch(/- \[[^\]]+\]\(https:\/\/features\.example\/docs\/guide\/setup\)/);
+    expect(await (await get("/llms-full.txt")).text()).toContain("Source: https://features.example/docs/guide/setup");
+  });
 });

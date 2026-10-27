@@ -14,6 +14,8 @@ bun run build    # dist/   (--compile: also a single executable; --target edge: 
 bun run start    # production server (PORT/HOST env vars override the config)
 optz nginx       # nginx config generated from optz.config.ts
 optz export      # static site only, for any static host
+optz agents      # AGENTS.md, agent skills and MCP configs for Claude Code, Codex, Cursor, VS Code, Gemini
+optz mcp         # MCP server (stdio) with this project's tools, for coding agents
 ```
 
 `apps/features/` uses every feature below in one app; `node apps/features/e2e.cjs` checks them
@@ -29,8 +31,10 @@ app/
   api/                  API routes, under /api
   components/           components; *.island.tsx ones hydrate in the browser
   lib/                  shared code ($lib/...)
+  mcp/                  MCP tools, prompts and resources for AI clients, served at /mcp
   middleware.ts         runs before every page and API request
   sitemap.ts robots.ts manifest.ts   built into /sitemap.xml, /robots.txt, /manifest.webmanifest
+  llms.ts               optional: replaces the generated /llms.txt
   styles.css            Tailwind CSS v4 (`@import "tailwindcss";`)
 public/                 copied as-is
 .optz/types.d.ts        generated: your routes and APIs as types
@@ -246,6 +250,58 @@ export default defineMiddleware(async (ctx, next) => {
 });
 ```
 
+## AI: MCP server, llms.txt and coding agents
+
+**Your app as an MCP server.** Every file in `app/mcp` is a tool, prompt or resource that AI
+clients (Claude, ChatGPT, Codex, Cursor, VS Code, Gemini CLI, ...) can use, served at `/mcp` with
+the Model Context Protocol's Streamable HTTP transport. It's stateless JSON, so it runs the same
+on Bun, the single executable and edge workers, behind any load balancer.
+
+```ts
+// app/mcp/search_posts.ts  ->  the tool "search_posts"
+import { defineTool, ToolError } from "optz/mcp";
+
+export default defineTool({
+  description: "Search blog posts by title. Returns slugs, titles and URLs.",
+  input: { type: "object", properties: { q: { type: "string", minLength: 2 }, limit: { type: "integer", default: 5 } }, required: ["q"] },
+  annotations: { readOnlyHint: true },
+  run: ({ q, limit }, { locals }) => {               // q: string, limit?: number, from the schema
+    const hits = searchPosts(q).slice(0, limit);
+    if (!hits.length) throw new ToolError(`Nothing matches "${q}"`);   // the model sees this
+    return { posts: hits };                          // JSON text + structuredContent
+  },
+});
+```
+
+- Arguments are validated against `input` (types, `required`, `enum`, lengths, ranges, `pattern`)
+  and defaults filled in before `run`; a bad call gets an error the model can correct.
+- `definePrompt({ arguments, run })` and `defineResource({ uri: "posts://{slug}", list, read })`
+  for prompts and resources (fixed URIs or templates).
+- Requests go through `app/middleware.ts`, so authenticate there (`Authorization: Bearer ...`,
+  put the user in `ctx.locals`); tools get `locals` and can call `cookies()`, `headers()`, `after()`.
+- Browsers may only call it from `site.url` (or `mcp.allowedOrigins`): a check against DNS
+  rebinding. Clients that aren't browsers send no `Origin`.
+- `mcp: { pages: true }` (the default) adds the pre-rendered pages as resources, with
+  `search_pages` and `read_page` tools: setting `mcp: {}` makes a docs site AI-readable with no
+  code. A page counts only if a GET for it, with the caller's cookies and `Authorization`, gets
+  through your middleware, so pages it protects stay protected. `mcp.instructions` tells the
+  model what the server is for.
+- `optz build` loads every `app/mcp` file and fails on a bad definition.
+
+**llms.txt.** `optz build` writes `/llms.txt` (the site's pages by section, with descriptions,
+[llmstxt.org](https://llmstxt.org)) and `/llms-full.txt` (every page as text). `llms: false`
+turns them off; `llms.exclude` leaves paths out; `app/llms.ts` replaces the index.
+
+**Coding agents.** `optz create` and `optz agents` write what coding agents read: `AGENTS.md`
+(Codex, Cursor, Copilot, Gemini and others; `CLAUDE.md` imports it), two skills (`optz` for
+building, `optz-mcp` for exposing an app to AI) in `.claude/skills` and `.agents/skills`, and MCP
+configs (`.mcp.json`, `.codex/config.toml`, `.cursor/mcp.json`, `.vscode/mcp.json`,
+`.gemini/settings.json`) that start `optz mcp`. That's a stdio MCP server with tools for the
+project: `optz_project` (pages, render modes, APIs, actions, islands, config), `optz_match_url`,
+`optz_docs` (this reference), `optz_scaffold` (new page/API/island/action/MCP tool, never
+overwrites), `optz_check`, `optz_build` and `optz_fetch` (requests to the running dev server).
+Re-running `optz agents` updates the optz parts and keeps everything else in those files.
+
 ## Deploy targets
 
 | | command | what you get |
@@ -278,6 +334,8 @@ Every option is typed and documented on hover in `optz.config.ts`. The ones that
 | `server.idleTimeout` / `maxRequestBodySize` | 30 s / 1 MB | connection and body limits |
 | `server.cdnMaxAge` | 0 | seconds a CDN may cache HTML pages (`s-maxage`, then `stale-while-revalidate`); browsers still revalidate |
 | `proxy[prefix].cacheSeconds` | 0 | nginx micro-cache for a proxied API (via `optz nginx`) |
+| `mcp` / `features.mcp` | on with `app/mcp` | the MCP endpoint (`path`, `instructions`, `pages`, `allowedOrigins`); loaded on its first request |
+| `llms` | on | `/llms.txt` and `/llms-full.txt` at build time (`false`, `exclude`, `full`) |
 
 ## Dev server
 
@@ -296,6 +354,6 @@ nginx serving the same files: the same speed ([docs/NATIVE.md](../docs/NATIVE.md
 ## Tests
 
 `bun test` in `framework/`: routing (optional catch-alls, slots, intercepts), the cache, islands,
-actions, fonts, SEO files, and the whole `apps/features` app in-process (streaming with nonces,
-actions and CSRF, ISR, dynamicParams, intercepts, draft mode, i18n). Browser checks:
+actions, fonts, SEO files, MCP (schemas, the stdio server, `optz agents`), and the whole `apps/features` app in-process (streaming with nonces,
+actions and CSRF, ISR, dynamicParams, intercepts, draft mode, i18n, MCP over HTTP, llms.txt). Browser checks:
 `node apps/features/e2e.cjs` (22) and `node apps/features/hmr.cjs` (dev server, 6).
