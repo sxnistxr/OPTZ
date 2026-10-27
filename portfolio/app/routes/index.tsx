@@ -12,34 +12,33 @@ export const loader = () => ({ posts: listPosts().slice(0, 5) });
 export default function Home({ data }: PageProps<{ posts: PostMeta[] }, "/">) {
   return (
     <>
-      <h1 className="text-5xl font-semibold leading-[1.02] tracking-[-0.03em] md:text-7xl">{site.name}</h1>
-      <p className="mt-3 text-lg text-muted">{site.tagline}</p>
-      <p className="mt-6 max-w-[36rem] text-lg leading-relaxed md:text-xl">{site.about}</p>
-      <p className="mt-4 flex gap-5">
-        {site.links.map((l) => (
-          <a key={l.href} href={l.href} className="underline decoration-rule underline-offset-4 hover:decoration-ink">
-            {l.label}
-          </a>
-        ))}
-      </p>
+      <div className="home-intro">
+        <p className="intro-byline">{site.tagline}</p>
+        <h1>{site.name}</h1>
+        <p className="intro-description">{site.about}</p>
+        <div className="intro-links">
+          <Link href="/lab" className="primary-link">Explore the lab</Link>
+          {site.links.map((l) => <a key={l.href} href={l.href}>{l.label}</a>)}
+        </div>
+      </div>
       <Pulse />
 
-      <section className="mt-20" aria-labelledby="lab">
-        <h2 id="lab" className="mb-6 text-sm font-medium text-muted">
+      <section className="home-section" aria-labelledby="lab">
+        <h2 id="lab" className="section-heading">
           In the lab
         </h2>
         <LabList items={lab} />
       </section>
 
-      <section className="mt-20" aria-labelledby="writing">
-        <h2 id="writing" className="mb-6 text-sm font-medium text-muted">
+      <section className="home-section" aria-labelledby="writing">
+        <h2 id="writing" className="section-heading">
           Writing
         </h2>
         <PostList posts={data.posts} />
       </section>
 
-      <section className="mt-20 max-w-[38rem]" aria-labelledby="docs">
-        <h2 id="docs" className="mb-4 text-sm font-medium text-muted">
+      <section className="home-section home-docs" aria-labelledby="docs">
+        <h2 id="docs" className="section-heading">
           The code behind it
         </h2>
         <p className="text-lg leading-relaxed">

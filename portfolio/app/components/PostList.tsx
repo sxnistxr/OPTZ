@@ -4,13 +4,13 @@ import type { PostMeta } from "$lib/posts";
 
 export function PostList({ posts }: { posts: PostMeta[] }) {
   return (
-    <ol className="space-y-7">
+    <ol className="post-list">
       {posts.map((p) => (
         <li key={p.slug}>
-          <Link href={`/blog/${p.slug}`} className="group block">
+          <Link href={`/blog/${p.slug}`} className="post-link group">
             <span className="block text-lg font-semibold leading-snug tracking-tight group-hover:underline group-hover:decoration-rule group-hover:underline-offset-4">{p.title}</span>
             {p.summary && <span className="mt-1 block max-w-[36rem] text-muted">{p.summary}</span>}
-            <time dateTime={p.date} className="mt-1 block text-sm text-muted">
+            <time dateTime={p.date} className="post-date">
               {formatDate(p.date)}
             </time>
           </Link>
