@@ -51,15 +51,26 @@ pub fn parse(buf: &[u8]) -> Parse<'_> {
         None => path,
     };
     let mut close = req.version == Some(0);
-    let mut content_length: usize = 0;
+    let mut content_length: Option<usize> = None;
     let mut authorization = None;
+    let mut host = false;
     for h in req.headers.iter() {
         let name = h.name.as_bytes();
         if name.eq_ignore_ascii_case(b"content-length") {
+            // A second Content-Length is how request smuggling starts (a proxy in front may
+            // frame by the other one): refuse it, whatever its value.
+            if content_length.is_some() {
+                return Parse::Bad(400);
+            }
             content_length = match parse_len(h.value) {
-                Some(n) => n,
+                Some(n) => Some(n),
                 None => return Parse::Bad(400),
             };
+        } else if name.eq_ignore_ascii_case(b"host") {
+            if host {
+                return Parse::Bad(400);
+            }
+            host = true;
         } else if name.eq_ignore_ascii_case(b"authorization") {
             authorization = Some(h.value);
         } else if name.eq_ignore_ascii_case(b"connection") {
@@ -76,8 +87,13 @@ pub fn parse(buf: &[u8]) -> Parse<'_> {
             return Parse::Bad(400);
         }
     }
+    let content_length = content_length.unwrap_or(0);
     if content_length > MAX_REQUEST {
         return Parse::Bad(413);
+    }
+    // HTTP/1.1 requires exactly one Host (RFC 9112 3.2).
+    if req.version == Some(1) && !host {
+        return Parse::Bad(400);
     }
     let total = head_len + content_length;
     if buf.len() < total {
@@ -182,7 +198,7 @@ mod tests {
             (r.method, r.path, r.authorization, r.body, r.close, n),
             (Method::Post, &b"/posts/12/like"[..], Some(&b"Bearer t.o.k"[..]), &b""[..], false, raw.len())
         );
-        let (r, _) = done(b"GET /feed?x=1 HTTP/1.1\r\nconnection: Close\r\n\r\n");
+        let (r, _) = done(b"GET /feed?x=1 HTTP/1.1\r\nHost: x\r\nconnection: Close\r\n\r\n");
         assert_eq!((r.path, r.close), (&b"/feed"[..], true));
         let (r, _) = done(b"GET / HTTP/1.0\r\n\r\n");
         assert!(r.close);
@@ -192,12 +208,12 @@ mod tests {
 
     #[test]
     fn partial_pipelined_and_bad() {
-        let full = b"POST /posts HTTP/1.1\r\nContent-Length: 12\r\n\r\n{\"body\":\"x\"}";
+        let full = b"POST /posts HTTP/1.1\r\nHost: x\r\nContent-Length: 12\r\n\r\n{\"body\":\"x\"}";
         for i in 0..full.len() {
             assert!(matches!(parse(&full[..i]), Parse::Partial), "prefix {i}");
         }
         let mut two = full.to_vec();
-        two.extend_from_slice(b"GET /feed HTTP/1.1\r\n\r\n");
+        two.extend_from_slice(b"GET /feed HTTP/1.1\r\nHost: x\r\n\r\n");
         let (r, n) = done(&two);
         assert_eq!((r.body, n), (&b"{\"body\":\"x\"}"[..], full.len()));
         assert!(matches!(parse(&two[n..]), Parse::Done(..)));
@@ -207,6 +223,20 @@ mod tests {
         assert!(matches!(parse(b"POST / HTTP/1.1\r\nContent-Length: 999999\r\n\r\n"), Parse::Bad(413)));
         let huge = [b'a'; MAX_REQUEST + 1];
         assert!(matches!(parse(&huge), Parse::Bad(_)));
+    }
+
+    #[test]
+    fn refuses_smuggling_shapes() {
+        // Two Content-Lengths, equal or not: a proxy in front might frame by the other one.
+        assert!(matches!(
+            parse(b"POST /posts HTTP/1.1\r\nHost: x\r\nContent-Length: 0\r\nContent-Length: 14\r\n\r\n{\"body\":\"hi\"}"),
+            Parse::Bad(400)
+        ));
+        assert!(matches!(parse(b"POST /posts HTTP/1.1\r\nHost: x\r\nContent-Length: 2\r\nContent-Length: 2\r\n\r\n{}"), Parse::Bad(400)));
+        // HTTP/1.1 needs exactly one Host; HTTP/1.0 may omit it.
+        assert!(matches!(parse(b"GET /feed HTTP/1.1\r\n\r\n"), Parse::Bad(400)));
+        assert!(matches!(parse(b"GET /feed HTTP/1.1\r\nHost: a\r\nHost: b\r\n\r\n"), Parse::Bad(400)));
+        assert!(matches!(parse(b"GET /feed HTTP/1.0\r\n\r\n"), Parse::Done(..)));
     }
 
     #[test]

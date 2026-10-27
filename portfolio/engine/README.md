@@ -7,8 +7,8 @@
 
 | | |
 |---|---|
-| Language | Rust 1.99.1 (stable, edition 2024), installed from the official standalone tarball, SHA-256 pinned in `install.sh` (no rustup, nothing piped to a shell) |
-| Database | SQLite 3.54.1, official amalgamation built from source, SHA-256 pinned in `build.sh` |
+| Language | Rust 1.99.1 (stable, edition 2024), pinned in `rust-toolchain.toml`; production installs it from the official standalone tarball, SHA-256 pinned in `install.sh` (no rustup, nothing piped to a shell); elsewhere rustup picks it up from the toolchain file |
+| Database | SQLite 3.54.1, official amalgamation built from source: `fetch-sqlite.sh` downloads it into `vendor/` (git-ignored), checked against `vendor.sha256` |
 | I/O | `io-uring` 0.7.15 (raw io_uring: no async runtime, no HTTP framework) |
 | Other crates | `libc` 0.2.191, `httparse` 1.10.1, `sha2` 0.11.1 + `hmac` 0.13.0. Dev-only: `serde_json` 1.0.154, for differential tests. Exact pins in `Cargo.toml`, checksums in `Cargo.lock` |
 | Kernel | Linux ≥ 6.4 (multishot timeouts); built and tested on 6.18, and on Ubuntu 24.04's 6.8 via the VPS |
@@ -20,7 +20,7 @@ SQLITE_PATH=... JWT_SECRET=... HOST=0.0.0.0 PORT=80 bash start.sh   # foreground
 ```
 
 `start.sh` is a single `exec`. It never restarts the server itself, so systemd sees every crash.
-The server reads only the four variables in SPEC.md.
+The server reads only the four variables in [SPEC.md](SPEC.md), which also lists every route, status and error.
 
 ## Architecture
 
@@ -93,17 +93,28 @@ Rejected after measurement (details in BENCHMARKS.md): adaptive completion batch
 - Tokens without `exp`, `alg` other than HS256, bad base64url, or extra segments are rejected.
 - No kernel tuning, no CPU pinning. In-process only: the soft RLIMIT_NOFILE is raised to the hard
   limit, and options are set on the listening socket (inherited by accepted sockets).
-- Never crashes on EMFILE/ENFILE/ENOMEM/ENOBUFS: accept errors pause and retry on the 1 s tick,
-  and ENOBUFS re-arms the receive. Error paths don't open files.
+- Never crashes on EMFILE/ENFILE/ENOMEM/ENOBUFS: accept errors pause until a connection closes
+  (or the 1 s tick), ENOBUFS re-arms the receive, a send that fails transiently is retried, and a
+  ring that can't take more submissions (EAGAIN/EBUSY) is drained and retried without spinning.
+  Error paths don't open files.
+- Writes queued behind a stalled writer are bounded (16,384 jobs or 32 MiB): past that, 503.
+- Memory admission follows the cgroup's limit (systemd `MemoryMax=`) when it's below the host's.
+- Foreign keys are enforced: a validly signed token for a user that doesn't exist writes nothing
+  (401 `unknown user`).
 - Idle keep-alives stay open indefinitely (≥ 65 s); stalled partial requests or sends are closed
   after 120 s. SIGTERM: stop accepting, drain in-flight work (≤ 5 s), `wal_checkpoint(TRUNCATE)`.
 
 ## Tests
 
+From a clean clone (rustup installs the pinned toolchain on first use):
+
 ```sh
+./fetch-sqlite.sh                                           # vendor/sqlite3.c, checksum-verified
+cargo fmt --check && cargo clippy --all-targets -- -D warnings
+cargo test --release                                        # 27 unit tests (+2 needing a seed: TWELVE_SEED=... -- --ignored)
+python3 -c 'import sys; sys.path.insert(0, "bench"); import pgo_train; pgo_train.synth("/tmp/seed.db")'   # a synthetic SEED (20k users, 100k posts)
 bash ../../test/run.sh submissions/rust-iouring-sxnistxr   # official 42 checks
-cargo test --release                                        # 23 unit tests (+2 needing a seed: TWELVE_SEED=... -- --ignored)
-python3 tests/protocol.py --seed SEED [--long]              # 14 checks: pipelining, partial input, limits, 2,000 sockets, 66 s idle
+python3 tests/protocol.py --seed SEED [--long]              # 14 checks: pipelining, partial input, limits, 2,000 sockets, unknown users, 66 s idle
 python3 tests/crash.py --seed SEED                          # kill -9 during writes, then verify every acked write
 python3 tests/shards.py --seed SEED                         # spill-over across rings, admission ceiling
 python3 tests/connmem.py --seed SEED --conns N              # kernel + app memory per idle connection

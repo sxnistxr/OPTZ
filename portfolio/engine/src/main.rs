@@ -122,6 +122,14 @@ fn main() {
     let a = args();
     let path = env("SQLITE_PATH");
     let secret = env("JWT_SECRET");
+    // An empty secret makes every token forgeable; a short one, guessable.
+    if secret.is_empty() {
+        eprintln!("JWT_SECRET is empty");
+        std::process::exit(2);
+    }
+    if secret.len() < 32 {
+        eprintln!("warning: JWT_SECRET is {} bytes; use at least 32 random bytes", secret.len());
+    }
     let host = env("HOST");
     let port = env("PORT");
     let addr = match (host.as_str(), port.parse::<u16>().unwrap_or(0)).to_socket_addrs().ok().and_then(|mut i| i.next()) {
@@ -176,9 +184,10 @@ fn main() {
         }
     };
     eprintln!(
-        "listening on {addr}: {shard_slots} slots/shard x {} shards, connection ceiling {max_conns} (MemTotal {} MiB)",
+        "listening on {addr}: {shard_slots} slots/shard x {} shards, connection ceiling {max_conns} (memory {} MiB{})",
         net::MAX_SHARDS,
-        mem_total >> 20
+        mem_total >> 20,
+        if meminfo.cgroup_limit().is_some_and(|l| l <= mem_total) { ", the cgroup's limit" } else { "" }
     );
     let r = server.run();
     // Stop the writer: it finishes queued jobs, checkpoints the WAL (TRUNCATE) and closes.

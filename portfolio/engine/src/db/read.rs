@@ -54,7 +54,7 @@ impl Reader {
         db.busy_timeout(5000);
         db.exec(
             "PRAGMA journal_mode=WAL; PRAGMA query_only=1; PRAGMA mmap_size=1073741824; \
-             PRAGMA cache_size=-16384; PRAGMA temp_store=MEMORY;",
+             PRAGMA cache_size=-16384; PRAGMA temp_store=MEMORY; PRAGMA foreign_keys=ON;",
         )?;
         Ok(Reader {
             begin: db.prepare("BEGIN")?,

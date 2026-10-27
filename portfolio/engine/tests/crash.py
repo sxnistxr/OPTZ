@@ -31,7 +31,8 @@ def client(port, uid, stop, acked_posts, acked_likes, lock):
                     with lock:
                         acked_posts[json.loads(b)["post"]["id"]] = body
             else:
-                post = random.randint(1, 500000)
+                # Existing users and posts in any seed (writes for users that don't exist are 401s).
+                post = random.randint(1, 1000)
                 s.sendall(raw("POST", f"/posts/{post}/like", t))
                 st, _, _, _ = read_response(s)
                 if st in (200, 201):
@@ -55,7 +56,7 @@ def main():
         srv.start()
         stop = threading.Event()
         acked_posts, acked_likes, lock = {}, set(), threading.Lock()
-        ths = [threading.Thread(target=client, args=(a.port, 40000 + rnd * 1000 + i, stop, acked_posts, acked_likes, lock))
+        ths = [threading.Thread(target=client, args=(a.port, 1 + rnd * a.clients + i, stop, acked_posts, acked_likes, lock))
                for i in range(a.clients)]
         [t.start() for t in ths]
         time.sleep(random.uniform(0.5, 2.5))

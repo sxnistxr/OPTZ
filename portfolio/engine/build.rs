@@ -2,10 +2,7 @@
 fn main() {
     println!("cargo:rerun-if-changed=vendor/sqlite3.c");
     let mut b = cc::Build::new();
-    b.file("vendor/sqlite3.c")
-        .opt_level(3)
-        .flag_if_supported("-march=native")
-        .warnings(false);
+    b.file("vendor/sqlite3.c").opt_level(3).flag_if_supported("-march=native").warnings(false);
     for (k, v) in [
         // Each connection is used by one thread at a time: no per-call mutexes.
         ("SQLITE_THREADSAFE", "2"),

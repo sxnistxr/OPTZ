@@ -14,7 +14,7 @@
 
 mod bufring;
 
-use crate::db::writer::{self, Job};
+use crate::db::writer::{self, Job, Kind};
 use crate::handlers::{self, Action, Ctx};
 use crate::http::{self, Parse};
 use crate::limits::{self, MemInfo, Pressure};
@@ -40,8 +40,9 @@ const STALL_SECS: u32 = 120;
 /// Bounds the pool at 8 MiB of 8 KiB buffers; sends in flight at once are far fewer.
 const OUT_POOL_MAX: usize = 1024;
 const OUT_KEEP_CAPACITY: usize = 16 * 1024;
-/// Close a connection whose unprocessed (pipelined or partial) input exceeds this.
-const STASH_MAX: usize = http::MAX_REQUEST + RECV_BUF_SIZE;
+/// Close a connection whose unprocessed (pipelined or partial) input exceeds this: a whole
+/// largest request (headers and body may each be up to MAX_REQUEST) plus one more read.
+const STASH_MAX: usize = 2 * http::MAX_REQUEST + RECV_BUF_SIZE;
 /// Give in-flight work this long to finish after SIGTERM.
 const DRAIN_SECS: u64 = 5;
 
@@ -95,6 +96,8 @@ struct Conn {
     close_after: bool,
     /// Coarse second when the connection started holding a partial request or a pending send.
     stalled_since: u32,
+    /// Boxed so an idle connection pays one word for it, not a Vec's three.
+    #[allow(clippy::box_collection)]
     input: Option<Box<Vec<u8>>>,
     out: Option<Box<Out>>,
 }
@@ -134,15 +137,39 @@ pub struct Config {
     pub signalfd: RawFd,
 }
 
+/// Writes waiting behind a full writer queue, at most: past this (or MAX_OVERFLOW_BYTES of
+/// bodies) a stalled writer gets 503s instead of an ever-growing heap.
+const MAX_OVERFLOW: usize = 16_384;
+const MAX_OVERFLOW_BYTES: usize = 32 << 20;
+
 struct Jobs {
     tx: crate::spsc::Producer<Job>,
     overflow: VecDeque<Job>,
+    /// Body and username bytes held in `overflow`.
+    overflow_bytes: usize,
     in_flight: usize,
     cap: usize,
     pushed: bool,
 }
 
+fn job_bytes(job: &Job) -> usize {
+    match &job.kind {
+        Kind::Create { body, username, .. } => body.len() + username.len(),
+        Kind::Like { .. } => 0,
+    }
+}
+
 impl Jobs {
+    /// Is there room for one more write? (Otherwise answer 503 now.)
+    fn has_room(&self) -> bool {
+        self.overflow.len() < MAX_OVERFLOW && self.overflow_bytes < MAX_OVERFLOW_BYTES
+    }
+
+    fn overflow(&mut self, job: Job) {
+        self.overflow_bytes += job_bytes(&job);
+        self.overflow.push_back(job);
+    }
+
     fn push(&mut self, job: Job) {
         if self.overflow.is_empty() && self.in_flight < self.cap {
             match self.tx.push(job) {
@@ -150,18 +177,20 @@ impl Jobs {
                     self.in_flight += 1;
                     self.pushed = true;
                 }
-                Err(job) => self.overflow.push_back(job),
+                Err(job) => self.overflow(job),
             }
         } else {
-            self.overflow.push_back(job);
+            self.overflow(job);
         }
     }
 
     fn flush(&mut self) {
         while self.in_flight < self.cap {
             let Some(job) = self.overflow.pop_front() else { break };
+            let bytes = job_bytes(&job);
             match self.tx.push(job) {
                 Ok(()) => {
+                    self.overflow_bytes -= bytes;
                     self.in_flight += 1;
                     self.pushed = true;
                 }
@@ -179,6 +208,8 @@ impl Jobs {
 struct Env {
     ctx: Ctx,
     jobs: Jobs,
+    /// Boxed: a buffer moves into a connection (Conn::out) and back by pointer.
+    #[allow(clippy::vec_box)]
     pool: Vec<Box<Out>>,
     now_unix: i64,
     now_coarse: u32,
@@ -257,7 +288,7 @@ impl Server {
             shards: Vec::new(),
             env: Env {
                 ctx,
-                jobs: Jobs { tx: jobs, overflow: VecDeque::new(), in_flight: 0, cap: capacity, pushed: false },
+                jobs: Jobs { tx: jobs, overflow: VecDeque::new(), overflow_bytes: 0, in_flight: 0, cap: capacity, pushed: false },
                 pool: Vec::new(),
                 now_unix: 0,
                 now_coarse: 0,
@@ -428,7 +459,15 @@ impl Server {
             };
             match res {
                 Ok(_) => {}
-                Err(e) if matches!(e.raw_os_error(), Some(libc::EINTR | libc::EBUSY | libc::ETIME)) => {}
+                Err(e) if matches!(e.raw_os_error(), Some(libc::EINTR | libc::ETIME)) => {}
+                // The kernel is short of request memory (EAGAIN) or the completion queue is full
+                // (EBUSY): reap and retry. With nothing reaped this round, back off a moment
+                // instead of spinning on the same error.
+                Err(e) if matches!(e.raw_os_error(), Some(libc::EAGAIN | libc::EBUSY)) => {
+                    if !any {
+                        std::thread::sleep(std::time::Duration::from_millis(1));
+                    }
+                }
                 Err(e) => return Err(e),
             }
         }
@@ -452,18 +491,12 @@ impl Server {
                     self.arm_timer();
                 }
             }
-            OP_SIGNAL => {
-                if res > 0 {
-                    self.begin_drain();
-                } else {
-                    self.arm_signal();
-                }
-            }
-            OP_POLL => {
-                if !cqueue::more(flags) {
-                    let fd = self.shards[s].io.ring.as_raw_fd_compat();
-                    self.arm_poll(s, fd);
-                }
+            OP_SIGNAL if res > 0 => self.begin_drain(),
+            OP_SIGNAL => self.arm_signal(),
+            // A multishot poll that ended: arm it again.
+            OP_POLL if !cqueue::more(flags) => {
+                let fd = self.shards[s].io.ring.as_raw_fd_compat();
+                self.arm_poll(s, fd);
             }
             _ => {}
         }
@@ -571,6 +604,14 @@ impl Server {
         let c = &mut sh.conns[slot as usize];
         debug_assert_eq!(c.gen_, gen_);
         c.sending = false;
+        // Transient: send again (a connection that never drains is closed by the stall timer).
+        if c.state == State::Open && matches!(-res, libc::EAGAIN | libc::EINTR | libc::ENOBUFS) {
+            if c.stalled_since == 0 {
+                c.stalled_since = self.env.now_coarse;
+            }
+            submit_send(sh, &mut self.env, s, slot);
+            return;
+        }
         if c.state != State::Open || res <= 0 {
             if let Some(o) = c.out.take() {
                 self.env.give_out(o);
@@ -604,6 +645,9 @@ impl Server {
         c.state = State::Free;
         sh.live -= 1;
         self.total_conns -= 1;
+        // A descriptor was just freed: accepts paused by EMFILE/ENFILE can resume now, not at
+        // the next tick (memory pressure is checked separately, on every accept).
+        self.accept_paused = false;
         self.fill_accepts();
     }
 
@@ -729,6 +773,12 @@ fn process(sh: &mut Io, env: &mut Env, s: usize, slot: u32, data: &[u8]) -> usiz
             let gen_ = sh.conns[slot as usize].gen_;
             match handlers::handle(&mut env.ctx, &req, &mut o.buf, env.now_unix) {
                 Action::Respond(status) => start_send(sh, env, s, slot, o, status, req.close),
+                // The writer is far behind: shed this write rather than queue without bound.
+                Action::Write(_) if !env.jobs.has_room() => {
+                    http::begin(&mut o.buf);
+                    let status = handlers::overloaded(&mut o.buf);
+                    start_send(sh, env, s, slot, o, status, req.close);
+                }
                 Action::Write(kind) => {
                     env.give_out(o);
                     let c = &mut sh.conns[slot as usize];
@@ -830,6 +880,22 @@ impl RawFdCompat for IoUring {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn writes_behind_a_stalled_writer_are_bounded() {
+        let (tx, _rx) = crate::spsc::channel(1);
+        let mut jobs = Jobs { tx, overflow: VecDeque::new(), overflow_bytes: 0, in_flight: 0, cap: 1, pushed: false };
+        let create = |n: usize| Job { conn: 0, kind: Kind::Create { user: 1, body: vec![b'x'; n], username: b"u".to_vec() } };
+        // The writer never drains: the first job fills it, the rest wait in overflow.
+        let mut queued = 0;
+        while jobs.has_room() {
+            jobs.push(create(4096));
+            queued += 1;
+        }
+        assert!(jobs.overflow_bytes >= MAX_OVERFLOW_BYTES || jobs.overflow.len() >= MAX_OVERFLOW);
+        assert!(queued < MAX_OVERFLOW + 2, "queued {queued}");
+        assert!(jobs.overflow_bytes < MAX_OVERFLOW_BYTES + 4096 + 1);
+    }
 
     #[test]
     fn idle_connection_fits_in_64_bytes() {

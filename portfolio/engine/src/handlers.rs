@@ -28,6 +28,12 @@ fn error(out: &mut Vec<u8>, status: u16, msg: &str) -> Action {
     Action::Respond(status)
 }
 
+/// The writer can't keep up: try again shortly.
+pub fn overloaded(out: &mut Vec<u8>) -> u16 {
+    error(out, 503, "server busy, retry shortly");
+    503
+}
+
 pub fn internal_error(out: &mut Vec<u8>) -> u16 {
     error(out, 500, "internal server error");
     500
@@ -111,6 +117,10 @@ pub fn handle(ctx: &mut Ctx, req: &Request<'_>, out: &mut Vec<u8>, now: i64) -> 
             if json::char_count(body) > MAX_BODY_CHARS {
                 return error(out, 400, "body must be at most 500 characters");
             }
+            // SQLite's length() stops at a NUL, so the schema's CHECK would call it empty.
+            if body.contains(&0) {
+                return error(out, 400, "body must not contain NUL characters");
+            }
             Action::Write(Kind::Create { user, body: body.to_vec(), username })
         }
         Route::Like(id) => {
@@ -154,15 +164,19 @@ pub fn write_reply(reply: &Reply, out: &mut Vec<u8>) -> u16 {
             error(out, 404, "post not found");
             404
         }
-        (Outcome::Created { id, created_at, created_len }, Kind::Create { body, username, .. }) => {
+        (Outcome::Created { id, created_at }, Kind::Create { body, username, .. }) => {
             out.extend_from_slice(b"{\"post\":");
-            write_post(out, *id, body, &created_at[..*created_len as usize], username, 0);
+            write_post(out, *id, body, created_at, username, 0);
             out.push(b'}');
             201
         }
         (Outcome::BadBody, _) => {
             error(out, 400, "body is required");
             400
+        }
+        (Outcome::NoUser, _) => {
+            error(out, 401, "unknown user");
+            401
         }
         _ => internal_error(out),
     }

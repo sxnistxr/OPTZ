@@ -20,6 +20,7 @@ pub const ROW: c_int = 100;
 pub const DONE: c_int = 101;
 pub const CONSTRAINT: c_int = 19;
 pub const CONSTRAINT_CHECK: c_int = CONSTRAINT | (1 << 8);
+pub const CONSTRAINT_FOREIGNKEY: c_int = CONSTRAINT | (3 << 8);
 
 const OPEN_READWRITE: c_int = 0x02;
 const OPEN_NOMUTEX: c_int = 0x8000;
