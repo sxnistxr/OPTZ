@@ -127,6 +127,9 @@ jobs:
       - name: Generated configs pass nginx -t
         run: |
           sudo apt-get install -y -qq nginx >/dev/null
+          # Like production (ops/install-prod.sh): Ubuntu's default site goes, since the generated
+          # config has its own default server (the catch-all that refuses unknown hosts).
+          sudo rm -f /etc/nginx/sites-enabled/default
           sudo mkdir -p /tmp/cert && sudo openssl req -x509 -newkey rsa:2048 -nodes -keyout /tmp/cert/privkey.pem -out /tmp/cert/fullchain.pem -days 1 -subj /CN=test 2>/dev/null
           for app in portfolio apps/social; do
             (cd "$app" && bun "$GITHUB_WORKSPACE/framework/src/cli.ts" nginx /srv/dist --tls /tmp/cert) | sudo tee /etc/nginx/sites-enabled/optz >/dev/null
