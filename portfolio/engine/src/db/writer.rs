@@ -10,7 +10,7 @@
 //! hit it gets a 500, and the batch is replayed without it in a fresh transaction.
 
 use crate::spsc;
-use crate::sqlite::{self, CONSTRAINT_CHECK, Checkpoint, Db, Stmt};
+use crate::sqlite::{self, CONSTRAINT_CHECK, CONSTRAINT_FOREIGNKEY, Checkpoint, Db, Stmt};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering, fence};
 
@@ -35,11 +35,21 @@ pub struct Job {
 }
 
 pub enum Outcome {
-    Liked { post: i64, already: bool },
+    Liked {
+        post: i64,
+        already: bool,
+    },
     NoPost,
-    Created { id: i64, created_at: [u8; 32], created_len: u8 },
+    Created {
+        id: i64,
+        /// As stored (24 bytes for the schema's default; kept whole whatever its length).
+        created_at: Vec<u8>,
+    },
     /// The schema rejected the body (its CHECK counts characters up to the first NUL).
     BadBody,
+    /// The token's user isn't in the database (foreign key): a validly signed token for a user
+    /// that doesn't exist writes nothing.
+    NoUser,
     Failed,
 }
 
@@ -85,7 +95,7 @@ impl Writer {
         db.exec(
             "PRAGMA journal_mode=WAL; PRAGMA synchronous=FULL; PRAGMA wal_autocheckpoint=0; \
              PRAGMA journal_size_limit=67108864; PRAGMA mmap_size=1073741824; PRAGMA cache_size=-8192; \
-             PRAGMA temp_store=MEMORY;",
+             PRAGMA temp_store=MEMORY; PRAGMA foreign_keys=ON;",
         )?;
         db.track_wal();
         Ok(Writer {
@@ -108,7 +118,10 @@ impl Writer {
             Kind::Like { user, post } => {
                 self.like.bind_i64(1, *user);
                 self.like.bind_i64(2, *post);
-                self.like.run()?;
+                match self.like.run() {
+                    Err(e) if e.code == CONSTRAINT_FOREIGNKEY => return Ok(Outcome::NoUser),
+                    r => r?,
+                }
                 if self.db.changes() == 1 {
                     return Ok(Outcome::Liked { post: *post, already: false });
                 }
@@ -122,13 +135,7 @@ impl Writer {
                 s.bind_i64(1, *user);
                 s.bind_text(2, body);
                 let row = match s.step() {
-                    Ok(true) => {
-                        let mut created_at = [0u8; 32];
-                        let c = s.text(1);
-                        let n = c.len().min(32);
-                        created_at[..n].copy_from_slice(&c[..n]);
-                        Ok(Some((s.int(0), created_at, n as u8)))
-                    }
+                    Ok(true) => Ok(Some((s.int(0), s.text(1).to_vec()))),
                     Ok(false) => Ok(None),
                     Err(e) => Err(e),
                 };
@@ -136,9 +143,10 @@ impl Writer {
                 let rest = row.and_then(|r| s.step().map(|_| r));
                 s.reset();
                 match rest {
-                    Ok(Some((id, created_at, created_len))) => Ok(Outcome::Created { id, created_at, created_len }),
+                    Ok(Some((id, created_at))) => Ok(Outcome::Created { id, created_at }),
                     Ok(None) => Ok(Outcome::Failed),
                     Err(e) if e.code == CONSTRAINT_CHECK => Ok(Outcome::BadBody),
+                    Err(e) if e.code == CONSTRAINT_FOREIGNKEY => Ok(Outcome::NoUser),
                     Err(e) => Err(e),
                 }
             }
@@ -317,7 +325,7 @@ mod tests {
         assert!(matches!(out[0], Outcome::Liked { post: 1, already: false }));
         assert!(matches!(out[1], Outcome::Liked { post: 1, already: true }));
         assert!(matches!(out[2], Outcome::NoPost));
-        assert!(matches!(out[3], Outcome::Created { id: 2, created_len: 24, .. }));
+        assert!(matches!(&out[3], Outcome::Created { id: 2, created_at } if created_at.len() == 24));
         assert_eq!(count(&path, "SELECT count(*) FROM likes"), 1);
         assert_eq!(count(&path, "SELECT count(*) FROM posts WHERE body = 'hello'"), 1);
     }
@@ -334,11 +342,26 @@ mod tests {
     }
 
     #[test]
+    fn a_token_for_a_user_that_doesnt_exist_writes_nothing() {
+        let (path, mut w) = fresh("  ");
+        let ghost = |kind| Job { conn: 0, kind };
+        let out = w.batch(&[
+            ghost(Kind::Create { user: 999_999, body: b"ghost".to_vec(), username: b"nobody".to_vec() }),
+            ghost(Kind::Like { user: 999_999, post: 1 }),
+            create(b"real"),
+        ]);
+        assert!(matches!(out[0], Outcome::NoUser));
+        assert!(matches!(out[1], Outcome::NoUser));
+        assert!(matches!(out[2], Outcome::Created { .. }));
+        assert_eq!(count(&path, "SELECT count(*) FROM posts WHERE user_id = 999999"), 0);
+        assert_eq!(count(&path, "SELECT count(*) FROM likes WHERE user_id = 999999"), 0);
+    }
+
+    #[test]
     fn transaction_abort_replays_batch_without_the_poisoned_job() {
         // A test-only trigger (never on the real schema) that aborts the whole transaction.
-        let (path, mut w) = fresh(
-            "CREATE TRIGGER boom BEFORE INSERT ON posts WHEN NEW.body = 'abort' BEGIN SELECT RAISE(ROLLBACK, 'boom'); END;",
-        );
+        let (path, mut w) =
+            fresh("CREATE TRIGGER boom BEFORE INSERT ON posts WHEN NEW.body = 'abort' BEGIN SELECT RAISE(ROLLBACK, 'boom'); END;");
         let out = w.batch(&[create(b"a1"), create(b"abort"), create(b"a2")]);
         assert!(matches!(out[0], Outcome::Created { .. }));
         assert!(matches!(out[1], Outcome::Failed));

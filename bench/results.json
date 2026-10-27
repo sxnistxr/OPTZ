@@ -1,105 +1,389 @@
 {
-  "date": "2026-10-26T09:33:51.311Z",
+  "provenance": {
+    "date": "2026-10-27T08:33:05.408Z",
+    "commit": "ff34e5a2d310b4667382b529c0af1a3596bbf0cc",
+    "dirty": false,
+    "command": "bash bench/compare.sh",
+    "machine": {
+      "cpu": "Intel(R) Xeon(R) Processor @ 2.80GHz",
+      "cpus": 4,
+      "kernel": "6.18.44-fc-v165",
+      "pinning": "server on CPU 0 (taskset -c 0), wrk on CPUs 1-3"
+    },
+    "versions": {
+      "bun": "1.4.4",
+      "node": "v22.22.0",
+      "next": "16.4.3",
+      "wrk": "debian/4.1.0-4build2"
+    },
+    "settings": {
+      "duration_s": 10,
+      "connections": 64,
+      "wrk_threads": 3,
+      "repeats": 3,
+      "cold_repeats": 5,
+      "build_repeats": 3,
+      "accept_encoding": "br, gzip",
+      "font_cache": "warm"
+    }
+  },
   "build_s": {
-    "optz": 1.7713,
-    "next": 9.5199
+    "optz": {
+      "runs": [
+        2.9526,
+        3.2857,
+        2.9105
+      ],
+      "median": 2.9526
+    },
+    "next": {
+      "runs": [
+        10.2645,
+        9.7345,
+        10.9645
+      ],
+      "median": 10.2645
+    }
+  },
+  "framework_bytes": {
+    "optz": {
+      "bytes": 398077,
+      "what": "the published package: framework/src, skills, README.md, package.json"
+    },
+    "next": {
+      "bytes": 391703626,
+      "what": "node_modules/next + node_modules/@next as installed"
+    }
   },
   "optz": {
     "server": "optz",
-    "cold_start_s": 0.0743,
-    "first_hits_s": 0.0034,
-    "idle_rss_kib": 35756,
+    "cold_start_s": {
+      "runs": [
+        0.0624,
+        0.0827,
+        0.0911,
+        0.0856,
+        0.0871
+      ],
+      "median": 0.0856
+    },
+    "first_hits_s": 0.002989,
+    "idle_rss_kib": 38276,
     "paths": {
       "/": {
         "status": 200,
-        "bytes": 1495,
-        "rps": 56635.92,
-        "p50": "0.98ms",
-        "p99": "3.74ms",
-        "non2xx": 0
+        "bytes": {
+          "br": 2315,
+          "gzip": 2849,
+          "identity": 9667
+        },
+        "headers": {
+          "cache-control": "public, max-age=0, s-maxage=300, stale-while-revalidate=86400",
+          "content-encoding": "br"
+        },
+        "rps": {
+          "runs": [
+            25954.45,
+            27436.78,
+            26365.91
+          ],
+          "median": 26365.91
+        },
+        "requests": [
+          259721,
+          274579,
+          263955
+        ],
+        "non2xx": [
+          0,
+          0,
+          0
+        ],
+        "p50": "2.14ms",
+        "p99": "4.90ms"
       },
       "/blog/a-close-that-never-closed": {
         "status": 200,
-        "bytes": 1479,
-        "rps": 54567.42,
-        "p50": "1.03ms",
-        "p99": "3.33ms",
-        "non2xx": 0
+        "bytes": {
+          "br": 1535,
+          "gzip": 1979,
+          "identity": 4861
+        },
+        "headers": {
+          "cache-control": "public, max-age=0, s-maxage=300, stale-while-revalidate=86400",
+          "content-encoding": "br"
+        },
+        "rps": {
+          "runs": [
+            23492.69,
+            23912.01,
+            25894.82
+          ],
+          "median": 23912.01
+        },
+        "requests": [
+          235288,
+          239486,
+          260349
+        ],
+        "non2xx": [
+          0,
+          0,
+          0
+        ],
+        "p50": "2.44ms",
+        "p99": "5.75ms"
       },
       "/api/blog": {
         "status": 200,
-        "bytes": 421,
-        "rps": 55034.54,
-        "p50": "1.00ms",
-        "p99": "16.68ms",
-        "non2xx": 0
-      },
-      "/social/post/1": {
-        "status": 200,
-        "bytes": 892,
-        "rps": 56185.12,
-        "p50": "1.00ms",
-        "p99": "3.40ms",
-        "non2xx": 0
+        "bytes": {
+          "br": 421,
+          "gzip": 421,
+          "identity": 421
+        },
+        "headers": {
+          "cache-control": "no-cache"
+        },
+        "rps": {
+          "runs": [
+            30053.91,
+            29040.53,
+            28666.86
+          ],
+          "median": 29040.53
+        },
+        "requests": [
+          300842,
+          290651,
+          286931
+        ],
+        "non2xx": [
+          0,
+          0,
+          0
+        ],
+        "p50": "1.97ms",
+        "p99": "4.87ms"
       },
       "/nope": {
         "status": 404,
-        "bytes": 828,
-        "rps": 50333.99,
-        "p50": "1.11ms",
-        "p99": "19.80ms",
-        "non2xx": 507293
+        "bytes": {
+          "br": 952,
+          "gzip": 1257,
+          "identity": 3134
+        },
+        "headers": {
+          "cache-control": "public, max-age=0, s-maxage=300, stale-while-revalidate=86400",
+          "content-encoding": "br"
+        },
+        "rps": {
+          "runs": [
+            24420.79,
+            25821.91,
+            24477.61
+          ],
+          "median": 24477.61
+        },
+        "requests": [
+          244366,
+          258346,
+          245904
+        ],
+        "non2xx": [
+          244366,
+          258346,
+          245904
+        ],
+        "p50": "2.25ms",
+        "p99": "5.11ms"
       }
     },
-    "peak_rss_kib": 53636
+    "peak_rss_kib": 47636,
+    "js": {
+      "/": {
+        "scripts": 5,
+        "transferred": 12313,
+        "decoded": 31598
+      },
+      "/blog": {
+        "scripts": 2,
+        "transferred": 4098,
+        "decoded": 10564
+      },
+      "/blog/a-close-that-never-closed": {
+        "scripts": 2,
+        "transferred": 4098,
+        "decoded": 10564
+      }
+    }
   },
   "next": {
     "server": "next",
-    "cold_start_s": 0.6923,
-    "first_hits_s": 0.1853,
-    "idle_rss_kib": 143280,
+    "cold_start_s": {
+      "runs": [
+        0.7984,
+        0.7205,
+        0.6659,
+        0.7104,
+        0.7197
+      ],
+      "median": 0.7197
+    },
+    "first_hits_s": 0.115682,
+    "idle_rss_kib": 134068,
     "paths": {
       "/": {
         "status": 200,
-        "bytes": 3431,
-        "rps": 388.89,
-        "p50": "146.03ms",
-        "p99": "1.24s",
-        "non2xx": 0
+        "bytes": {
+          "br": 13849,
+          "gzip": 3520,
+          "identity": 13849
+        },
+        "headers": {
+          "x-nextjs-cache": "HIT",
+          "x-nextjs-prerender": "1",
+          "cache-control": "s-maxage=31536000",
+          "content-encoding": "gzip"
+        },
+        "rps": {
+          "runs": [
+            359.7,
+            437.96,
+            574.01
+          ],
+          "median": 437.96
+        },
+        "requests": [
+          3604,
+          4387,
+          5749
+        ],
+        "non2xx": [
+          0,
+          0,
+          0
+        ],
+        "p50": "133.07ms",
+        "p99": "1.25s"
       },
       "/blog/a-close-that-never-closed": {
         "status": 200,
-        "bytes": 3459,
-        "rps": 501.22,
-        "p50": "118.23ms",
-        "p99": "993.82ms",
-        "non2xx": 0
+        "bytes": {
+          "br": 12411,
+          "gzip": 3457,
+          "identity": 12411
+        },
+        "headers": {
+          "x-nextjs-cache": "HIT",
+          "x-nextjs-prerender": "1",
+          "cache-control": "s-maxage=31536000",
+          "content-encoding": "gzip"
+        },
+        "rps": {
+          "runs": [
+            461.6,
+            568.65,
+            539.14
+          ],
+          "median": 539.14
+        },
+        "requests": [
+          4626,
+          5708,
+          5421
+        ],
+        "non2xx": [
+          0,
+          0,
+          0
+        ],
+        "p50": "102.41ms",
+        "p99": "581.68ms"
       },
       "/api/blog": {
         "status": 200,
-        "bytes": 421,
-        "rps": 577.17,
-        "p50": "97.93ms",
-        "p99": "1.01s",
-        "non2xx": 0
-      },
-      "/social/post/1": {
-        "status": 200,
-        "bytes": 3122,
-        "rps": 157.79,
-        "p50": "368.63ms",
-        "p99": "1.46s",
-        "non2xx": 0
+        "bytes": {
+          "br": 421,
+          "gzip": 421,
+          "identity": 421
+        },
+        "headers": {
+          "x-nextjs-cache": "HIT",
+          "cache-control": "s-maxage=300, stale-while-revalidate=31535700"
+        },
+        "rps": {
+          "runs": [
+            579.27,
+            738.91,
+            738.97
+          ],
+          "median": 738.91
+        },
+        "requests": [
+          5825,
+          7402,
+          7401
+        ],
+        "non2xx": [
+          0,
+          0,
+          0
+        ],
+        "p50": "75.76ms",
+        "p99": "1.13s"
       },
       "/nope": {
         "status": 404,
-        "bytes": 2433,
-        "rps": 615.15,
-        "p50": "97.04ms",
-        "p99": "553.41ms",
-        "non2xx": 6161
+        "bytes": {
+          "br": 8781,
+          "gzip": 2441,
+          "identity": 8781
+        },
+        "headers": {
+          "cache-control": "private, no-cache, no-store, max-age=0, must-revalidate",
+          "x-nextjs-cache": "HIT",
+          "x-nextjs-prerender": "1",
+          "content-encoding": "gzip"
+        },
+        "rps": {
+          "runs": [
+            590.52,
+            569.1,
+            605
+          ],
+          "median": 590.52
+        },
+        "requests": [
+          5917,
+          5713,
+          6060
+        ],
+        "non2xx": [
+          5917,
+          5713,
+          6060
+        ],
+        "p50": "103.56ms",
+        "p99": "455.48ms"
       }
     },
-    "peak_rss_kib": 340924
+    "peak_rss_kib": 338764,
+    "js": {
+      "/": {
+        "scripts": 8,
+        "transferred": 145050,
+        "decoded": 479467
+      },
+      "/blog": {
+        "scripts": 8,
+        "transferred": 145050,
+        "decoded": 479467
+      },
+      "/blog/a-close-that-never-closed": {
+        "scripts": 8,
+        "transferred": 145050,
+        "decoded": 479467
+      }
+    }
   }
 }

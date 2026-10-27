@@ -1,0 +1,6 @@
+# The toolchain the engine is built and tested with (production: /opt/rust-1.99.1, build.sh).
+# rustup installs it on first use.
+[toolchain]
+channel = "1.99.1"
+components = ["rustfmt", "clippy"]
+profile = "minimal"

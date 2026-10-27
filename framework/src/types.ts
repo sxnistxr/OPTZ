@@ -159,8 +159,21 @@ export type Middleware = (ctx: MiddlewareContext, next: () => Promise<Response>)
 /** A Response that remembers the type of its JSON body, for the typed API client. */
 export type TypedResponse<T> = Response & { readonly __json?: T };
 
+/** "/api/posts/[id]/[...rest]" -> { id: string; rest: string } (optional catch-alls optional). */
+export type PatternParams<P extends string> = P extends `${string}[${infer Rest}`
+  ? Rest extends `[...${infer N}]]${infer R}`
+    ? { [K in N]?: string } & PatternParams<R>
+    : Rest extends `...${infer N}]${infer R}`
+      ? { [K in N]: string } & PatternParams<R>
+      : Rest extends `${infer N}]${infer R}`
+        ? { [K in N]: string } & PatternParams<R>
+        : unknown
+  : unknown;
+
+/** What an API route gets. Type the params with an object (`ApiContext<{ id: string }>`) or the
+ *  route's pattern (`ApiContext<"/api/posts/[id]">`). */
 export interface ApiContext<P = Params> extends MiddlewareContext {
-  params: P;
+  params: P extends string ? PatternParams<P> & Params : P;
 }
 export type ApiHandler<T = unknown, P = Params> = (ctx: ApiContext<P>) => TypedResponse<T> | Promise<TypedResponse<T>>;
 
@@ -214,6 +227,11 @@ export interface Config {
     quality?: number;
     /** Max optimized images kept on disk, in MB. Default 256. */
     cacheMB?: number;
+    /** Where optimized images are kept on disk (relative to the project or absolute). Default
+     *  the OPTZ_IMAGE_CACHE_DIR env var, else .optz/cache/images. */
+    cacheDir?: string;
+    /** Images encoded at the same time. Default the CPU cores minus one (1 to 4). */
+    concurrency?: number;
   };
   /** Self-hosted web fonts: Google Fonts CSS URLs downloaded at build time and served from
    *  /assets, with size-matched fallbacks so text doesn't shift when they load. */
@@ -227,12 +245,17 @@ export interface Config {
   }>;
   /** Draft mode: a signed cookie that makes static pages render per request (for previews). */
   draft?: {
-    /** Secret that signs the cookie. Default the OPTZ_DRAFT_SECRET env var, else random per process. */
+    /** Secret that signs the cookie. Default the OPTZ_DRAFT_SECRET env var, else random per
+     *  process (which only works with one server process). */
     secret?: string;
+    /** Seconds a draft cookie stays valid. Default 86400 (a day). */
+    maxAge?: number;
   };
   /** Forward a path prefix to another server, e.g. { "/api/social": { target: "http://127.0.0.1:3000", strip: true } }.
-   *  `optz nginx` turns these into nginx locations so production traffic never touches Bun. */
-  proxy?: Record<string, { target: string; strip?: boolean; /** nginx micro-cache for GETs, in seconds (0 = off). */ cacheSeconds?: number }>;
+   *  The target's own path is kept (target "http://x/v1" + "/a" -> "http://x/v1/a"). Requests go
+   *  through app/middleware.ts first unless `bypassMiddleware`; with it, `optz nginx` sends the
+   *  prefix straight to the target so that traffic never touches Bun. */
+  proxy?: Record<string, ProxyRule>;
 
   /** What the browser gets. */
   client?: {
@@ -276,6 +299,67 @@ export interface Config {
     actions?: boolean;
     /** The /_optz/image optimizer. Default true. */
     images?: boolean;
+    /** The MCP endpoint (see `mcp`). Default true: on when app/mcp has files or `mcp` is set. */
+    mcp?: boolean;
+  };
+
+  /** The app as a Model Context Protocol server, so AI clients (Claude, ChatGPT, Codex, Cursor,
+   *  VS Code, ...) can use it. Files in app/mcp are its tools, prompts and resources (see
+   *  "optz/mcp"). Setting this turns the endpoint on even without app/mcp (pages only). */
+  mcp?: {
+    /** Where it's served. Default "/mcp". */
+    path?: string;
+    /** Server name clients show. Default site.url's host name. */
+    name?: string;
+    title?: string;
+    version?: string;
+    /** Told to the model when it connects: what the server is for and how to use its tools. */
+    instructions?: string;
+    /** Pre-rendered pages as resources, with `search_pages` and `read_page` tools. Default true. */
+    pages?: boolean;
+    /** Browser origins allowed to call it (site.url's origin always is). Clients that aren't
+     *  browsers send no Origin and are always allowed; use middleware to authenticate them. */
+    allowedOrigins?: string[];
+  };
+
+  /** /llms.txt (an index of the site for language models, llmstxt.org) and /llms-full.txt (every
+   *  page as text), written at build time from the pre-rendered pages. app/llms.ts can return the
+   *  llms.txt text instead. `false` turns both off. Default on. */
+  llms?:
+    | false
+    | {
+        /** Default the home page's title. */
+        title?: string;
+        /** Default the home page's description. */
+        description?: string;
+        /** Also write /llms-full.txt. Default true. */
+        full?: boolean;
+        /** Leave out pages whose path starts with one of these. */
+        exclude?: string[];
+      };
+
+  /** Redirects for URLs no page answers anymore, in route syntax: { source: "/old/[slug]",
+   *  destination: "/blog/[slug]", permanent: true }. Checked before pages; 308 if permanent,
+   *  else 307 (the method is kept). */
+  redirects?: Array<{ source: string; destination: string; permanent?: boolean }>;
+  /** Serve another path's response (or proxy a URL) under this one, without a redirect:
+   *  { source: "/docs/[...rest]", destination: "/guide/[...rest]" }. */
+  rewrites?: Array<{ source: string; destination: string }>;
+  /** Response headers by path: { source: "/api/[...rest]", headers: { "Access-Control-Allow-Origin": "*" } }. */
+  headers?: Array<{ source: string; headers: Record<string, string> }>;
+
+  /** Beyond this process: revalidatePath()/revalidateTag() reach the other instances of the
+   *  app and the CDN in front of it. */
+  revalidation?: {
+    /** Base URLs of the other instances (e.g. ["http://10.0.0.2:3001"]). Each change is POSTed
+     *  to their /_optz/revalidate, signed with `secret`, so every instance drops the same pages. */
+    peers?: string[];
+    /** Signs and checks those requests. Default the OPTZ_REVALIDATE_SECRET env var. Required
+     *  for peers (and for accepting /_optz/revalidate at all). */
+    secret?: string;
+    /** Called with what changed, once per revalidatePath/revalidateTag on the instance where it
+     *  happened: purge a CDN here (see cloudflarePurge() in optz/cdn). */
+    purge?: (change: RevalidationChange) => unknown;
   };
 
   cache?: {
@@ -292,15 +376,45 @@ export interface Config {
     idleTimeout?: number;
     /** Largest request body accepted, in bytes. Default 1 MB. */
     maxRequestBodySize?: number;
+    /** Behind a reverse proxy you control that sets X-Forwarded-Host/-Proto: trust them for
+     *  the public origin (CSRF checks, absolute URLs). Off: they're ignored, since any client can
+     *  send them. Default false. */
+    trustProxy?: boolean;
     /** Let a CDN (Cloudflare, ...) cache built HTML pages for this many seconds (`s-maxage`, with
-     *  stale-while-revalidate). Browsers still revalidate every time. Purge the CDN on deploy.
-     *  Default 0 (off). */
+     *  stale-while-revalidate). Browsers still revalidate every time. Pages then carry Cache-Tag and
+     *  Surrogate-Key headers ("optz-path:<path>" and their tags); purge the CDN on deploy, and on
+     *  revalidation with `revalidation.purge`. Default 0 (off). */
     cdnMaxAge?: number;
   };
 }
 
+export interface ProxyRule {
+  target: string;
+  /** Drop the prefix: "/api/social/feed" -> target + "/feed". */
+  strip?: boolean;
+  /** Skip app/middleware.ts (and let `optz nginx` route it without Bun). Default false. */
+  bypassMiddleware?: boolean;
+  /** Give up on the target after this many milliseconds (504). Default 30000. */
+  timeoutMs?: number;
+  /** Largest request body forwarded, in bytes. Default server.maxRequestBodySize. */
+  maxBodySize?: number;
+  /** nginx micro-cache for GETs, in seconds (0 = off). */
+  cacheSeconds?: number;
+}
+
+/** What revalidatePath()/revalidateTag() changed. Paths are absolute URL paths; `prefix`
+ *  marks a layout revalidation (everything under the path). */
+export interface RevalidationChange {
+  paths: Array<{ path: string; prefix: boolean }>;
+  tags: string[];
+}
+
 /** Config with every default filled in. */
 export interface ResolvedConfig extends Config {
+  lang: string;
+  port: number;
+  hostname: string;
+  images: NonNullable<Config["images"]> & { sizes: number[]; formats: Array<"avif" | "webp">; quality: number; cacheMB: number };
   client: Required<NonNullable<Config["client"]>>;
   features: Required<NonNullable<Config["features"]>>;
   cache: { maxEntries: number; maxBytes: number; default?: RouteCache };
@@ -310,9 +424,13 @@ export interface ResolvedConfig extends Config {
 export function resolveConfig(c: Config = {}): ResolvedConfig {
   return {
     ...c,
+    lang: c.lang ?? "en",
+    port: c.port ?? 3001,
+    hostname: c.hostname ?? "127.0.0.1",
+    images: { sizes: [384, 640, 828, 1080, 1200, 1920, 2048], formats: ["avif", "webp"], quality: 75, cacheMB: 256, ...c.images },
     client: { mode: "islands", navigation: true, prefetch: true, runtime: "react", speculation: true, ...c.client },
-    features: { middleware: true, dynamic: true, api: true, cache: true, dynamicCompression: true, etag: true, requestLog: false, streaming: true, actions: true, images: true, ...c.features },
+    features: { middleware: true, dynamic: true, api: true, cache: true, dynamicCompression: true, etag: true, requestLog: false, streaming: true, actions: true, images: true, mcp: true, ...c.features },
     cache: { maxEntries: 500, maxBytes: 32 << 20, ...c.cache },
-    server: { idleTimeout: 30, maxRequestBodySize: 1 << 20, cdnMaxAge: 0, ...c.server },
+    server: { idleTimeout: 30, maxRequestBodySize: 1 << 20, cdnMaxAge: 0, trustProxy: false, ...c.server },
   };
 }

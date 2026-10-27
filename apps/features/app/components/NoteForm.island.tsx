@@ -33,7 +33,9 @@ export default function NoteForm() {
       <button data-testid="remember" onClick={async () => setMsg(await remember("ada"))}>
         Remember
       </button>
-      <p data-testid="msg">{msg}</p>
+      <p data-testid="msg" role="status">
+        {msg}
+      </p>
     </div>
   );
 }

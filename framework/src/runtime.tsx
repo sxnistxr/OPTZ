@@ -15,7 +15,9 @@ import {
   type MouseEvent,
   type ReactNode,
 } from "react";
+import { afterNavigation, focusHash, handleInPageLinks, replaceHeadTags } from "./a11y";
 import { dataPath, matchRoute, matchSegments, type Segment } from "./match";
+import { loadMarkedScripts } from "./script-loader";
 import type { ErrorModule, Head, Href, LayoutModule, PageModule, Params, RenderMode } from "./types";
 
 // ---- state ---------------------------------------------------------------------------------
@@ -212,6 +214,9 @@ export interface ClientRoute {
 interface Payload {
   data?: unknown;
   head?: Head;
+  /** The page's per-page head tags as the server renders them, and its lang. */
+  headHtml?: string;
+  lang?: string;
   redirect?: string;
 }
 
@@ -243,18 +248,13 @@ async function loadState(route: ClientRoute, pathname: string, params: Params, d
   return { pathname, params, data, Page: mod.default as PageState["Page"], layouts: layouts.map((l) => l.default), ErrorView: err?.default, i18n };
 }
 
-function applyHead(head: Head | undefined) {
-  if (!head) return;
-  if (head.title) document.title = head.title;
-  if (head.description !== undefined) {
-    let m = document.querySelector('meta[name="description"]');
-    if (!m) {
-      m = document.createElement("meta");
-      m.setAttribute("name", "description");
-      document.head.append(m);
-    }
-    m.setAttribute("content", head.description);
-  }
+/** The new page's head: title, lang and every per-page tag (the same set the islands swap
+ *  replaces), from the server's rendering of them in the data payload. */
+function applyHead(head: Head | undefined, headHtml?: string, lang?: string) {
+  if (head?.title) document.title = head.title;
+  if (lang) document.documentElement.lang = lang;
+  if (headHtml !== undefined) replaceHeadTags(headHtml);
+  else if (head?.description !== undefined) replaceHeadTags(`<meta name="description" content="${head.description.replace(/[&"<]/g, (c) => `&#${c.charCodeAt(0)};`)}">`);
 }
 
 function Root({ routes, initial, urlParams }: { routes: ClientRoute[]; initial: PageState; urlParams?: Params }) {
@@ -269,7 +269,9 @@ function Root({ routes, initial, urlParams }: { routes: ClientRoute[]; initial: 
   const seq = useRef(0);
 
   const fetchPayload = useCallback((pathname: string, route: ClientRoute): Promise<Payload | null> => {
-    if (!route.hasLoader || route.render === "client") return Promise.resolve({});
+    // Every built page has a payload (its data, if any, and its head tags); client-rendered
+    // shells have neither.
+    if (route.render === "client") return Promise.resolve({});
     // Dynamic pages are fetched fresh each time; static ones are cached for the session.
     const key = pathname;
     const hit = route.render === "static" ? cache.current.get(key) : undefined;
@@ -302,7 +304,7 @@ function Root({ routes, initial, urlParams }: { routes: ClientRoute[]; initial: 
       if (!m) return void location.assign(url.href);
       if (url.pathname === location.pathname && url.hash && !opts.pop) {
         history.pushState(null, "", url.href);
-        return void document.getElementById(decodeURIComponent(url.hash.slice(1)))?.scrollIntoView();
+        return void focusHash(url.hash);
       }
       const id = ++seq.current;
       setNavigating(true);
@@ -319,11 +321,14 @@ function Root({ routes, initial, urlParams }: { routes: ClientRoute[]; initial: 
         }
         setState(next);
         const mod = await m.route.load();
-        applyHead(payload.head ?? mod.head?.(undefined as never, { params: m.params }));
+        applyHead(payload.head ?? mod.head?.(undefined as never, { params: m.params }), payload.headHtml, payload.lang ?? loc.i18n?.locale);
         requestAnimationFrame(() => {
-          if (opts.pop) return scrollTo(0, history.state?.scroll ?? 0);
-          if (url.hash) return document.getElementById(decodeURIComponent(url.hash.slice(1)))?.scrollIntoView();
-          if (opts.scroll !== false) scrollTo(0, 0);
+          loadMarkedScripts(document);
+          if (opts.scroll === false) return;
+          if (opts.pop) scrollTo(0, history.state?.scroll ?? 0);
+          else if (!url.hash) scrollTo(0, 0);
+          // Focus and announce the new page like a full load would.
+          afterNavigation(opts.pop ? "" : url.hash);
         });
       } catch {
         location.assign(url.href);
@@ -367,8 +372,10 @@ export async function start(routes: ClientRoute[], _i18n?: unknown) {
   if (boot.dev) import("./dev-client").then((m) => m.connect({ refresh: async () => (globalThis as { __optz?: { refresh?: () => Promise<void> } }).__optz?.refresh?.() }));
   const route = routes.find((r) => r.pattern === boot.pattern);
   if (!route) return;
+  handleInPageLinks();
   const { hydrateRoot } = await import("react-dom/client");
   const initial = await loadState(route, location.pathname, boot.params, boot.data, boot.i18n);
   const urlParams = route.render === "client" ? (matchSegments(route.segments, splitLocale(location.pathname, boot.i18n).path) ?? undefined) : undefined;
   hydrateRoot(el, <Root routes={routes} initial={initial} urlParams={urlParams} />);
+  loadMarkedScripts(document);
 }

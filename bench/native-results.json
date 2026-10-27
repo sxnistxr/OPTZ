@@ -1,0 +1,200 @@
+{
+  "provenance": {
+    "date": "2026-10-27T08:38:57.571Z",
+    "commit": "3c64ad94fb5de485338b33ff1f7c6498c9b22b39",
+    "dirty": false,
+    "command": "bash bench/native.sh",
+    "machine": {
+      "cpu": "Intel(R) Xeon(R) Processor @ 2.80GHz",
+      "cpus": 4,
+      "kernel": "6.18.44-fc-v165",
+      "pinning": "server on CPU 0, wrk (3 threads, 64 connections) on CPUs 1-3"
+    },
+    "versions": {
+      "bun": "1.4.4",
+      "nginx": "1.24.0 (Ubuntu)",
+      "wrk": "debian/4.1.0-4build2"
+    },
+    "settings": {
+      "duration_s": 10,
+      "repeats": 3,
+      "accept_encoding": "br, gzip"
+    }
+  },
+  "servers": {
+    "optz on Bun": {
+      "paths": {
+        "/": {
+          "rps": {
+            "runs": [
+              25585.68,
+              25381.97,
+              25507.5
+            ],
+            "median": 25507.5
+          },
+          "bytes": {
+            "br": 2315,
+            "gzip": 2849
+          }
+        },
+        "/blog/a-close-that-never-closed": {
+          "rps": {
+            "runs": [
+              23306.75,
+              22186.26,
+              25345.4
+            ],
+            "median": 23306.75
+          },
+          "bytes": {
+            "br": 1535,
+            "gzip": 1979
+          }
+        },
+        "/api/blog": {
+          "rps": {
+            "runs": [
+              27793.39,
+              29076.21,
+              27289.49
+            ],
+            "median": 27793.39
+          },
+          "bytes": {
+            "br": 421,
+            "gzip": 421
+          }
+        }
+      },
+      "rss_kib": 46640
+    },
+    "optz single executable": {
+      "paths": {
+        "/": {
+          "rps": {
+            "runs": [
+              23491.91,
+              28393.66,
+              25938.36
+            ],
+            "median": 25938.36
+          },
+          "bytes": {
+            "br": 2315,
+            "gzip": 2849
+          }
+        },
+        "/blog/a-close-that-never-closed": {
+          "rps": {
+            "runs": [
+              23932.5,
+              25138.46,
+              24156.68
+            ],
+            "median": 24156.68
+          },
+          "bytes": {
+            "br": 1535,
+            "gzip": 1979
+          }
+        },
+        "/api/blog": {
+          "rps": {
+            "runs": [
+              29725.66,
+              31851.22,
+              29721.67
+            ],
+            "median": 29725.66
+          },
+          "bytes": {
+            "br": 421,
+            "gzip": 421
+          }
+        }
+      },
+      "rss_kib": 51428
+    },
+    "nginx": {
+      "paths": {
+        "/": {
+          "rps": {
+            "runs": [
+              31794.01,
+              28222.41,
+              31078.62
+            ],
+            "median": 31078.62
+          },
+          "bytes": {
+            "br": 9667,
+            "gzip": 2849
+          }
+        },
+        "/blog/a-close-that-never-closed": {
+          "rps": {
+            "runs": [
+              30520.43,
+              33246.23,
+              27271.78
+            ],
+            "median": 30520.43
+          },
+          "bytes": {
+            "br": 4861,
+            "gzip": 1979
+          }
+        },
+        "/api/blog": {
+          "rps": {
+            "runs": [
+              27753.09,
+              30341.97,
+              29415.51
+            ],
+            "median": 29415.51
+          },
+          "bytes": {
+            "br": 421,
+            "gzip": 421
+          }
+        },
+        "/ok": {
+          "rps": {
+            "runs": [
+              61785.8,
+              64065.71,
+              63376.5
+            ],
+            "median": 63376.5
+          },
+          "bytes": {
+            "br": 2,
+            "gzip": 2
+          }
+        }
+      },
+      "rss_kib": 11912
+    },
+    "Bun.serve, empty response": {
+      "paths": {
+        "/ok": {
+          "rps": {
+            "runs": [
+              72633.09,
+              67947.05,
+              69105.65
+            ],
+            "median": 69105.65
+          },
+          "bytes": {
+            "br": 2,
+            "gzip": 2
+          }
+        }
+      },
+      "rss_kib": 23052
+    }
+  }
+}

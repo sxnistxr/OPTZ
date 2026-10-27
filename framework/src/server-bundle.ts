@@ -55,7 +55,8 @@ function serverModules(root: string, m: Manifest): string[] {
   add(m.notFound);
   m.rootLayouts.forEach(add);
   Object.values(m.actions).forEach((a) => add(a.file));
-  for (const f of ["app/middleware.ts", "app/middleware.tsx", "app/middleware.js"]) if (existsSync(join(root, f))) add(f);
+  (m.mcp ?? []).forEach(add);
+  for (const f of ["app/middleware.ts", "app/middleware.tsx", "app/middleware.js", "app/scheduled.ts", "app/scheduled.js"]) if (existsSync(join(root, f))) add(f);
   return [...files];
 }
 
@@ -125,7 +126,7 @@ export async function staticFiles() {
 
   // ---- the entry ----
   const loaders = modules.map((f) => `  ${imp(f)}: () => import(${imp(join(root, f))}),`).join("\n");
-  const common = `import { createApp } from ${imp(join(fw, "handler.ts"))};
+  const common = `import { createApp, middlewareFrom } from ${imp(join(fw, "handler.ts"))};
 import { resolveConfig } from ${imp(join(fw, "types.ts"))};
 import { staticFiles } from "./static-files.ts";
 ${configFile ? `import userConfig from ${imp(configFile)};` : "const userConfig = {};"}
@@ -142,8 +143,7 @@ const load = (f: string) => {
 const mwFile = ${imp(modules.find((f) => f.startsWith("app/middleware.")) ?? "")};
 const middleware = async () => {
   if (!config.features.middleware || !mwFile) return [];
-  const m = (await load(mwFile)) as { default?: unknown };
-  return m.default ? (Array.isArray(m.default) ? m.default : [m.default]) : [];
+  return middlewareFrom((await load(mwFile)) as never);
 };
 `;
   const entry =
@@ -174,25 +174,20 @@ const server = Bun.serve({
 });
 console.log("optz: serving on http://" + server.hostname + ":" + server.port + " (single binary, " + files.size + " files embedded)");
 `
-      : `${common}
-let app: Promise<{ fetch(req: Request): Promise<Response> }> | undefined;
-const start = async () =>
-  createApp({
-    manifest: manifest as never,
-    config,
-    files: await staticFiles(),
-    middleware: (await middleware()) as never,
-    platform: {
-      load,
-      // No image library at the edge: serve the original.
-      images: async (_req, url) => Response.redirect(new URL(url.searchParams.get("url") ?? "/", url).href, 302),
-    },
-  });
-export default {
-  async fetch(req: Request): Promise<Response> {
-    return (await (app ??= start())).fetch(req);
+      : `import { createWorker } from ${imp(join(fw, "edge.ts"))};
+import { resolveConfig } from ${imp(join(fw, "types.ts"))};
+import { staticFiles } from "./static-files.ts";
+${configFile ? `import userConfig from ${imp(configFile)};` : "const userConfig = {};"}
+const manifest = ${JSON.stringify(manifest)};
+// fetch(request, env, ctx) and scheduled(event, env, ctx), with env and waitUntil passed to the app.
+export default createWorker({
+  manifest: manifest as never,
+  config: resolveConfig(userConfig as never),
+  files: staticFiles,
+  modules: {
+${loaders}
   },
-};
+});
 `;
   const entryFile = join(gen, "entry.ts");
   writeFileSync(entryFile, entry);
@@ -216,7 +211,7 @@ export default {
   if (target === "edge") {
     writeFileSync(
       join(root, "dist/edge/wrangler.toml"),
-      `# Deploy with: npx wrangler deploy (from dist/edge)\nname = "${(config.site?.url && new URL(config.site.url).hostname.replace(/\./g, "-")) || "optz-app"}"\nmain = "worker.js"\ncompatibility_date = "2026-09-01"\n`,
+      `# Deploy with: npx wrangler deploy (from dist/edge)\nname = "${(config.site?.url && new URL(config.site.url).hostname.replace(/\./g, "-")) || "optz-app"}"\nmain = "worker.js"\ncompatibility_date = "2026-09-01"\n# The request context uses AsyncLocalStorage: explicit, so older compatibility dates work too.\ncompatibility_flags = ["nodejs_als"]\n${existsSync(join(root, "app/scheduled.ts")) || existsSync(join(root, "app/scheduled.js")) ? '\n# app/scheduled.ts runs on these Cron Triggers (edit them).\n[triggers]\ncrons = ["0 * * * *"]\n' : ""}`,
     );
   }
   const size = statSync(out).size;

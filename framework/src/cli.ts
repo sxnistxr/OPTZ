@@ -6,9 +6,11 @@
 //   start          serve dist/ (PORT and HOST env vars override optz.config.ts)
 //   export         static site in dist/static for any static host (no server features)
 //   check          generate route types and type-check the project (tsc)
-//   nginx [dir] [--tls certdir]   print an nginx config (dir: where dist/ is deployed; --tls: HTTPS
+//   nginx [dir] [--tls certdir] [--server-name host]   print an nginx config (dir: where dist/ is deployed; --tls: HTTPS
 //                  with fullchain.pem/privkey.pem from certdir)
 //   create <dir>   start a new app
+//   mcp            an MCP server (stdio) with this project's tools, for coding agents
+//   agents [--only claude,codex,cursor,vscode,gemini]   write AGENTS.md, skills and MCP configs
 import { existsSync, watch } from "node:fs";
 import { join, resolve } from "node:path";
 import type { Subprocess } from "bun";
@@ -18,7 +20,7 @@ const root = process.cwd();
 const [cmd, ...args] = process.argv.slice(2);
 // React picks its production build from NODE_ENV; `optz start` and `build` must never run the
 // development one (several times slower, and noisy).
-if (cmd !== "dev" && cmd !== "__dev-child") process.env.NODE_ENV ??= "production";
+if (cmd !== "dev" && cmd !== "__dev-child" && cmd !== "mcp") process.env.NODE_ENV ??= "production";
 else process.env.NODE_ENV ??= "development";
 
 async function loadConfig(): Promise<ResolvedConfig> {
@@ -69,7 +71,8 @@ switch (cmd) {
     const { scanApi, scanRoutes } = await import("./routes");
     const config = await loadConfig();
     writeTypes(root, scanRoutes(join(root, "app/routes")).routes, config.features.api ? scanApi(join(root, "app/api")) : []);
-    const tsPkg = Bun.resolveSync("typescript/package.json", import.meta.dir);
+    const { resolvePeer } = await import("./build");
+    const tsPkg = resolvePeer("typescript/package.json", root, "optz check", "typescript");
     const tsc = join(tsPkg, "..", (JSON.parse(await Bun.file(tsPkg).text()) as { bin: { tsc: string } }).bin.tsc);
     const p = Bun.spawnSync([process.execPath, tsc, "--noEmit", "-p", "tsconfig.json"], { cwd: root, stdio: ["inherit", "inherit", "inherit"] });
     if (p.exitCode === 0) console.log("optz: types ok");
@@ -79,8 +82,17 @@ switch (cmd) {
     const { nginxConfig } = await import("./nginx");
     const tls = args.indexOf("--tls");
     const certDir = tls >= 0 ? args[tls + 1] : undefined;
-    const positional = args.filter((a, i) => !a.startsWith("--") && args[i - 1] !== "--tls");
-    process.stdout.write(nginxConfig(await loadConfig(), { distDir: positional[0] ?? join(root, "dist"), tls: certDir ? { certDir } : undefined }));
+    const positional = args.filter((a, i) => !a.startsWith("--") && args[i - 1] !== "--tls" && args[i - 1] !== "--server-name");
+    const sn = args.indexOf("--server-name");
+    const hasMiddleware = ["ts", "tsx", "js"].some((e) => existsSync(join(root, `app/middleware.${e}`)));
+    process.stdout.write(
+      nginxConfig(await loadConfig(), {
+        distDir: positional[0] ?? join(root, "dist"),
+        tls: certDir ? { certDir } : undefined,
+        serverName: sn >= 0 ? args[sn + 1] : undefined,
+        hasMiddleware,
+      }),
+    );
     break;
   }
   case "__dev-child": {
@@ -120,6 +132,23 @@ switch (cmd) {
     });
     break;
   }
+  case "mcp": {
+    const { serveAgentMcp } = await import("./agents");
+    await serveAgentMcp(root, loadConfig);
+    break;
+  }
+  case "agents": {
+    const { AGENT_CLIENTS, writeAgentFiles } = await import("./agents");
+    const only = args.find((a) => a.startsWith("--only="))?.slice(7) ?? (args.includes("--only") ? args[args.indexOf("--only") + 1] : undefined);
+    const clients = only ? (only.split(",").map((c) => c.trim()) as typeof AGENT_CLIENTS) : AGENT_CLIENTS;
+    const bad = clients.filter((c) => !AGENT_CLIENTS.includes(c));
+    if (bad.length) {
+      console.error(`optz: unknown client ${bad.join(", ")} (known: ${AGENT_CLIENTS.join(", ")})`);
+      process.exit(2);
+    }
+    writeAgentFiles(root, clients);
+    break;
+  }
   case "create": {
     const { create } = await import("./create");
     const dir = args[0];
@@ -141,6 +170,9 @@ switch (cmd) {
   optz export         static site in dist/static (no server features)
   optz check          generate route types and type-check (tsc)
   optz nginx [dir] [--tls certdir]   print an nginx config (dir: deployed dist/ path)
-  optz create <dir>   start a new app`);
+  optz create <dir>   start a new app
+  optz mcp            MCP server (stdio) with this project's tools, for coding agents
+  optz agents         write AGENTS.md, agent skills and MCP configs for Claude Code,
+                      Codex, Cursor, VS Code and Gemini CLI (--only claude,codex,...)`);
     if (cmd) process.exit(2);
 }

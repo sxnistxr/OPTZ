@@ -22,10 +22,7 @@ pub struct Malformed;
 
 /// Parses `input` as one JSON document. Returns `Ok(None)` if it is valid JSON but not an object,
 /// otherwise the last value of each requested top-level key.
-pub fn parse_object<'a, const N: usize>(
-    input: &'a [u8],
-    keys: [&[u8]; N],
-) -> Result<Option<[Option<Val<'a>>; N]>, Malformed> {
+pub fn parse_object<'a, const N: usize>(input: &'a [u8], keys: [&[u8]; N]) -> Result<Option<[Option<Val<'a>>; N]>, Malformed> {
     let mut p = Parser { s: input, i: 0 };
     p.ws();
     if p.peek() != Some(b'{') {
@@ -408,8 +405,8 @@ pub fn trim_js(s: &[u8]) -> &[u8] {
 fn is_js_space(c: char) -> bool {
     matches!(
         c,
-        '\u{9}' | '\u{A}' | '\u{B}' | '\u{C}' | '\u{D}' | ' ' | '\u{A0}' | '\u{1680}' | '\u{2000}'..='\u{200A}'
-            | '\u{2028}' | '\u{2029}' | '\u{202F}' | '\u{205F}' | '\u{3000}' | '\u{FEFF}'
+        '\u{9}' | '\u{A}' | '\u{B}' | '\u{C}' | '\u{D}' | ' ' | '\u{A0}' | '\u{1680}' | '\u{2000}'
+            ..='\u{200A}' | '\u{2028}' | '\u{2029}' | '\u{202F}' | '\u{205F}' | '\u{3000}' | '\u{FEFF}'
     )
 }
 
@@ -435,8 +432,10 @@ mod tests {
     #[test]
     fn extracts_body() {
         assert_eq!(body(r#"{"body":"hi"}"#), Ok(Some(Some(b"hi".to_vec()))));
-        assert_eq!(body(r#" { "x" : [1, {"a":null}], "body" : "a\"b\u00e9\ud83d\ude00" } "#),
-            Ok(Some(Some("a\"bé😀".as_bytes().to_vec()))));
+        assert_eq!(
+            body(r#" { "x" : [1, {"a":null}], "body" : "a\"b\u00e9\ud83d\ude00" } "#),
+            Ok(Some(Some("a\"bé😀".as_bytes().to_vec())))
+        );
         assert_eq!(body(r#"{"body":"a","body":"b"}"#), Ok(Some(Some(b"b".to_vec()))));
         assert_eq!(body(r#"{"body":123}"#), Ok(Some(None)));
         assert_eq!(body(r#"{}"#), Ok(Some(None)));
@@ -447,9 +446,21 @@ mod tests {
     #[test]
     fn rejects_malformed() {
         for bad in [
-            "", "{bad json", "{\"body\":\"x\",}", "{\"body\" \"x\"}", "{\"body\":\"\\x\"}",
-            "{\"body\":\"\\ud800\"}", "{\"body\":\"\\udc00x\"}", "{\"body\":\"a\nb\"}", "{} x",
-            "{\"a\":01}", "{\"a\":1.}", "{\"a\":-}", "{\"a\":tru}", "{'a':1}", "{\"a\":[1,]}",
+            "",
+            "{bad json",
+            "{\"body\":\"x\",}",
+            "{\"body\" \"x\"}",
+            "{\"body\":\"\\x\"}",
+            "{\"body\":\"\\ud800\"}",
+            "{\"body\":\"\\udc00x\"}",
+            "{\"body\":\"a\nb\"}",
+            "{} x",
+            "{\"a\":01}",
+            "{\"a\":1.}",
+            "{\"a\":-}",
+            "{\"a\":tru}",
+            "{'a':1}",
+            "{\"a\":[1,]}",
             "\u{FEFF}{}",
         ] {
             assert_eq!(body(bad), Err(Malformed), "{bad:?}");
@@ -481,9 +492,42 @@ mod tests {
             rng
         };
         let atoms: &[&str] = &[
-            "{", "}", "[", "]", ",", ":", "\"", "\"body\"", "\"b\\u006fdy\"", "\"x\"", "1", "-0", "0.5e-3", "01",
-            "1.", "true", "false", "null", "nul", " ", "\n", "\\", "\\u00e9", "\\ud83d\\ude00", "\\ud800",
-            "\\udc00", "\\n", "\\/", "\\x", "é", "✓", "\u{1}", "\t", "\"body\":", "{\"body\":\"", "\"}",
+            "{",
+            "}",
+            "[",
+            "]",
+            ",",
+            ":",
+            "\"",
+            "\"body\"",
+            "\"b\\u006fdy\"",
+            "\"x\"",
+            "1",
+            "-0",
+            "0.5e-3",
+            "01",
+            "1.",
+            "true",
+            "false",
+            "null",
+            "nul",
+            " ",
+            "\n",
+            "\\",
+            "\\u00e9",
+            "\\ud83d\\ude00",
+            "\\ud800",
+            "\\udc00",
+            "\\n",
+            "\\/",
+            "\\x",
+            "é",
+            "✓",
+            "\u{1}",
+            "\t",
+            "\"body\":",
+            "{\"body\":\"",
+            "\"}",
         ];
         let (mut agree, mut valid, mut bodies) = (0, 0, 0);
         for _ in 0..300_000 {

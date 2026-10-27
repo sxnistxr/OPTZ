@@ -71,7 +71,9 @@ if [ -d "$REL/web" ]; then systemctl restart optz-web; fi
 for _ in $(seq 30); do
   if curl -fsS --max-time 2 "http://127.0.0.1:$PORT/health" >/dev/null 2>&1 \
      && { [ ! -d "$REL/web" ] || curl -fsS --max-time 2 -o /dev/null http://127.0.0.1:3001/; }; then
-    if systemctl is-active --quiet nginx && ! curl -fsSk --max-time 2 -o /dev/null -L http://127.0.0.1/; then
+    # nginx only answers the site's own name (optz nginx refuses other Hosts): ask for it, locally.
+    SITE_HOST="$(cd "$REL/web/portfolio" 2>/dev/null && /opt/bun/bin/bun -e 'const c=(await import("./optz.config.ts")).default; console.log(new URL(c.site?.url ?? "http://localhost").hostname)' 2>/dev/null || echo localhost)"
+    if systemctl is-active --quiet nginx && ! curl -fsSk --max-time 2 -o /dev/null -L --resolve "$SITE_HOST:80:127.0.0.1" --resolve "$SITE_HOST:443:127.0.0.1" "http://$SITE_HOST/"; then
       echo "deploy: warning: nginx isn't serving the site" >&2
     fi
     echo "deploy: $SHA is live"

@@ -39,6 +39,15 @@
     ]
   },
   {
+    "section": "AI and agents",
+    "pages": [
+      {
+        "slug": "ai",
+        "file": "portfolio/content/docs/ai.md"
+      }
+    ]
+  },
+  {
     "section": "How it's made",
     "pages": [
       {

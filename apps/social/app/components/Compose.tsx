@@ -44,7 +44,7 @@ export function Compose({ onPosted }: { onPosted: (p: Post) => void }) {
           {busy ? "Posting" : "Post"}
         </button>
       </div>
-      <p role="alert" className="mt-2 text-sm text-[#c2483d]">
+      <p role="alert" className="mt-2 text-sm text-danger">
         {error}
       </p>
     </form>

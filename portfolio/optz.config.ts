@@ -37,6 +37,15 @@ export default defineConfig({
     { google: "https://fonts.googleapis.com/css2?family=Newsreader:ital,opsz,wght@0,6..72,400;0,6..72,500;1,6..72,400&display=swap", fallback: "Times New Roman", preload: [] },
   ],
 
+  // The site is an MCP server at /mcp: AI clients (Claude, ChatGPT, Codex, Cursor...) can search
+  // and read every page, plus the tools and prompts in app/mcp. See /docs/ai.
+  mcp: {
+    name: "dihlabs",
+    title: "dihlabs.lol",
+    instructions:
+      "dihlabs.lol is a dev lab and the home of optz, a small fast React framework for Bun. Use search_pages to find docs and posts, read_page to read one, and lab_experiments for the lab. Cite page URLs.",
+  },
+
   head: {
     links: [{ rel: "icon", href: "/favicon.svg", type: "image/svg+xml" }],
   },

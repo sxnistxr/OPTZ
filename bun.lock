@@ -44,13 +44,26 @@
         "@types/react-dom": "19.3.0",
       },
     },
+    "apps/spa": {
+      "name": "spa",
+      "dependencies": {
+        "optz": "workspace:*",
+        "react": "19.3.1",
+        "react-dom": "19.3.1",
+      },
+      "devDependencies": {
+        "@types/bun": "1.4.4",
+        "@types/react": "19.3.0",
+        "@types/react-dom": "19.3.0",
+      },
+    },
     "framework": {
       "name": "optz",
       "version": "0.3.0",
       "bin": {
         "optz": "./src/cli.ts",
       },
-      "dependencies": {
+      "devDependencies": {
         "@tailwindcss/cli": "4.3.3",
         "tailwindcss": "4.3.3",
         "typescript": "7.0.2",
@@ -63,9 +76,17 @@
         "sharp": "0.35.5",
       },
       "peerDependencies": {
+        "@tailwindcss/cli": "4.3.3",
         "react": "^19",
         "react-dom": "^19",
+        "tailwindcss": "4.3.3",
+        "typescript": "7.0.2",
       },
+      "optionalPeers": [
+        "@tailwindcss/cli",
+        "tailwindcss",
+        "typescript",
+      ],
     },
     "portfolio": {
       "name": "portfolio",
@@ -81,6 +102,9 @@
         "@types/react-dom": "19.3.0",
       },
     },
+  },
+  "overrides": {
+    "fflate": "0.7.5",
   },
   "packages": {
     "@emnapi/runtime": ["@emnapi/runtime@1.11.3", "", { "dependencies": { "tslib": "^2.4.0" } }, "sha512-Xz4Tpyki7XyrpbUK1jR1AhdAdaXyhhY4lZ3neLodmhpuWfy2PAQN5B46sAiU4liOXGLkHypn/qU+jvfWSCYYLA=="],
@@ -317,7 +341,7 @@
 
     "features": ["features@workspace:apps/features"],
 
-    "fflate": ["fflate@0.7.3", "", {}, "sha512-0Zz1jOzJWERhyhsimS54VTqOteCNwRtIlh8isdL0AXLo0g7xNTfTL7oWrkmCnPhZGocKIkWHBistBrrpoNH3aw=="],
+    "fflate": ["fflate@0.7.5", "", {}, "sha512-QieYf//cis6ywHNi5qW1+PXPQ4bC+XVJAtS4AXIML8P76GroEiOxm/oQtn1f02UkJY1+KsXMJcC+R2v/Eg4G3g=="],
 
     "fill-range": ["fill-range@7.1.1", "", { "dependencies": { "to-regex-range": "^5.0.1" } }, "sha512-YsGpe3WHLK8ZYi4tWDg2Jy3ebRz2rXowDxnld4bkQB00cc/1Zw9AWnC0i9ztDJitivtQvaI9KaLyKrc+hBW0yg=="],
 
@@ -404,6 +428,8 @@
     "social": ["social@workspace:apps/social"],
 
     "source-map-js": ["source-map-js@1.2.2", "", {}, "sha512-KGj/8Y43x35aZVDtt+J4mK1hoLGHULMYfSkODJNQjNDC3oW1PqPoxMwo0pLUsWM/UEGzON/NxeHywEfNXNP3Vw=="],
+
+    "spa": ["spa@workspace:apps/spa"],
 
     "string.prototype.codepointat": ["string.prototype.codepointat@0.2.1", "", {}, "sha512-2cBVCj6I4IOvEnjgO/hWqXjqBGsY+zwPmHl12Srk9IXSZ56Jwwmy+66XO5Iut/oQVR7t5ihYdLB0GMa4alEUcg=="],
 

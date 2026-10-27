@@ -81,3 +81,65 @@ test("vary headers split the key", () => {
   const rc = { maxAge: 1, vary: ["accept-language"] };
   expect(ResponseCache.key(req({ "accept-language": "en" }), url, rc)).not.toBe(ResponseCache.key(req({ "accept-language": "de" }), url, rc));
 });
+
+test("concurrent waiters each get their own copy of an uncacheable response (404, redirect, private)", async () => {
+  const c = new ResponseCache(10, 1 << 20, z);
+  let calls = 0;
+  const produce = async () => {
+    calls++;
+    await Bun.sleep(20);
+    return new Response("missing", { status: 404 });
+  };
+  const rs = await Promise.all(Array.from({ length: 4 }, () => c.handle(req(), "k", { maxAge: 60 }, produce)));
+  expect(calls).toBe(1);
+  expect(rs.map((r) => r.status)).toEqual([404, 404, 404, 404]);
+  expect(await Promise.all(rs.map((r) => r.text()))).toEqual(["missing", "missing", "missing", "missing"]);
+});
+
+test("a response's own Vary header keys the cache; Vary: Cookie is never shared", async () => {
+  const c = new ResponseCache(10, 1 << 20, z);
+  const echo = (header: string) => async (r: Request) =>
+    new Response(JSON.stringify({ v: r.headers.get(header), pad: "x".repeat(600) }), { headers: { "Content-Type": "application/json", Vary: header } });
+  const lang = echo("accept-language");
+  const get = (h: Record<string, string>) => {
+    const r = req(h);
+    return c.handle(r, "k", { maxAge: 60 }, () => lang(r));
+  };
+  expect((await (await get({ "accept-language": "fr" })).json()).v).toBe("fr");
+  const en = await get({ "accept-language": "en" });
+  expect((await en.json()).v).toBe("en");
+  expect(en.headers.get("vary")).toBe("Accept-Encoding, accept-language");
+  expect(c.stats.entries).toBe(2);
+
+  const who = echo("cookie");
+  const as = (cookie: string) => {
+    const r = req({ cookie });
+    return c.handle(r, "w", { maxAge: 60 }, () => who(r));
+  };
+  expect((await (await as("u=alice")).json()).v).toBe("u=alice");
+  expect((await (await as("u=bob")).json()).v).toBe("u=bob");
+});
+
+test("configured vary on Cookie is private for CDNs", async () => {
+  const c = new ResponseCache(10, 1 << 20, z);
+  const r = await c.handle(req({ cookie: "a=1" }), "k\ncookie:a=1", { maxAge: 60, vary: ["cookie"] }, async () => body(1));
+  expect(r.headers.get("cache-control")).toBe("private, max-age=0");
+});
+
+test("invalidating while a render runs: its result isn't stored", async () => {
+  const c = new ResponseCache(10, 1 << 20, z);
+  let calls = 0;
+  let release!: () => void;
+  const gate = new Promise<void>((r) => (release = r));
+  const produce = async () => {
+    const n = ++calls;
+    if (n === 1) await gate;
+    return body(n);
+  };
+  const first = c.handle(req(), "k", { maxAge: 60 }, produce);
+  await Bun.sleep(5);
+  c.invalidate(() => true);
+  release();
+  expect((await (await first).json()).n).toBe(1);
+  expect((await (await c.handle(req(), "k", { maxAge: 60 }, produce)).json()).n).toBe(2);
+});

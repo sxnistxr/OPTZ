@@ -21,6 +21,9 @@ pub struct Claims<'a> {
     pub username: Cow<'a, [u8]>,
 }
 
+/// The latest expiry accepted (9999-12-31), so a token can't be made to live forever.
+pub const MAX_EXP: f64 = 253_402_300_799.0;
+
 pub struct Verifier {
     keyed: Hmac<Sha256>,
     header: Vec<u8>,
@@ -71,7 +74,9 @@ impl Verifier {
             Some(Val::Num(n)) => std::str::from_utf8(n).ok().and_then(|n| n.parse::<f64>().ok()).ok_or(JwtError::Invalid)?,
             _ => return Err(JwtError::Invalid),
         };
-        if (now as f64) >= exp {
+        // A NumericDate in seconds: finite and before MAX_EXP. "1e400" parses as infinity and
+        // would otherwise never expire.
+        if !exp.is_finite() || exp > MAX_EXP || (now as f64) >= exp {
             return Err(JwtError::Invalid);
         }
         let user_id = match sub {
@@ -214,6 +219,9 @@ pub mod tests {
             sign(r#"{"sub":"7","username":"ann","exp":1000}"#),
             sign(r#"{"sub":"7","username":"ann"}"#),
             sign(r#"{"sub":"7","username":"ann","exp":"2000"}"#),
+            // exp that parses to infinity, or is absurdly far away, never counts.
+            sign(r#"{"sub":"7","username":"ann","exp":1e400}"#),
+            sign(r#"{"sub":"7","username":"ann","exp":1e300}"#),
             sign_with(r#"{"alg":"HS512"}"#, r#"{"sub":"7","username":"ann","exp":2000}"#, SECRET),
             sign_with(r#"{"alg":"HS256"}"#, r#"{"sub":"7","username":"ann","exp":2000}"#, b"other"),
             sign_with("not json", r#"{"sub":"7","username":"ann","exp":2000}"#, SECRET),

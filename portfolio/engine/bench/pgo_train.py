@@ -58,10 +58,10 @@ def client(port, stop, seed):
         else:
             t = r.choice(toks)
             if x < 0.991:
-                req = f"POST /posts/{r.randint(1, POSTS)}/like HTTP/1.1\r\nAuthorization: Bearer {t}\r\nContent-Length: 0\r\n\r\n".encode()
+                req = f"POST /posts/{r.randint(1, POSTS)}/like HTTP/1.1\r\nHost: t\r\nAuthorization: Bearer {t}\r\nContent-Length: 0\r\n\r\n".encode()
             else:
                 body = json.dumps({"body": f"training post {r.random()}"})
-                req = f"POST /posts HTTP/1.1\r\nAuthorization: Bearer {t}\r\nContent-Type: application/json\r\nContent-Length: {len(body)}\r\n\r\n{body}".encode()
+                req = f"POST /posts HTTP/1.1\r\nHost: t\r\nAuthorization: Bearer {t}\r\nContent-Type: application/json\r\nContent-Length: {len(body)}\r\n\r\n{body}".encode()
         s.sendall(req)
         while True:
             if b"\r\n\r\n" in buf:

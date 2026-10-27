@@ -116,7 +116,8 @@ def main():
         for _ in range(n):
             socks.append(connect(port))
         for s in socks:
-            s.sendall(raw("GET", "/posts/250000"))
+            # Post 1 exists in every seed (the challenge's and bench/pgo_train.py's synthetic one).
+            s.sendall(raw("GET", "/posts/1"))
         for s in socks:
             st, _, _, _ = read_response(s)
             ok &= st == 200
@@ -133,19 +134,23 @@ def main():
         for s in socks:
             s.close()
 
-        # Concurrent likes from many users on one post: exact count afterwards.
-        _, before = request(port, "GET", "/posts/3")
-        before = json.loads(before)["post"]["like_count"]
+        # Concurrent likes from many users on a new post: exact count afterwards. Users 1-400
+        # exist in any seed; tokens for users that don't exist are refused (401).
+        st, body = request(port, "POST", "/posts", t, json.dumps({"body": "like target"}))
+        target = json.loads(body)["post"]["id"]
+        statuses = []
 
         def like(uid):
-            st, _ = request(port, "POST", "/posts/3/like", token(sub=str(uid), username=f"u{uid}"))
-            assert st in (200, 201)
+            st, _ = request(port, "POST", f"/posts/{target}/like", token(sub=str(uid), username=f"u{uid}"))
+            statuses.append(st)
 
-        ths = [threading.Thread(target=like, args=(u,)) for u in range(30000, 30400)]
+        ths = [threading.Thread(target=like, args=(u,)) for u in range(1, 401)]
         [x.start() for x in ths]
         [x.join() for x in ths]
-        _, after = request(port, "GET", "/posts/3")
-        check("400 concurrent likes counted exactly", json.loads(after)["post"]["like_count"] == before + 400)
+        _, after = request(port, "GET", f"/posts/{target}")
+        check("400 concurrent likes counted exactly", statuses.count(201) == 400 and json.loads(after)["post"]["like_count"] == 400)
+        st, body = request(port, "POST", f"/posts/{target}/like", token(sub="999999999", username="ghost"))
+        check("a token for a user that doesn't exist writes nothing (401)", st == 401 and json.loads(body) == {"error": "unknown user"})
     finally:
         rc = srv.stop()
         check("clean shutdown on SIGTERM (exit 0)", rc == 0, srv.logtext()[-500:])

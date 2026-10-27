@@ -190,7 +190,21 @@ export interface RenderOptions {
 }
 
 export async function renderPage(input: RenderInput, assets: Assets, config: ResolvedConfig, opts: RenderOptions = {}): Promise<Rendered> {
-  const loaded = await loadData(input);
+  // A loader that throws is a page error like a render error: _error.tsx shows it (status 500).
+  let loaded: Loaded;
+  let loaderError: unknown;
+  try {
+    loaded = await loadData(input);
+  } catch (e) {
+    if (!input.error) throw e;
+    console.error("optz: loader error:", e);
+    loaderError = e;
+    let head: Head = {};
+    try {
+      head = mergeHead(input, null);
+    } catch {}
+    loaded = { kind: "data", payload: { data: null, head } };
+  }
   if (loaded.kind !== "data") return loaded;
   const { data, head } = loaded.payload;
   const state: PageState = {
@@ -224,6 +238,8 @@ ${preload.map((p) => `<link rel="modulepreload" href="${p}">`).join("\n")}${scri
 </head>
 <body>
 <div id="__optz">`;
+
+  if (loaderError !== undefined) return renderError(input, state, loaderError, docHead, boot, assets, islandsMode, config);
 
   // ---- streamed: the document head goes out at once, React's output follows ----------------
   if (opts.stream) {
@@ -321,9 +337,16 @@ async function renderError(
   islandsMode: boolean,
   config: ResolvedConfig,
 ): Promise<Rendered> {
-  // React's onError has already logged it.
+  // React's onError has already logged it. In production the page gets a generic error with a
+  // digest (logged next to the real one) instead of a message that could leak internals.
   const View = input.error!.default;
-  const err = error instanceof Error ? error : new Error(String(error));
+  const real = error instanceof Error ? error : new Error(String(error));
+  let err = real;
+  if (!assets.dev) {
+    const digest = (crypto.randomUUID?.() ?? String(Date.now())).slice(0, 8);
+    console.error(`optz: page error ${digest}: ${real.message}`);
+    err = Object.assign(new Error("Something went wrong."), { digest });
+  }
   const failed: PageState = { ...state, Loading: undefined, Page: () => <View error={err} params={input.params} /> };
   const { prelude } = await prerender(<StaticRouter state={failed} />);
   const body = await new Response(prelude).text();

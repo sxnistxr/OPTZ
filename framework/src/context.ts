@@ -16,6 +16,12 @@ export interface RequestStore {
   after: Array<() => unknown>;
   /** Did this request call revalidatePath/revalidateTag? (Actions tell the browser to refresh.) */
   revalidated: boolean;
+  /** Request headers server code read through headers()/cookies(), lowercased: a cached
+   *  response that depends on one the route doesn't vary on mustn't be shared. */
+  reads: Set<string>;
+  /** Edge workers: the platform's bindings (KV, D1, R2, secrets) and its waitUntil(). */
+  env?: Record<string, unknown>;
+  waitUntil?: (p: Promise<unknown>) => void;
 }
 
 export const als = new AsyncLocalStorage<RequestStore>();
@@ -37,10 +43,10 @@ export const setRevalidator = (r: Revalidator | null) => {
 };
 export const getRevalidator = () => revalidator;
 
-export const newStore = (init: Omit<RequestStore, "setCookies" | "after" | "revalidated">): RequestStore => ({ ...init, setCookies: [], after: [], revalidated: false });
+export const newStore = (init: Omit<RequestStore, "setCookies" | "after" | "revalidated" | "reads" | "env" | "waitUntil"> & Partial<Pick<RequestStore, "env" | "waitUntil">>): RequestStore => ({ ...init, setCookies: [], after: [], revalidated: false, reads: new Set() });
 
 /** Runs `fn` with a fresh request store and applies its cookies and `after()` work. */
-export const withStore = (init: Omit<RequestStore, "setCookies" | "after" | "revalidated">, fn: (s: RequestStore) => Promise<Response>) => inStore(newStore(init), fn);
+export const withStore = (init: Omit<RequestStore, "setCookies" | "after" | "revalidated" | "reads" | "env" | "waitUntil"> & Partial<Pick<RequestStore, "env" | "waitUntil">>, fn: (s: RequestStore) => Promise<Response>) => inStore(newStore(init), fn);
 
 /** Runs `fn` inside the request's store (entered only where server code can use it: static
  *  files skip it, which keeps them cheap) and applies its cookies and `after()` work. */
@@ -59,15 +65,33 @@ export async function inStore(s: RequestStore, fn: (s: RequestStore) => Promise<
   }
   if (s.after.length) {
     const jobs = s.after;
-    setTimeout(() => {
-      for (const j of jobs) {
-        try {
-          Promise.resolve(als.run(s, j)).catch((e) => console.error("optz: after():", e));
-        } catch (e) {
-          console.error("optz: after():", e);
+    const done = new Promise<void>((resolve) =>
+      setTimeout(async () => {
+        for (const j of jobs) {
+          try {
+            await als.run(s, j);
+          } catch (e) {
+            console.error("optz: after():", e);
+          }
         }
-      }
-    }, 0);
+        resolve();
+      }, 0),
+    );
+    // Edge workers stop once the response is sent unless told to wait.
+    s.waitUntil?.(done);
   }
   return out;
 }
+
+/** Data caches made with cache() (optz/server): dropped by revalidateTag() for their tags. */
+export interface DataCache {
+  tags: string[];
+  clear(): void;
+}
+export const dataCaches = new Set<DataCache>();
+/** Drops every data cache that has one of `tags`. */
+export function clearDataCaches(tags: string[]) {
+  if (!tags.length) return;
+  for (const c of dataCaches) if (c.tags.some((t) => tags.includes(t))) c.clear();
+}
+

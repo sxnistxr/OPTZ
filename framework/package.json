@@ -3,6 +3,32 @@
   "version": "0.3.0",
   "description": "A small, fast React framework for Bun: file routes, layouts, loaders, middleware, static-first rendering.",
   "type": "module",
+  "keywords": [
+    "react",
+    "bun",
+    "framework",
+    "islands",
+    "ssr",
+    "static-site",
+    "mcp"
+  ],
+  "homepage": "https://dihlabs.lol/docs/framework",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/sxnistxr/OPTZ.git",
+    "directory": "framework"
+  },
+  "bugs": {
+    "url": "https://github.com/sxnistxr/OPTZ/issues"
+  },
+  "engines": {
+    "bun": ">=1.4.4"
+  },
+  "files": [
+    "src",
+    "skills",
+    "README.md"
+  ],
   "bin": {
     "optz": "./src/cli.ts"
   },
@@ -19,16 +45,33 @@
     "./islands": "./src/islands.ts",
     "./action-client": "./src/action-client.ts",
     "./edge": "./src/edge.ts",
-    "./seo": "./src/seo.ts"
+    "./seo": "./src/seo.ts",
+    "./mcp": "./src/mcp.ts",
+    "./dialog": "./src/dialog.tsx",
+    "./cdn": "./src/cdn.ts",
+    "./test": "./src/testing.ts"
+  },
+  "scripts": {
+    "test": "bun test",
+    "typecheck": "tsc --noEmit -p tsconfig.json"
   },
   "peerDependencies": {
     "react": "^19",
-    "react-dom": "^19"
-  },
-  "dependencies": {
+    "react-dom": "^19",
     "@tailwindcss/cli": "4.3.3",
     "tailwindcss": "4.3.3",
     "typescript": "7.0.2"
+  },
+  "peerDependenciesMeta": {
+    "typescript": {
+      "optional": true
+    },
+    "tailwindcss": {
+      "optional": true
+    },
+    "@tailwindcss/cli": {
+      "optional": true
+    }
   },
   "optionalDependencies": {
     "preact": "11.0.2",
@@ -36,5 +79,10 @@
     "satori": "0.63.2",
     "@resvg/resvg-js": "2.6.2",
     "react-refresh": "0.19.0"
+  },
+  "devDependencies": {
+    "@tailwindcss/cli": "4.3.3",
+    "tailwindcss": "4.3.3",
+    "typescript": "7.0.2"
   }
 }

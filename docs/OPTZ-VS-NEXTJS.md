@@ -6,77 +6,78 @@ API and the proxy to the Rust engine are equivalent; the components are the same
 `"use client"` and `next/link` in place of islands and `optz`'s `Link`.
 
 Every Next.js feature optz didn't have is now built in (see [Features](#features)), and
-`apps/features/` uses all of them in one app, checked by a 22-step browser suite (`e2e.cjs`)
-that passes on the Bun server, the single executable and the edge worker in `workerd`.
+`apps/features/` uses all of them in one app, checked by a browser suite (`e2e.cjs`) that CI
+runs, plus the edge worker in `workerd`.
 
-The numbers below were measured on the site as it was before it became dihlabs.lol (commit
-`9a312d6`, when it still had the social feed); `bench/nextjs-portfolio` is a port of that version.
-`compare.sh` now compares the URLs both versions still share.
-
-Reproduce the numbers with `bash bench/compare.sh` (after `npm ci` in `bench/nextjs-portfolio`).
-Raw numbers: [`bench/results.json`](../bench/results.json).
+`bench/nextjs-portfolio` is a port of the site; `bench/compare.sh` measures the URLs both still
+share. Every number below comes from one run of that script, saved with its provenance in
+[`bench/results.json`](../bench/results.json): commit `ff34e5a` (clean tree), the machine, every
+tool's version, the settings, and each individual run. Reproduce with `bash bench/compare.sh`
+(after `npm ci` in `bench/nextjs-portfolio`).
 
 ## Speed
 
-A 4-vCPU Linux VM. Each server is **pinned to one core** with `taskset -c 0`, the same budget as
-the VPS the site runs on. wrk runs on the other three cores: 3 threads, 64 connections, 10 s per URL,
-`Accept-Encoding: br, gzip` like a browser. Both are in production mode (`optz start`,
-`next start`), with no nginx in front of either. Measured 2026-10-26, after adding all the
-features below.
+A 4-vCPU cloud VM (Intel Xeon @ 2.80 GHz, shared), Linux 6.18, Bun 1.4.4, Node 22.22, Next.js
+16.4.3. Each server is **pinned to one core** with `taskset -c 0`, the budget of the VPS the site
+runs on; wrk 4.1 runs on the other three: 3 threads, 64 connections, 10 s per URL,
+`Accept-Encoding: br, gzip`, **3 runs per URL, median shown**. Both are in production mode
+(`optz start`, `next start`), no nginx in front. Measured 2026-10-27.
 
-| URL | what it is | optz req/s | Next req/s | optz p99 | Next p99 |
-|---|---|---:|---:|---:|---:|
-| `/` | static page, 2 islands / 2 client components | **56,636** | 389 | 3.7 ms | 1.24 s |
-| `/blog/<slug>` | static page from Markdown | **54,567** | 501 | 3.3 ms | 994 ms |
-| `/api/blog` | JSON, prerendered at build time | **55,035** | 577 | 17 ms | 1.01 s |
-| `/social/post/1` | page whose data loads in the browser | **56,185** | 158 | 3.4 ms | 1.46 s |
-| `/nope` | 404 page | **50,334** | 615 | 20 ms | 553 ms |
+| URL | what it is | optz req/s | Next req/s | ratio | optz p99 | Next p99 |
+|---|---|---:|---:|---:|---:|---:|
+| `/` | static page, 2 islands / 2 client components | **26,366** | 438 | 60× | 4.9 ms | 1.25 s |
+| `/blog/<slug>` | static page from Markdown | **23,912** | 539 | 44× | 5.8 ms | 582 ms |
+| `/api/blog` | JSON, prerendered at build time | **29,041** | 739 | 39× | 4.9 ms | 1.13 s |
+| `/nope` | 404 page | **24,478** | 591 | 41× | 5.1 ms | 455 ms |
 
-On one core, optz serves about 100× more requests per second (350× on `/social/post/[id]`), with
-tail latency in milliseconds rather than seconds. Two checks that Next wasn't handicapped by the
-setup:
+On one core here, optz serves **about 40–60× more requests per second**, with tail latency in
+milliseconds rather than hundreds of milliseconds. How to read that:
 
-- Every Next page above is a cache `HIT` with `x-nextjs-prerender: 1`: prerendered pages, not renders.
-- Next's best case, with `proxy.ts` removed and no compression, is **1,033 req/s** for `/`. Most of
-  its cost is the request pipeline itself, not gzip or the proxy.
-
-`/social/post/[id]` is where the designs differ most. optz serves one prebuilt shell for every
-id (`render: "client"`), so it costs the same as a static page. Next renders the route on every
-request (`ƒ` in its build output); `generateStaticParams = () => []` would make it cache each id
-after its first request instead, at about its static-page rate.
+- **It's this workload and this machine.** Absolute numbers depend on the CPU (an earlier run on
+  a different 4-vCPU VM measured ~56k req/s for optz and ~400–600 for Next, and an independent
+  audit on a 12-core desktop with a different load generator measured 45–59×). The ratio is the
+  stable part; treat any single req/s figure as this machine's.
+- **Next is serving cached pages, not rendering.** Every Next response measured above carries
+  `x-nextjs-cache: HIT` (recorded per URL in `results.json`). Its cost is the request pipeline.
+- **Next's runs vary more.** Its three runs on `/` were 360, 438 and 574 req/s; optz's were
+  25,954–27,436. All runs are in the JSON.
+- **The latency is queueing at saturation.** With 64 connections on one core, p99 mostly
+  measures how long a request waits behind the others; it isn't the time one request takes on
+  an idle server.
+- `/nope` answers 404 on both, so all of its responses count as non-2xx in wrk (the JSON has
+  each run's total and non-2xx count, which match).
 
 | | optz | Next | |
 |---|---:|---:|---|
-| Build | **1.8 s** | 9.5 s | clean build; optz's includes downloading fonts and rendering 2 OG images |
-| Cold start to first 200 | **74 ms** | 692 ms | process start until `/` answers |
-| First hit of the 5 URLs (sum) | **3 ms** | 185 ms | Next loads route code lazily |
-| Memory, idle | **35 MB** | 140 MB | RSS, process tree |
-| Memory, peak under load | **52 MB** | 333 MB | RSS during the runs above |
-| Response bytes, `/` | **1,495** | 3,431 | brotli/gzip as sent |
-| Framework on disk | **~220 KB** source | 307 MB | `framework/src` vs `next` + `@next` |
+| Build (median of 3) | **3.0 s** | 10.3 s | clean `dist/` / `.next`; optz's font downloads were cached (`font_cache: warm`) |
+| Cold start to first 200 (median of 5) | **~90 ms** | ~720 ms | process start until `/` answers; ±30 ms between runs |
+| Memory, idle | **37 MB** | 131 MB | RSS of the process tree |
+| Memory, peak under load | **47 MB** | 331 MB | RSS during the runs above |
+| Bytes for `/`: brotli / gzip / none | **2,315 / 2,849** / 9,667 | 13,849 / 3,520 / 13,849 | Next doesn't brotli-compress: with only `br` accepted it sends the page uncompressed |
+| Framework installed | **0.4 MB** | 392 MB | the published `optz` package (`src`, skills, README) vs `node_modules/next` + `@next` |
 
 ### JavaScript sent to the browser
 
-Cold load in Chromium, all scripts, compressed as transferred:
+Measured by `bench/js-per-page.cjs` (part of `compare.sh`): a cold load of each page in Chromium,
+every script response, size as transferred and decoded.
 
 | page | optz (islands + Preact) | Next |
 |---|---:|---:|
-| `/` (live status + feed) | **14.5 KB** | 144.6 KB |
-| `/blog` (no interactivity) | **2.9 KB** | 144.6 KB |
-| `/blog/<slug>` (no interactivity) | **2.9 KB** | 144.6 KB |
-| `/social` (token, compose, feed) | **14.7 KB** | 144.6 KB |
-| `/social/post/1` | **13.1 KB** | 147.2 KB |
+| `/` (live status island) | **12.0 KB** (5 scripts, 30.9 KB decoded) | 141.7 KB (8 scripts, 468 KB decoded) |
+| `/blog` (no interactivity) | **4.0 KB** (2 scripts) | 141.7 KB |
+| `/blog/<slug>` (no interactivity) | **4.0 KB** (2 scripts) | 141.7 KB |
 
 Next ships React, its router and the RSC runtime on every page, including pages with no client
 components. optz pages are HTML; only islands hydrate, with Preact (`client.runtime: "preact"`).
-The 2.9 KB on blog pages is the HTML-swap navigation with hover prefetch.
+The 4 KB on blog pages is the HTML-swap navigation with hover prefetch and the accessibility
+layer (focus and announcements on navigation).
 
 ### What this means on the VPS
 
-At ~400 req/s per core, Next needs a CDN or nginx cache in front of it to survive a spike. optz
-handles ~55k req/s on the same core, and 52 MB peak memory leaves the rest of the 2 GB for the
-Rust engine and its connections. Whether native code would be faster still is measured in
-[NATIVE.md](NATIVE.md) (short answer: no, not for this site).
+At a few hundred req/s per core, Next needs a CDN or nginx cache in front of it to survive a
+spike; optz handles tens of thousands per core, and ~47 MB peak memory leaves the rest of the
+2 GB for the Rust engine and its connections. Whether native code would be faster still is
+measured in [NATIVE.md](NATIVE.md).
 
 ## Features
 

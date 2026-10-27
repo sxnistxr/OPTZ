@@ -22,8 +22,9 @@ and everything that deploys them.
 ## The short version
 
 - **optz** renders pages to HTML at build time and ships JavaScript only for the parts marked
-  interactive ("islands"). Serving a page is a memory lookup: about **55,000 requests per second
-  on one CPU core**, roughly 100× Next.js on the same app and core, in a sixth of the memory.
+  interactive ("islands"). Serving a page is a memory lookup: **tens of thousands of requests
+  per second on one CPU core**, about 40–60× Next.js on the same app and core (measured), in a
+  third of the memory idle.
 - It still has what an app needs: streaming, Server Actions, incremental static regeneration,
   typed routes and APIs, i18n, image and font optimization, Open Graph images, and it deploys as
   a Bun server, a single executable or an edge worker.

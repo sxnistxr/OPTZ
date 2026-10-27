@@ -5,8 +5,12 @@ export default function Dashboard({ children, stats, feed }: { children: ReactNo
   return (
     <div className="grid grid-cols-3 gap-4">
       <div>{children}</div>
-      <aside data-testid="stats-slot">{stats}</aside>
-      <aside data-testid="feed-slot">{feed}</aside>
+      <aside aria-label="Stats" data-testid="stats-slot">
+        {stats}
+      </aside>
+      <aside aria-label="Feed" data-testid="feed-slot">
+        {feed}
+      </aside>
     </div>
   );
 }

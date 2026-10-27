@@ -11,6 +11,10 @@ User=optz
 Group=optz
 WorkingDirectory=/opt/optz/current/web/portfolio
 Environment=PORT=3001 HOST=127.0.0.1 NODE_ENV=production
+# The image optimizer's disk cache: the one writable place under ProtectSystem=strict (systemd
+# creates /var/cache/optz-web/images, owned by the service user).
+CacheDirectory=optz-web/images
+Environment=OPTZ_IMAGE_CACHE_DIR=/var/cache/optz-web/images
 ExecStart=/opt/bun/bin/bun ../framework/src/cli.ts start
 Restart=on-failure
 RestartSec=1

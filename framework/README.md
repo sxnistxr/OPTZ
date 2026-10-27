@@ -14,6 +14,8 @@ bun run build    # dist/   (--compile: also a single executable; --target edge: 
 bun run start    # production server (PORT/HOST env vars override the config)
 optz nginx       # nginx config generated from optz.config.ts
 optz export      # static site only, for any static host
+optz agents      # AGENTS.md, agent skills and MCP configs for Claude Code, Codex, Cursor, VS Code, Gemini
+optz mcp         # MCP server (stdio) with this project's tools, for coding agents
 ```
 
 `apps/features/` uses every feature below in one app; `node apps/features/e2e.cjs` checks them
@@ -29,8 +31,10 @@ app/
   api/                  API routes, under /api
   components/           components; *.island.tsx ones hydrate in the browser
   lib/                  shared code ($lib/...)
+  mcp/                  MCP tools, prompts and resources for AI clients, served at /mcp
   middleware.ts         runs before every page and API request
   sitemap.ts robots.ts manifest.ts   built into /sitemap.xml, /robots.txt, /manifest.webmanifest
+  llms.ts               optional: replaces the generated /llms.txt
   styles.css            Tailwind CSS v4 (`@import "tailwindcss";`)
 public/                 copied as-is
 .optz/types.d.ts        generated: your routes and APIs as types
@@ -148,6 +152,32 @@ export default function Counter({ start }: { start: number }) { ... }
 
 (JS per page load, compressed / parsed.)
 
+### Accessible navigation and modals
+
+In-app navigation (the islands HTML swap and the SPA router) does what a full page load does
+for assistive technology: focus moves to the new page's `<main>` (or the `#hash` target), the
+new title is announced through a polite live region, and every per-page head tag, `<html lang>`
+included, is replaced. In-page links, skip links included, move focus to their target, also when
+speculation rules make navigations real ones.
+
+`optz/dialog`'s `<Modal>` is a modal that needs no island: the runtime opens it with
+`showModal()` (focus moves in and stays, the page behind is inert, `aria-modal`), Escape or a
+`<CloseModal>` goes back, and focus returns to the link that opened it. Without JavaScript it's an
+open `<dialog>` whose close link still works. It's made for intercepted routes:
+
+```tsx
+// gallery/@modal/(.)photo/[id].tsx
+import { CloseModal, Modal } from "optz/dialog";
+export default function PhotoModal({ params }: PageProps<unknown, "/gallery/photo/[id]">) {
+  return (
+    <Modal label={`Photo ${params.id}`}>
+      <h2>Photo {params.id}</h2>
+      <CloseModal href="/gallery">Close</CloseModal>
+    </Modal>
+  );
+}
+```
+
 ## Server Actions
 
 Modules that start with `"use server"` export functions the browser can call. Islands import
@@ -178,8 +208,10 @@ must come from the same site (CSRF check). Errors other than `ActionError` are r
 ## Server functions (`optz/server`)
 
 `cookies()` (read, set, delete), `headers()`, `after(fn)` (run after the response is sent),
-`draftMode()`, `revalidatePath()`, `revalidateTag()`, `locale()`. They work in API routes, Server
-Actions and dynamic pages.
+`waitUntil(promise)`, `env()`, `draftMode()`, `revalidatePath()`, `revalidateTag()`, `locale()`.
+They work in API routes, Server Actions, dynamic pages and MCP tools. A cached response whose
+code reads a header (through `headers()` or `cookies()`) that the route's `cache.vary` doesn't
+list is treated as personal: it's sent `private, no-store` and never shared.
 
 **Draft mode**: an API route your CMS calls turns it on with `draftMode().enable()`; while the
 signed cookie is set, static pages render per request and `ctx.draft` is true in loaders.
@@ -246,6 +278,101 @@ export default defineMiddleware(async (ctx, next) => {
 });
 ```
 
+## AI: MCP server, llms.txt and coding agents
+
+**Your app as an MCP server.** Every file in `app/mcp` is a tool, prompt or resource that AI
+clients (Claude, ChatGPT, Codex, Cursor, VS Code, Gemini CLI, ...) can use, served at `/mcp` with
+the Model Context Protocol's Streamable HTTP transport. It's stateless JSON, so it runs the same
+on Bun, the single executable and edge workers, behind any load balancer.
+
+```ts
+// app/mcp/search_posts.ts  ->  the tool "search_posts"
+import { defineTool, ToolError } from "optz/mcp";
+
+export default defineTool({
+  description: "Search blog posts by title. Returns slugs, titles and URLs.",
+  input: { type: "object", properties: { q: { type: "string", minLength: 2 }, limit: { type: "integer", default: 5 } }, required: ["q"] },
+  annotations: { readOnlyHint: true },
+  run: ({ q, limit }, { locals }) => {               // q: string, limit?: number, from the schema
+    const hits = searchPosts(q).slice(0, limit);
+    if (!hits.length) throw new ToolError(`Nothing matches "${q}"`);   // the model sees this
+    return { posts: hits };                          // JSON text + structuredContent
+  },
+});
+```
+
+- Arguments are validated against `input` (types, `required`, `enum`, lengths, ranges, `pattern`)
+  and defaults filled in before `run`; a bad call gets an error the model can correct.
+- `definePrompt({ arguments, run })` and `defineResource({ uri: "posts://{slug}", list, read })`
+  for prompts and resources (fixed URIs or templates).
+- Requests go through `app/middleware.ts`, so authenticate there (`Authorization: Bearer ...`,
+  put the user in `ctx.locals`); tools get `locals` and can call `cookies()`, `headers()`, `after()`.
+- Browsers may only call it from `site.url` (or `mcp.allowedOrigins`): a check against DNS
+  rebinding. Clients that aren't browsers send no `Origin`.
+- `mcp: { pages: true }` (the default) adds the pre-rendered pages as resources, with
+  `search_pages` and `read_page` tools: setting `mcp: {}` makes a docs site AI-readable with no
+  code. A page counts only if a GET for it, with the caller's cookies and `Authorization`, gets
+  through your middleware, so pages it protects stay protected. `mcp.instructions` tells the
+  model what the server is for.
+- `optz build` loads every `app/mcp` file and fails on a bad definition.
+
+**llms.txt.** `optz build` writes `/llms.txt` (the site's pages by section, with descriptions,
+[llmstxt.org](https://llmstxt.org)) and `/llms-full.txt` (every page as text). `llms: false`
+turns them off; `llms.exclude` leaves paths out; `app/llms.ts` replaces the index.
+
+**Coding agents.** `optz create` and `optz agents` write what coding agents read: `AGENTS.md`
+(Codex, Cursor, Copilot, Gemini and others; `CLAUDE.md` imports it), two skills (`optz` for
+building, `optz-mcp` for exposing an app to AI) in `.claude/skills` and `.agents/skills`, and MCP
+configs (`.mcp.json`, `.codex/config.toml`, `.cursor/mcp.json`, `.vscode/mcp.json`,
+`.gemini/settings.json`) that start `optz mcp`. That's a stdio MCP server with tools for the
+project: `optz_project` (pages, render modes, APIs, actions, islands, config), `optz_match_url`,
+`optz_docs` (this reference), `optz_scaffold` (new page/API/island/action/MCP tool, never
+overwrites), `optz_check`, `optz_build` and `optz_fetch` (requests to the running dev server).
+Re-running `optz agents` updates the optz parts and keeps everything else in those files.
+
+## Redirects, rewrites, headers and middleware matchers
+
+In `optz.config.ts`, in the same `[param]` syntax as routes:
+
+```ts
+redirects: [{ source: "/old-blog/[slug]", destination: "/blog/[slug]", permanent: true }],   // 308 (307 if not permanent)
+rewrites: [{ source: "/docs/[...rest]", destination: "/guide/[...rest]" }],                  // served from another path (or proxied, for a URL)
+headers: [{ source: "/api/[...rest]", headers: { "Access-Control-Allow-Origin": "*" } }],
+```
+
+`app/middleware.ts` can limit itself to some paths: `export const matcher = ["/admin/[...rest]"]`.
+Middleware never runs for `/assets/*` (hashed, immutable build output, served straight from
+memory), nor for proxy prefixes marked `bypassMiddleware`.
+
+## Caching data, and revalidating everywhere
+
+`cache(fn, { tags, revalidate })` from `optz/server` memoizes a server function across requests
+(one call per distinct arguments, shared while it runs, failures not kept), and
+`revalidateTag()` drops it with the pages and responses that have the tag.
+
+Revalidation reaches beyond one process with `revalidation` in the config:
+
+```ts
+revalidation: {
+  peers: ["http://10.0.0.2:3001"],          // other instances: each change is POSTed to their /_optz/revalidate
+  secret: process.env.OPTZ_REVALIDATE_SECRET, // signs those requests (HMAC; replays over 60 s are refused)
+  purge: cloudflarePurge({ zoneId: process.env.CF_ZONE_ID!, token: process.env.CF_API_TOKEN! }),  // optz/cdn
+},
+```
+
+With `server.cdnMaxAge` set, pages carry `Cache-Tag` and `Surrogate-Key` headers
+(`optz-path:<path>` and the page's tags), so a purge reaches exactly the pages that changed.
+
+## Testing an app
+
+```ts
+import { createTestApp } from "optz/test";
+const app = await createTestApp({ root: import.meta.dir + "/.." });   // builds it, serves it in-process
+expect(await (await app.get("/api/stats")).json()).toEqual({ ... });
+expect(await app.html("/blog/hello")).toContain("<h1>Hello</h1>");
+await app.post("/api/notes", { text: "hi" });                         // JSON body
+```
+
 ## Deploy targets
 
 | | command | what you get |
@@ -254,6 +381,11 @@ export default defineMiddleware(async (ctx, next) => {
 | Single executable | `optz build --compile` | `dist/server`: one file with the runtime, code, pages and assets (~105 MB) |
 | Edge worker | `optz build --target edge` | `dist/edge/worker.js` + `wrangler.toml`: Cloudflare Workers, Deno Deploy, Vercel Edge |
 | Static site | `optz export` | `dist/static` for any static host (no server features) |
+
+On edge workers, `fetch(request, env, ctx)` gets the platform's bindings: read them with
+`env()` from `optz/server`; `after()` and `waitUntil()` use `ctx.waitUntil`, and
+`app/scheduled.ts` (default export `(event, env, ctx)`) runs on Cron Triggers. `optz/edge`'s
+`createWorker()` is the same worker, for wrapping in your own code.
 
 The request handler is the same web-standard code everywhere; `apps/features/e2e.cjs` passes on
 all three servers. Image optimization needs sharp: the executable uses it when it can find it,
@@ -277,7 +409,13 @@ Every option is typed and documented on hover in `optz.config.ts`. The ones that
 | `cache.maxEntries` / `maxBytes` / `default` | 500 / 32 MB / none | response cache bounds, and a default for routes without `cache` |
 | `server.idleTimeout` / `maxRequestBodySize` | 30 s / 1 MB | connection and body limits |
 | `server.cdnMaxAge` | 0 | seconds a CDN may cache HTML pages (`s-maxage`, then `stale-while-revalidate`); browsers still revalidate |
+| `proxy[prefix]` | | `{ target, strip, bypassMiddleware, timeoutMs, maxBodySize, cacheSeconds }`: the target's path is kept; middleware runs unless `bypassMiddleware` (then `optz nginx` routes it without Bun) |
 | `proxy[prefix].cacheSeconds` | 0 | nginx micro-cache for a proxied API (via `optz nginx`) |
+| `server.trustProxy` | off | trust `X-Forwarded-Host/-Proto/-For` (only behind a proxy you control); CSRF checks use `site.url` either way |
+| `images.cacheDir` / `concurrency` | `.optz/cache/images` / cores − 1 | where optimized images go on disk (or `OPTZ_IMAGE_CACHE_DIR`; read-only falls back to memory), encodes at once |
+| `draft.maxAge` | 86400 | seconds a draft-mode cookie stays valid |
+| `mcp` / `features.mcp` | on with `app/mcp` | the MCP endpoint (`path`, `instructions`, `pages`, `allowedOrigins`); loaded on its first request |
+| `llms` | on | `/llms.txt` and `/llms-full.txt` at build time (`false`, `exclude`, `full`) |
 
 ## Dev server
 
@@ -288,14 +426,18 @@ React (for Fast Refresh), whatever `client.runtime` says.
 
 ## Measured (one core)
 
-Static pages ~55k req/s, prerendered API ~55k req/s, memory ~35 MB idle and ~50 MB under load.
-Against Next.js 16 on the same app: ~100× the requests per second, a sixth of the memory, 2.9 vs
-145 KB of JS on a blog post ([docs/OPTZ-VS-NEXTJS.md](../docs/OPTZ-VS-NEXTJS.md)). Against
-nginx serving the same files: the same speed ([docs/NATIVE.md](../docs/NATIVE.md)).
+Against Next.js 16 on the same app, each pinned to one core of the same VM: about 40–60× the
+requests per second (24k–29k vs 440–740 req/s on that machine; absolute numbers vary by CPU),
+37 vs 131 MB idle and 47 vs 331 MB under load, and 4 vs 142 KB of JavaScript on a blog post.
+Method, every run and its provenance: [docs/OPTZ-VS-NEXTJS.md](../docs/OPTZ-VS-NEXTJS.md),
+`bench/results.json`. Against nginx serving the same files: [docs/NATIVE.md](../docs/NATIVE.md).
 
 ## Tests
 
 `bun test` in `framework/`: routing (optional catch-alls, slots, intercepts), the cache, islands,
-actions, fonts, SEO files, and the whole `apps/features` app in-process (streaming with nonces,
-actions and CSRF, ISR, dynamicParams, intercepts, draft mode, i18n). Browser checks:
-`node apps/features/e2e.cjs` (22) and `node apps/features/hmr.cjs` (dev server, 6).
+actions, fonts, SEO files, MCP (schemas, the stdio server, `optz agents`), and the whole `apps/features` app in-process (streaming with nonces,
+actions and CSRF, ISR, dynamicParams, intercepts, draft mode, i18n, MCP over HTTP, llms.txt). Browser checks:
+`node apps/features/e2e.cjs` (25), `node apps/spa/e2e.cjs` (SPA mode, 7), `node portfolio/e2e.cjs`
+(30) and `node apps/features/hmr.cjs` (dev server, 6). CI runs all of them. The browser suites
+need Playwright with Chromium (`npm i -g playwright@1.63.0 && npx playwright install chromium`,
+or `NODE_PATH` pointing at an install).

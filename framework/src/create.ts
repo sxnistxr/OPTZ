@@ -1,6 +1,7 @@
 // `optz create <dir>`: a small app that shows every feature once.
 import { existsSync, mkdirSync, readdirSync, writeFileSync } from "node:fs";
 import { basename, dirname, join, relative } from "node:path";
+import { AGENT_CLIENTS, writeAgentFiles } from "./agents";
 
 export function create(dir: string) {
   if (existsSync(dir) && readdirSync(dir).length) {
@@ -20,7 +21,7 @@ export function create(dir: string) {
         type: "module",
         scripts: { dev: "optz dev", build: "optz build", start: "optz start", check: "optz check" },
         dependencies: { optz: optzDep, react: "19.3.1", "react-dom": "19.3.1" },
-        devDependencies: { "@types/bun": "1.4.4", "@types/react": "19.3.0", "@types/react-dom": "19.3.0" },
+        devDependencies: { "@types/bun": "1.4.4", "@types/react": "19.3.0", "@types/react-dom": "19.3.0", typescript: "7.0.2", tailwindcss: "4.3.3", "@tailwindcss/cli": "4.3.3" },
       },
       null,
       2,
@@ -200,6 +201,17 @@ export const POST = handler(async ({ body }: HandlerContext<{}, { message: strin
   return <h1 className="text-3xl font-semibold">Page not found</h1>;
 }
 `,
+    "app/mcp/greet.ts": `import { defineTool } from "optz/mcp";
+
+// MCP tool: AI clients (Claude, ChatGPT, Codex, Cursor...) connected to /mcp can call it.
+// The input schema types \`run\`'s arguments and is checked before it runs.
+export default defineTool({
+  description: "Greet someone by name. Returns the greeting.",
+  input: { type: "object", properties: { name: { type: "string", description: "Who to greet" } }, required: ["name"] },
+  annotations: { readOnlyHint: true },
+  run: ({ name }) => \`Hello, \${name}!\`,
+});
+`,
     "public/robots.txt": "User-agent: *\nAllow: /\n",
   };
   for (const [f, content] of Object.entries(files)) {
@@ -207,9 +219,14 @@ export const POST = handler(async ({ body }: HandlerContext<{}, { message: strin
     mkdirSync(dirname(p), { recursive: true });
     writeFileSync(p, content);
   }
+  // AGENTS.md, agent skills and MCP configs, so coding agents know how to work on it.
+  writeAgentFiles(dir, AGENT_CLIENTS, true);
   console.log(`optz: created ${dir}
 
   cd ${relative(process.cwd(), dir) || "."}
   bun install
-  bun run dev`);
+  bun run dev
+
+  AI: the app answers MCP at /mcp (tools in app/mcp), and AGENTS.md, skills and MCP configs
+  for Claude Code, Codex, Cursor, VS Code and Gemini CLI are in place (optz agents updates them).`);
 }

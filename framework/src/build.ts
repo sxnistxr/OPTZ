@@ -6,7 +6,7 @@
 //   dist/manifest.json      routes, render modes, chunks and redirects, for `optz start`
 import { brotliCompressSync, constants as zc, gzipSync } from "node:zlib";
 import { createHash } from "node:crypto";
-import { appendFileSync, cpSync, existsSync, mkdirSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { appendFileSync, cpSync, existsSync, mkdirSync, readdirSync, readFileSync, renameSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { dirname, join, relative } from "node:path";
 import type { BunPlugin } from "bun";
 import { writeTypes } from "./codegen";
@@ -16,7 +16,7 @@ import { actionStubs, scanActions } from "./actions";
 import { createApp } from "./handler";
 import { apiStaticPath, htmlPath, ogPath, type ManifestSlot } from "./manifest";
 import { islandId, registerIslandLoader } from "./plugin";
-import { dataPath, fillPattern, scanApi, scanRoutes, sortRoutes, type Route } from "./routes";
+import { dataPath, fillPattern, scanApi, scanMcp, scanRoutes, sortRoutes, type Route } from "./routes";
 import { bunPlatform } from "./server";
 import type { ApiModule, Hydrate, PageModule, RenderMode, ResolvedConfig } from "./types";
 
@@ -104,13 +104,26 @@ const FRAMEWORK_CSS =
   // the page stops taking clicks.
   "@media (scripting:enabled){@view-transition{navigation:auto}}::view-transition-old(root),::view-transition-new(root){animation-duration:.16s}" +
   "@media (prefers-reduced-motion:reduce){::view-transition-group(*),::view-transition-old(*),::view-transition-new(*){animation:none!important}}" +
-  ".optz-img{max-width:100%;height:auto}.optz-img-fill{position:absolute;inset:0;width:100%;height:100%;object-fit:cover}\n";
+  ".optz-img{max-width:100%;height:auto}.optz-img-fill{position:absolute;inset:0;width:100%;height:100%;object-fit:cover}" +
+  // Navigation moves focus to <main> (tabindex=-1) for screen readers: no ring for that.
+  "[tabindex='-1']:focus:not(:focus-visible){outline:none}" +
+  ".optz-sr-only{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0}\n";
+
+/** Build tools are optional peers: found in the project, else next to optz, else a clear error. */
+export function resolvePeer(spec: string, root: string, what: string, install: string): string {
+  for (const from of [root, import.meta.dir]) {
+    try {
+      return Bun.resolveSync(spec, from);
+    } catch {}
+  }
+  throw new Error(`optz: ${what} needs ${install.split(" ")[0]}. Install it: bun add -d ${install}`);
+}
 
 async function buildCss(root: string, config: ResolvedConfig, assetsDir: string, dev?: boolean, extra = ""): Promise<string[]> {
   const entry = join(root, config.css ?? "app/styles.css");
   let css: Buffer | string = FRAMEWORK_CSS + extra;
   if (existsSync(entry)) {
-    const cliPkg = Bun.resolveSync("@tailwindcss/cli/package.json", import.meta.dir);
+    const cliPkg = resolvePeer("@tailwindcss/cli/package.json", root, `${config.css ?? "app/styles.css"} (Tailwind CSS)`, "tailwindcss @tailwindcss/cli");
     const pkg = JSON.parse(readFileSync(cliPkg, "utf8"));
     const bin = join(dirname(cliPkg), typeof pkg.bin === "string" ? pkg.bin : (Object.values(pkg.bin)[0] as string));
     const tmp = join(assetsDir, "styles.tmp.css");
@@ -128,7 +141,10 @@ async function buildCss(root: string, config: ResolvedConfig, assetsDir: string,
 export async function build({ root, config, dev, exportOnly }: BuildOptions): Promise<Manifest> {
   const t0 = performance.now();
   const routesDir = join(root, "app/routes");
-  const out = outDirFor(root, dev);
+  // Production builds go to dist.next and replace dist only when everything succeeded, so a
+  // failed build leaves the last good one in place (and a running server's files untouched).
+  const final = outDirFor(root, dev);
+  const out = dev ? final : `${final}.next`;
   const staticDir = join(out, "static");
   const assetsDir = join(staticDir, "assets");
   const gen = join(root, ".optz/gen");
@@ -145,6 +161,14 @@ export async function build({ root, config, dev, exportOnly }: BuildOptions): Pr
   writeTypes(root, pages, apis);
   const all = sortRoutes([...pages, ...apis]);
   const actions = config.features.actions ? scanActions(root) : {};
+  const mcpFiles = config.features.mcp ? scanMcp(root) : [];
+  // Load them now so a broken definition fails the build, not the first AI client.
+  let mcpCounts = { tools: 0, prompts: 0, resources: 0 };
+  if (mcpFiles.length) {
+    const { createMcpServer } = await import("./mcp");
+    const s = createMcpServer({ config, modules: await Promise.all(mcpFiles.map(async (file) => ({ file, mod: await import(join(root, file)) }))) });
+    mcpCounts = { tools: s.tools.size, prompts: s.prompts.size, resources: s.resources.length };
+  }
   if (!islandsMode && (table.slots.length || table.intercepts.length)) throw new Error("parallel and intercepting routes need client.mode \"islands\"");
   // Prerendered pages arrive by real navigation, which can't keep parallel slots or open an
   // intercepted route in place, so apps with either keep the HTML-swap navigation.
@@ -175,6 +199,7 @@ export async function build({ root, config, dev, exportOnly }: BuildOptions): Pr
       ...apis.filter((r) => !apiMods.get(r)!.prerender).map((r) => `  ${r.pattern} (API route)`),
       ...dynamic.map((r) => `  ${r.pattern} (rendered at request time)`),
       ...Object.values(actions).map((a) => `  ${a.file} (Server Actions)`),
+      ...mcpFiles.map((f) => `  ${f} (MCP)`),
     ];
     if (needServer.length) throw new Error(`optz export makes a static site, but these need a server:\n${needServer.join("\n")}`);
   }
@@ -209,7 +234,7 @@ export async function build({ root, config, dev, exportOnly }: BuildOptions): Pr
     // Speculation rules (dev: off, so edits are never served from a stale prerender).
     const speculation = speculate;
     writeFileSync(entryFile, `${hot ? 'import "/assets/dev-vendor/refresh.js";\n' : ""}import { startIslands } from "optz/islands";\nstartIslands({\n${lines.join("\n")}\n}, ${JSON.stringify({ navigation: config.client.navigation, prefetch: config.client.prefetch, speculation })});\n`);
-    const result = await bundle([entryFile, ...wrappers], assetsDir, dev, plugins, hot);
+    const result = await bundle([entryFile, ...wrappers], assetsDir, dev, plugins, hot, config);
     urlOf = (file) => outputUrl(result, assetsDir, file);
     files.forEach((f, i) => (islands[islandId(root, f)] = urlOf(wrappers[i])!));
   } else {
@@ -235,7 +260,7 @@ export async function build({ root, config, dev, exportOnly }: BuildOptions): Pr
         })
         .join("\n")}\n], ${JSON.stringify(i18n ?? null)});\n`,
     );
-    const result = await bundle([entryFile, ...pageW, ...layoutW, ...errorW], assetsDir, dev, [...plugins, stripServerExports(routesDir)]);
+    const result = await bundle([entryFile, ...pageW, ...layoutW, ...errorW], assetsDir, dev, [...plugins, stripServerExports(routesDir)], false, config);
     urlOf = (file) => outputUrl(result, assetsDir, file);
     pages.forEach((r, i) => preloadOf.set(r, [urlOf(pageW[i]), ...r.layouts.map((l) => urlOf(layoutW[layoutFiles.indexOf(l)]))].filter(Boolean) as string[]));
   }
@@ -291,6 +316,7 @@ export async function build({ root, config, dev, exportOnly }: BuildOptions): Pr
     actions,
     fonts: fonts.preload,
     apiStatic: {},
+    ...(mcpFiles.length ? { mcp: mcpFiles } : {}),
   };
 
   // ---- pre-render static pages, client shells, API routes and OG images (production only) ----
@@ -337,17 +363,17 @@ export async function build({ root, config, dev, exportOnly }: BuildOptions): Pr
       }
       for (const locale of locales) {
         const sets = page.paths ? await page.paths({ locale }) : needsPaths ? [] : [{}];
-        for (const params of sets) {
+        const one = async (params: Record<string, string>) => {
           const path = localized(fillPattern(mr.segments, params), locale);
           const res = await get(path);
           if (res.status >= 300 && res.status < 400) {
             const location = res.headers.get("Location") ?? "/";
             manifest.redirects[path] = { status: res.status, location };
             write(join(staticDir, dataPath(path)), JSON.stringify({ redirect: location }));
-            continue;
+            return;
           }
           if (res.status >= 500) throw new Error(`${mr.file}: rendering ${path} failed (see the error above)`);
-          if (res.status !== 200) continue;
+          if (res.status !== 200) return;
           write(join(staticDir, htmlPath(path)), await res.text());
           if (!islandsMode) {
             const d = await get(dataPath(path));
@@ -358,7 +384,9 @@ export async function build({ root, config, dev, exportOnly }: BuildOptions): Pr
             if (og.status === 200) write(join(staticDir, ogPath(path)), new Uint8Array(await og.arrayBuffer()));
           }
           rendered++;
-        }
+        };
+        // A few at a time: loaders that wait on I/O (a CMS, a database) overlap.
+        for (let i = 0; i < sets.length; i += PRERENDER_CONCURRENCY) await Promise.all(sets.slice(i, i + PRERENDER_CONCURRENCY).map(one));
       }
     }
     if (manifest.notFound) {
@@ -370,14 +398,42 @@ export async function build({ root, config, dev, exportOnly }: BuildOptions): Pr
     }
     const { buildSeoFiles } = await import("./seo");
     rendered += await buildSeoFiles(root, config, staticDir);
+    const { buildLlmsFiles } = await import("./llms");
+    rendered += await buildLlmsFiles(root, config, staticDir);
+    // Static hosts never read the manifest: redirects become a page that forwards (any host)
+    // and a _redirects file (Netlify, Cloudflare Pages).
+    const redirects = Object.entries(manifest.redirects);
+    if (exportOnly && redirects.length) {
+      const esc = (u: string) => u.replace(/[&<>"]/g, (c) => `&#${c.charCodeAt(0)};`);
+      for (const [from, r] of redirects) {
+        write(
+          join(staticDir, htmlPath(from)),
+          `<!doctype html><meta charset="utf-8"><title>Moved</title><meta http-equiv="refresh" content="0; url=${esc(r.location)}"><link rel="canonical" href="${esc(r.location)}"><p><a href="${esc(r.location)}">Moved here</a></p>\n`,
+        );
+      }
+      appendFileSync(join(staticDir, "_redirects"), redirects.map(([from, r]) => `${from} ${r.location} ${r.status === 308 ? 301 : r.status === 307 ? 302 : r.status}`).join("\n") + "\n");
+      console.log(`optz: ${redirects.length} redirect${redirects.length === 1 ? "" : "s"} as forwarding pages and _redirects:\n${redirects.map(([f, r]) => `  ${f} -> ${r.location} (${r.status})`).join("\n")}`);
+    }
     precompress(staticDir);
   }
   writeFileSync(join(out, "manifest.json"), JSON.stringify(manifest, null, 1));
+  if (out !== final) {
+    const old = `${final}.old`;
+    rmSync(old, { recursive: true, force: true });
+    if (existsSync(final)) renameSync(final, old);
+    renameSync(out, final);
+    rmSync(old, { recursive: true, force: true });
+  }
   const ms = Math.round(performance.now() - t0);
   const extras = [
     Object.keys(actions).length && `${Object.values(actions).reduce((n, a) => n + a.exports.length, 0)} actions`,
     table.slots.length && `${table.slots.length} slots`,
     fonts.preload.length && `${fonts.preload.length} fonts`,
+    mcpFiles.length &&
+      `MCP ${Object.entries(mcpCounts)
+        .filter(([, n]) => n)
+        .map(([k, n]) => `${n} ${n === 1 ? k.slice(0, -1) : k}`)
+        .join(", ")}`,
   ].filter(Boolean);
   console.log(
     `optz: built ${pages.length} pages, ${apis.length} API routes, ${Object.keys(islands).length} islands${extras.length ? ", " + extras.join(", ") : ""} (${config.client.mode}, ${config.client.runtime})${dev ? "" : `, pre-rendered ${rendered}`} in ${ms} ms`,
@@ -385,7 +441,10 @@ export async function build({ root, config, dev, exportOnly }: BuildOptions): Pr
   return manifest;
 }
 
-async function bundle(entrypoints: string[], outdir: string, dev: boolean | undefined, plugins: BunPlugin[], reactFastRefresh = false) {
+/** Pages of one route pre-rendered at the same time. */
+const PRERENDER_CONCURRENCY = 8;
+
+async function bundle(entrypoints: string[], outdir: string, dev: boolean | undefined, plugins: BunPlugin[], reactFastRefresh = false, config?: ResolvedConfig) {
   const result = await Bun.build({
     reactFastRefresh,
     entrypoints,
@@ -396,7 +455,11 @@ async function bundle(entrypoints: string[], outdir: string, dev: boolean | unde
     minify: !dev,
     sourcemap: dev ? "inline" : "none",
     naming: { entry: "[name]-[hash].[ext]", chunk: "c-[hash].[ext]", asset: "[name]-[hash].[ext]" },
-    define: { "process.env.NODE_ENV": JSON.stringify(dev ? "development" : "production") },
+    define: {
+      "process.env.NODE_ENV": JSON.stringify(dev ? "development" : "production"),
+      // <Image> in islands offers the same widths the optimizer produces.
+      ...(config?.images?.sizes ? { "globalThis.__OPTZ_IMAGE_SIZES__": JSON.stringify(config.images.sizes) } : {}),
+    },
     plugins,
   });
   if (!result.success) throw new AggregateError(result.logs, "client build failed");

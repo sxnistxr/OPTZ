@@ -56,6 +56,17 @@ export interface Manifest {
   fonts: string[];
   /** Prerendered API responses: URL path -> static file and content type. */
   apiStatic: Record<string, { file: string; type: string }>;
+  /** MCP tools, prompts and resources: files in app/mcp. */
+  mcp?: string[];
+}
+
+export const MANIFEST_VERSION = 3;
+
+/** Parses dist/manifest.json, refusing one written by another optz version. */
+export function parseManifest(text: string): Manifest {
+  const m = JSON.parse(text) as Manifest;
+  if (m?.version !== MANIFEST_VERSION) throw new Error(`optz: dist/ was built by a different optz version (manifest ${m?.version ?? "?"}, expected ${MANIFEST_VERSION}). Run \`optz build\` again.`);
+  return m;
 }
 
 export const outDirFor = (root: string, dev?: boolean) => `${root.replace(/\/$/, "")}/${dev ? ".optz/dev" : "dist"}`;

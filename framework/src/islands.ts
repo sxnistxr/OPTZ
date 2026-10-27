@@ -3,6 +3,7 @@
 // link clicks into HTML swaps: fetch the next page, replace #__optz, hydrate its islands.
 // `refresh()` (after a Server Action revalidates, or `useRouter().refresh()`) re-fetches the
 // current page and keeps every island whose props didn't change mounted, state and all.
+import { afterNavigation, enhanceDialogs, focusHash, handleInPageLinks, rememberOpener, replaceHeadTags } from "./a11y";
 import { matchSegments, type Segment } from "./match";
 import { loadMarkedScripts } from "./script-loader";
 import type { LocaleInfo } from "./runtime";
@@ -83,6 +84,8 @@ function hydrateAll(registry: Record<string, IslandEntry>, root: ParentNode) {
     } else go();
   });
   loadMarkedScripts(root);
+  // Escape or a close button: back to where the modal was opened from (or its close href).
+  enhanceDialogs(root, (href) => (href ? navigate(href) : history.length > 1 ? history.back() : navigate("/")));
 }
 
 let registryRef: Record<string, IslandEntry> = {};
@@ -142,18 +145,16 @@ async function applyHtml(html: string | null, url: URL, opts: { pop?: boolean; r
   document.title = doc.title;
   document.documentElement.lang = doc.documentElement.lang;
   // Per-page head tags follow the page: description, canonical, Open Graph, Twitter, hreflang.
-  const perPage = 'meta[name="description"], meta[name="robots"], meta[name="keywords"], link[rel="canonical"], meta[property^="og:"], meta[property^="article:"], meta[name^="twitter:"], link[rel="alternate"]';
-  document.head.querySelectorAll(perPage).forEach((el) => el.remove());
-  const before = document.head.querySelector('link[rel="stylesheet"]');
-  doc.head.querySelectorAll(perPage).forEach((el) => document.head.insertBefore(document.importNode(el, true), before));
+  replaceHeadTags(doc.head);
   const boot = doc.getElementById("__optz_boot");
   const myBoot = document.getElementById("__optz_boot");
   if (boot && myBoot) myBoot.textContent = boot.textContent;
   swap(here, next, !!opts.keep);
   if (opts.scroll === false) return;
   if (opts.pop) scrollTo(0, history.state?.scroll ?? 0);
-  else if (url.hash) document.getElementById(decodeURIComponent(url.hash.slice(1)))?.scrollIntoView();
-  else scrollTo(0, 0);
+  else if (!url.hash) scrollTo(0, 0);
+  // Focus and announce the new page like a full load would (a refresh keeps focus where it is).
+  if (!opts.keep) afterNavigation(opts.pop ? "" : url.hash);
 }
 
 export async function navigate(href: string, opts: { pop?: boolean; replace?: boolean } = {}) {
@@ -161,9 +162,10 @@ export async function navigate(href: string, opts: { pop?: boolean; replace?: bo
   if (url.origin !== location.origin) return void location.assign(url.href);
   if (!opts.pop && url.pathname === location.pathname && url.search === location.search && url.hash) {
     history.pushState(null, "", url.href);
-    return void document.getElementById(decodeURIComponent(url.hash.slice(1)))?.scrollIntoView();
+    return void focusHash(url.hash);
   }
   const id = ++seq;
+  rememberOpener();
   document.documentElement.classList.add("optz-navigating");
   const html = await fetchHtml(url.pathname + url.search);
   if (id !== seq) return;
@@ -199,6 +201,8 @@ const speculates = () => typeof HTMLScriptElement !== "undefined" && (HTMLScript
 export function startIslands(registry: Record<string, IslandEntry>, opts: { navigation: boolean; prefetch: boolean; speculation?: boolean }) {
   registryRef = registry;
   (globalThis as { __optz?: unknown }).__optz = { navigate: (h: string) => (opts.navigation ? navigate(h) : location.assign(h)), refresh };
+  // Skip links and other in-page links move focus, however the page navigates.
+  handleInPageLinks();
   hydrateAll(registry, document);
   const boot = readBoot(document);
   if (boot?.dev) import("./dev-client").then((m) => m.connect({ refresh, roots, registry: () => registryRef }));

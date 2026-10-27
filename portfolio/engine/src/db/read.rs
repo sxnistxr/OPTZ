@@ -54,7 +54,7 @@ impl Reader {
         db.busy_timeout(5000);
         db.exec(
             "PRAGMA journal_mode=WAL; PRAGMA query_only=1; PRAGMA mmap_size=1073741824; \
-             PRAGMA cache_size=-16384; PRAGMA temp_store=MEMORY;",
+             PRAGMA cache_size=-16384; PRAGMA temp_store=MEMORY; PRAGMA foreign_keys=ON;",
         )?;
         Ok(Reader {
             begin: db.prepare("BEGIN")?,
@@ -267,8 +267,14 @@ mod tests {
             r.feed(&mut out).unwrap();
             r.end_batch();
         }
-        for (name, s) in [("begin", &r.begin), ("commit", &r.commit), ("post", &r.post), ("feed_ids", &r.feed_ids),
-                          ("feed_rows", &r.feed_rows), ("feed_likes", &r.feed_likes)] {
+        for (name, s) in [
+            ("begin", &r.begin),
+            ("commit", &r.commit),
+            ("post", &r.post),
+            ("feed_ids", &r.feed_ids),
+            ("feed_rows", &r.feed_rows),
+            ("feed_likes", &r.feed_likes),
+        ] {
             eprintln!("{name}: {} reprepares", s.reprepares());
         }
         assert_eq!(r.post.reprepares() + r.feed_ids.reprepares(), 0);
@@ -283,9 +289,12 @@ mod tests {
         let mut r = Reader::open(&path).unwrap();
         let mut group = r.db.prepare("SELECT post_id, count(*) FROM likes WHERE post_id BETWEEN ?1 AND ?2 GROUP BY post_id").unwrap();
         let mut point = r.db.prepare("SELECT count(*) FROM likes WHERE post_id = ?1").unwrap();
-        let mut ordered = r.db.prepare(
-            "SELECT p.id, p.body, p.created_at, u.username FROM posts p JOIN users u ON u.id = p.user_id \
-             ORDER BY p.created_at DESC, p.id DESC LIMIT 20").unwrap();
+        let mut ordered =
+            r.db.prepare(
+                "SELECT p.id, p.body, p.created_at, u.username FROM posts p JOIN users u ON u.id = p.user_id \
+             ORDER BY p.created_at DESC, p.id DESC LIMIT 20",
+            )
+            .unwrap();
         let n = 20_000;
         let mut out = Vec::with_capacity(8192);
         let mut want = Vec::new();
@@ -301,7 +310,10 @@ mod tests {
             let us = t.elapsed().as_secs_f64() * 1e6 / n as f64;
             eprintln!("{name:<36} {us:6.2} us/feed");
         };
-        time("exact (20 correlated counts)", &mut |r, o| { r.txn().unwrap(); r.feed_exact(o).unwrap() });
+        time("exact (20 correlated counts)", &mut |r, o| {
+            r.txn().unwrap();
+            r.feed_exact(o).unwrap()
+        });
         time("range + likes scan counted in Rust", &mut |r, o| r.feed(o).unwrap());
         time("ids only (F1)", &mut |r, _| {
             r.txn().unwrap();
@@ -315,7 +327,9 @@ mod tests {
             s.bind_i64(1, lo);
             s.bind_i64(2, hi);
             let mut c = 0;
-            while s.step().unwrap() { c += s.int(0); }
+            while s.step().unwrap() {
+                c += s.int(0);
+            }
             s.reset();
             std::hint::black_box(c);
         });
@@ -324,7 +338,9 @@ mod tests {
             group.bind_i64(1, lo);
             group.bind_i64(2, hi);
             let mut c = 0;
-            while group.step().unwrap() { c += group.int(1); }
+            while group.step().unwrap() {
+                c += group.int(1);
+            }
             group.reset();
             std::hint::black_box(c);
         });
@@ -345,14 +361,18 @@ mod tests {
             s.bind_i64(1, lo);
             s.bind_i64(2, hi);
             let mut c = 0;
-            while s.step().unwrap() { c += s.text(1).len(); }
+            while s.step().unwrap() {
+                c += s.text(1).len();
+            }
             s.reset();
             std::hint::black_box(c);
         });
         time("rows: index walk + join (no F1)", &mut |r, _| {
             r.txn().unwrap();
             let mut c = 0;
-            while ordered.step().unwrap() { c += ordered.text(1).len(); }
+            while ordered.step().unwrap() {
+                c += ordered.text(1).len();
+            }
             ordered.reset();
             std::hint::black_box(c);
         });

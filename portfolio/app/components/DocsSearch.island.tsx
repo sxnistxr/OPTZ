@@ -83,33 +83,40 @@ export default function DocsSearch() {
           else if (e.key === "Enter" && hits[active]) (e.preventDefault(), go(hits[active].href));
           else if (e.key === "Escape") setQ("");
         }}
+        role="combobox"
+        aria-expanded={!!q && hits.length > 0}
+        aria-autocomplete="list"
         aria-controls="docs-search-results"
-        aria-activedescendant={hits.length ? `docs-hit-${active}` : undefined}
+        aria-activedescendant={q && hits.length ? `docs-hit-${active}` : undefined}
         className="block w-full rounded-md border border-rule bg-paper px-3 py-2 text-[0.92rem] placeholder:text-muted focus:border-ink focus:outline-none"
       />
-      {q && (
-        <ul id="docs-search-results" role="listbox" className="absolute inset-x-0 top-full z-10 mt-1 overflow-hidden rounded-md border border-rule bg-paper shadow-lg lg:w-[22rem]">
-          {docs === null ? (
-            <li className="px-3 py-2 text-sm text-muted">Loading the index</li>
-          ) : hits.length === 0 ? (
-            <li className="px-3 py-2 text-sm text-muted">Nothing matches "{q}". Try fewer words.</li>
-          ) : (
-            hits.map((h, i) => (
-              <li key={h.href} id={`docs-hit-${i}`} role="option" aria-selected={i === active}>
-                <a
-                  href={h.href}
-                  onMouseEnter={() => setActive(i)}
-                  onClick={() => setQ("")}
-                  className={`block px-3 py-2 ${i === active ? "bg-panel" : ""}`}
-                >
-                  <span className="block text-[0.92rem] font-medium leading-snug">{h.title}</span>
-                  <span className="block text-xs text-muted">{h.context}</span>
-                </a>
-              </li>
-            ))
-          )}
-        </ul>
-      )}
+      {/* Options are plain (no links inside them): click or Enter opens one. */}
+      <ul
+        id="docs-search-results"
+        role="listbox"
+        aria-label="Search results"
+        hidden={!q || hits.length === 0}
+        className="absolute inset-x-0 top-full z-10 mt-1 overflow-hidden rounded-md border border-rule bg-paper shadow-lg lg:w-[22rem]"
+      >
+        {q &&
+          hits.map((h, i) => (
+            <li
+              key={h.href}
+              id={`docs-hit-${i}`}
+              role="option"
+              aria-selected={i === active}
+              onMouseEnter={() => setActive(i)}
+              onClick={() => (setQ(""), go(h.href))}
+              className={`block cursor-pointer px-3 py-2 ${i === active ? "bg-panel" : ""}`}
+            >
+              <span className="block text-[0.92rem] font-medium leading-snug">{h.title}</span>
+              <span className="block text-xs text-muted">{h.context}</span>
+            </li>
+          ))}
+      </ul>
+      <p role="status" className={q && hits.length === 0 ? "absolute inset-x-0 top-full z-10 mt-1 rounded-md border border-rule bg-paper px-3 py-2 text-sm text-muted shadow-lg lg:w-[22rem]" : "sr-only"}>
+        {!q ? "" : docs === null ? "Loading the index" : hits.length === 0 ? `Nothing matches "${q}". Try fewer words.` : `${hits.length} result${hits.length === 1 ? "" : "s"}`}
+      </p>
     </div>
   );
 }

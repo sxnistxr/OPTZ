@@ -7,13 +7,17 @@ const nav: [Href, string][] = [
   ["/lab", "Lab"],
   ["/blog", "Writing"],
   ["/docs", "Docs"],
+  ["/docs/ai", "AI"],
 ];
 
 export const head = (): Head => ({ title: site.title, description: site.about, openGraph: { siteName: site.title } });
 
 export default function Layout({ children }: { children: ReactNode }) {
   const { pathname } = useRouter();
-  const current = (href: string) => (href === "/" ? pathname === "/" : pathname === href || pathname.startsWith(href + "/"));
+  const matches = (href: string) => (href === "/" ? pathname === "/" : pathname === href || pathname.startsWith(href + "/"));
+  // The longest matching link is current, so /docs/ai marks "AI", not "Docs" too.
+  const here = nav.map(([h]) => h).filter(matches).sort((a, b) => b.length - a.length)[0];
+  const current = (href: string) => href === here;
   // Docs pages have their own menu, so the site nav moves to a bar on top and the page gets
   // the full width for menu, article and "on this page".
   const docs = pathname === "/docs" || pathname.startsWith("/docs/");

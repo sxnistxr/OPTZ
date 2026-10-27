@@ -20,6 +20,7 @@ pub const ROW: c_int = 100;
 pub const DONE: c_int = 101;
 pub const CONSTRAINT: c_int = 19;
 pub const CONSTRAINT_CHECK: c_int = CONSTRAINT | (1 << 8);
+pub const CONSTRAINT_FOREIGNKEY: c_int = CONSTRAINT | (3 << 8);
 
 const OPEN_READWRITE: c_int = 0x02;
 const OPEN_NOMUTEX: c_int = 0x8000;
@@ -37,13 +38,7 @@ unsafe extern "C" {
     fn sqlite3_initialize() -> c_int;
     fn sqlite3_open_v2(f: *const c_char, db: *mut *mut RawDb, flags: c_int, vfs: *const c_char) -> c_int;
     fn sqlite3_close_v2(db: *mut RawDb) -> c_int;
-    fn sqlite3_exec(
-        db: *mut RawDb,
-        sql: *const c_char,
-        cb: *const c_void,
-        arg: *mut c_void,
-        err: *mut *mut c_char,
-    ) -> c_int;
+    fn sqlite3_exec(db: *mut RawDb, sql: *const c_char, cb: *const c_void, arg: *mut c_void, err: *mut *mut c_char) -> c_int;
     fn sqlite3_prepare_v3(
         db: *mut RawDb,
         sql: *const c_char,
@@ -69,13 +64,7 @@ unsafe extern "C" {
     fn sqlite3_extended_errcode(db: *mut RawDb) -> c_int;
     fn sqlite3_busy_timeout(db: *mut RawDb, ms: c_int) -> c_int;
     fn sqlite3_wal_hook(db: *mut RawDb, cb: Option<WalHook>, arg: *mut c_void) -> *mut c_void;
-    fn sqlite3_wal_checkpoint_v2(
-        db: *mut RawDb,
-        name: *const c_char,
-        mode: c_int,
-        log: *mut c_int,
-        ckpt: *mut c_int,
-    ) -> c_int;
+    fn sqlite3_wal_checkpoint_v2(db: *mut RawDb, name: *const c_char, mode: c_int, log: *mut c_int, ckpt: *mut c_int) -> c_int;
 }
 
 /// An SQLite error: extended result code plus the connection's message at the time.
@@ -146,9 +135,8 @@ impl Db {
 
     pub fn prepare(&self, sql: &str) -> Result<Stmt> {
         let mut raw = ptr::null_mut();
-        let rc = unsafe {
-            sqlite3_prepare_v3(self.raw, sql.as_ptr().cast(), sql.len() as c_int, PREPARE_PERSISTENT, &mut raw, ptr::null_mut())
-        };
+        let rc =
+            unsafe { sqlite3_prepare_v3(self.raw, sql.as_ptr().cast(), sql.len() as c_int, PREPARE_PERSISTENT, &mut raw, ptr::null_mut()) };
         if rc != OK || raw.is_null() {
             return Err(self.error(rc));
         }

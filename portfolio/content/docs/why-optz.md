@@ -10,15 +10,18 @@ Full method and raw numbers: [optz vs Next.js](/docs/vs-nextjs).
 
 | | optz | Next.js 16 |
 |---|---:|---:|
-| Static page | **~55,000 req/s** | ~400 req/s |
-| Slowest 1% of requests | **~4 ms** | ~1 s |
-| Memory under load | **52 MB** | 333 MB |
-| JavaScript on a blog post | **2.9 KB** | 145 KB |
-| Cold start | **74 ms** | 692 ms |
-| Build | **1.8 s** | 9.5 s |
+| Static page (req/s, median of 3 runs) | **26,366** | 438 |
+| Slowest 1% of requests (at saturation) | **~5 ms** | ~1 s |
+| Memory under load | **47 MB** | 331 MB |
+| JavaScript on a blog post | **4.0 KB** | 142 KB |
+| Cold start (median of 5) | **~90 ms** | ~720 ms |
+| Build (median of 3) | **3.0 s** | 10.3 s |
 
-And against nginx, written in C, serving the same files: the same speed
-([would C be faster?](/docs/native)).
+The ratio (40–60× on this site's pages) is what carries over; the absolute req/s depends on the
+CPU.
+
+And against nginx, written in C, serving the same files: nginx is 20-30% faster on pages, optz
+sends fewer bytes (brotli), nginx uses less memory ([would C be faster?](/docs/native)).
 
 ## Why it's fast
 
@@ -43,7 +46,7 @@ worker. [Feature by feature](/docs/vs-nextjs#features).
 
 - **Next.js**: the most complete ecosystem, and the RSC wire format (client router cache,
   Partial Prerendering, `"use cache"`). optz covers the features apps like this one use, at about
-  100× the throughput per core.
+  40–60× the throughput per core.
 - **Astro**: the closest idea (islands, HTML by default, actions). optz is React all the way
   down (pages are React components, not a separate template language), types routes and API
   responses end to end, and has ISR and revalidation built into its own server instead of

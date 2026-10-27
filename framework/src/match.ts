@@ -9,7 +9,16 @@ export type Segment =
   /** [[...name]]: zero or more segments (last only) */
   | { kind: "optional"; name: string };
 
-/** Matches a pathname against segments. Returns params or null. */
+/** decodeURIComponent that answers null for malformed input ("%", "%zz") instead of throwing. */
+export function safeDecode(s: string): string | null {
+  try {
+    return decodeURIComponent(s);
+  } catch {
+    return null;
+  }
+}
+
+/** Matches a pathname against segments. Returns params or null (also for malformed escapes). */
 export function matchSegments(segments: Segment[], pathname: string): Params | null {
   const parts = pathname.split("/").filter(Boolean);
   const params: Params = {};
@@ -17,7 +26,9 @@ export function matchSegments(segments: Segment[], pathname: string): Params | n
     const s = segments[i];
     if (s.kind === "rest" || s.kind === "optional") {
       if (i >= parts.length) return s.kind === "optional" ? params : null;
-      params[s.name] = parts.slice(i).map(decodeURIComponent).join("/");
+      const decoded = parts.slice(i).map(safeDecode);
+      if (decoded.includes(null)) return null;
+      params[s.name] = decoded.join("/");
       return params;
     }
     const p = parts[i];
@@ -25,7 +36,9 @@ export function matchSegments(segments: Segment[], pathname: string): Params | n
     if (s.kind === "static") {
       if (p !== s.value) return null;
     } else {
-      params[s.name] = decodeURIComponent(p);
+      const v = safeDecode(p);
+      if (v === null) return null;
+      params[s.name] = v;
     }
   }
   return parts.length === segments.length ? params : null;
@@ -62,7 +75,33 @@ export function inScope(scope: Segment[], pathname: string): boolean {
     if (s.kind === "rest") return parts.length > i;
     if (s.kind === "optional") return true;
     if (parts[i] === undefined) return false;
-    if (s.kind === "static" && decodeURIComponent(parts[i]) !== s.value) return false;
+    if (s.kind === "static" && safeDecode(parts[i]) !== s.value) return false;
   }
   return true;
 }
+
+/** "/blog/[slug]", "/docs/[...rest]", "/shop/[[...path]]" -> segments (route syntax, for config
+ *  patterns: redirects, rewrites, headers and middleware matchers). */
+export function compilePattern(pattern: string): Segment[] {
+  return pattern
+    .split("/")
+    .filter(Boolean)
+    .map((s): Segment => {
+      let m = s.match(/^\[\[\.\.\.(\w+)\]\]$/);
+      if (m) return { kind: "optional", name: m[1] };
+      m = s.match(/^\[\.\.\.(\w+)\]$/);
+      if (m) return { kind: "rest", name: m[1] };
+      m = s.match(/^\[(\w+)\]$/);
+      if (m) return { kind: "param", name: m[1] };
+      return { kind: "static", value: s };
+    });
+}
+
+/** Fills [name] and [...name] in a destination ("/new/[slug]", "https://x.dev/[...rest]") with
+ *  params; single segments are escaped, catch-alls keep their slashes. */
+export function fillDestination(dest: string, params: Params): string {
+  return dest
+    .replace(/\[\[?\.\.\.(\w+)\]?\]/g, (_m, k: string) => (params[k] ?? "").split("/").map(encodeURIComponent).join("/"))
+    .replace(/\[(\w+)\]/g, (_m, k: string) => encodeURIComponent(params[k] ?? ""));
+}
+
