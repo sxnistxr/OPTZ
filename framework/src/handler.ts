@@ -40,10 +40,19 @@ export interface AppOptions {
   prerender?: boolean;
 }
 
+/** What the platform passes per request: edge workers' bindings and waitUntil(). */
+export interface RequestPlatform {
+  env?: Record<string, unknown>;
+  waitUntil?: (p: Promise<unknown>) => void;
+}
+
 export interface App {
-  fetch(req: Request): Promise<Response>;
+  fetch(req: Request, platform?: RequestPlatform): Promise<Response>;
   cache: ResponseCache | null;
 }
+
+/** Hop-by-hop headers (RFC 9110) and forwarding headers a client could forge: never passed on. */
+const HOP = /^(connection|keep-alive|proxy-authenticate|proxy-authorization|proxy-connection|te|trailer|transfer-encoding|upgrade|host|forwarded|x-forwarded-.*|x-real-ip)$/i;
 
 const jsonRes = (v: unknown, status = 200, extra?: Record<string, string>) =>
   new Response(JSON.stringify(v), { status, headers: { "Content-Type": "application/json", "Cache-Control": "no-cache", ...extra } });
@@ -103,7 +112,50 @@ export async function createApp({ manifest, config, files, platform, middleware 
   // Loaded on first use: a fully static site never pays for React's server renderer.
   let renderMod: Promise<typeof import("./render")> | undefined;
   const render = () => (renderMod ??= import("./render"));
-  const proxies = Object.entries(config.proxy ?? {}).sort((a, b) => b[0].length - a[0].length);
+  const proxies = Object.entries(config.proxy ?? {})
+    .sort((a, b) => b[0].length - a[0].length)
+    .map(([prefix, rule]) => ({ prefix, rule, target: new URL(rule.target) }));
+  const proxyFor = (p: string) => proxies.find((x) => p === x.prefix || p.startsWith(x.prefix + "/"));
+
+  /** Forwards a request to a proxy target: the target's path is kept, hop-by-hop and
+   *  client-sent forwarding headers are dropped (and set from what this server knows), bodies
+   *  are capped, and a target that doesn't answer in time is a 504. */
+  async function proxy(req: Request, url: URL, x: (typeof proxies)[number]): Promise<Response> {
+    const { prefix, rule, target } = x;
+    const rest = rule.strip ? url.pathname.slice(prefix.length) || "/" : url.pathname;
+    const dest = new URL(target.pathname.replace(/\/+$/, "") + rest + url.search, target.origin);
+    const limit = rule.maxBodySize ?? config.server.maxRequestBodySize;
+    const declared = Number(req.headers.get("content-length") ?? 0);
+    if (declared > limit) return jsonRes({ error: "request body too large" }, 413);
+    const headers = new Headers();
+    req.headers.forEach((v, k) => {
+      if (!HOP.test(k)) headers.set(k, v);
+    });
+    const trusted = config.server.trustProxy;
+    const xff = trusted ? req.headers.get("x-forwarded-for") : null;
+    if (xff) headers.set("X-Forwarded-For", xff);
+    headers.set("X-Forwarded-Host", (trusted && req.headers.get("x-forwarded-host")) || url.host);
+    headers.set("X-Forwarded-Proto", (trusted && req.headers.get("x-forwarded-proto")) || url.protocol.slice(0, -1));
+    const hasBody = req.method !== "GET" && req.method !== "HEAD" && req.body;
+    let body: BodyInit | undefined;
+    if (hasBody) {
+      const buf = new Uint8Array(await req.arrayBuffer());
+      if (buf.length > limit) return jsonRes({ error: "request body too large" }, 413);
+      body = buf;
+    }
+    try {
+      const res = await globalThis.fetch(dest, { method: req.method, headers, body, redirect: "manual", signal: AbortSignal.timeout(rule.timeoutMs ?? 30_000) });
+      // A copy with mutable headers, so middleware can still add its own.
+      const out = new Headers();
+      res.headers.forEach((v, k) => {
+        if (!/^(connection|keep-alive|transfer-encoding|content-encoding|content-length)$/i.test(k)) out.append(k, v);
+      });
+      return new Response(res.body, { status: res.status, statusText: res.statusText, headers: out });
+    } catch (e) {
+      const timedOut = (e as Error)?.name === "TimeoutError";
+      return jsonRes({ error: timedOut ? `upstream ${target.origin} didn't answer in time` : `upstream ${target.origin} is not reachable` }, timedOut ? 504 : 502);
+    }
+  }
   const assets = (r?: ManifestRoute) => ({ entry: manifest.entry, css: manifest.css, preload: r?.preload ?? [], islands: manifest.islands, fonts: manifest.fonts, dev, build: manifest.builtAt });
   const i18n = config.i18n;
 
@@ -571,6 +623,10 @@ export async function createApp({ manifest, config, files, platform, middleware 
   async function route(ctx: MiddlewareContext, s: RequestStore): Promise<Response> {
     const { request: req, url } = ctx;
     const p = url.pathname;
+    if (proxies.length) {
+      const px = proxyFor(p);
+      if (px) return proxy(req, url, px);
+    }
     if (p.length > 1 && p.endsWith("/")) return new Response(null, { status: 308, headers: { Location: p.replace(/\/+$/, "") + url.search } });
     // The request store is complete before any branch runs: draft and locale are the same for
     // pages, their data, actions and API routes.
@@ -597,7 +653,8 @@ export async function createApp({ manifest, config, files, platform, middleware 
       }
     }
 
-    const redir = manifest.redirects[p];
+    // Pages only answer GET and HEAD; a redirect left by a page is no exception.
+    const redir = req.method === "GET" || req.method === "HEAD" ? manifest.redirects[p] : undefined;
     if (redir) return new Response(null, { status: redir.status, headers: { Location: redir.location } });
 
     // Intercepting routes: in-app navigation from inside their folder. X-Optz-From says which
@@ -742,7 +799,7 @@ export async function createApp({ manifest, config, files, platform, middleware 
   const run = (ctx: MiddlewareContext, s: RequestStore, i: number): Promise<Response> =>
     i < middleware.length ? Promise.resolve(middleware[i](ctx, () => run(ctx, s, i + 1))) : route(ctx, s);
 
-  async function fetch(req: Request): Promise<Response> {
+  async function fetch(req: Request, plat?: RequestPlatform): Promise<Response> {
     const url = new URL(req.url);
     const p = url.pathname;
     // Hashed assets: no middleware, straight from memory.
@@ -750,23 +807,13 @@ export async function createApp({ manifest, config, files, platform, middleware 
       const f = files.get(p);
       return f ? send(f, req) : new Response("Not found", { status: 404 });
     }
-    for (const [prefix, rule] of proxies) {
-      if (p === prefix || p.startsWith(prefix + "/")) {
-        const target = new URL(rule.target);
-        const path = rule.strip ? p.slice(prefix.length) || "/" : p;
-        const headers = new Headers(req.headers);
-        headers.delete("host");
-        try {
-          return await globalThis.fetch(target.origin + path + url.search, { method: req.method, headers, body: req.body, redirect: "manual" });
-        } catch {
-          return jsonRes({ error: `upstream ${target.origin} is not reachable` }, 502);
-        }
-      }
-    }
+    // Proxy prefixes that skip middleware go straight out; the others are proxied by route().
+    const px = proxies.length ? proxyFor(p) : undefined;
+    if (px?.rule.bypassMiddleware) return proxy(req, url, px);
     const ctx: MiddlewareContext = { request: req, url, locals: {} as Locals };
     const t0 = F.requestLog ? performance.now() : 0;
     try {
-      const res = await run(ctx, newStore({ request: req, url, locals: ctx.locals, draft: false }), 0);
+      const res = await run(ctx, newStore({ request: req, url, locals: ctx.locals, draft: false, env: plat?.env, waitUntil: plat?.waitUntil }), 0);
       const nonce = streamed.has(ctx) ? res.headers.get(NONCE) : null;
       if (nonce) {
         res.headers.delete(NONCE);

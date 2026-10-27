@@ -146,7 +146,23 @@ function markRevalidated() {
   } catch {}
 }
 
-/** Run `fn` after the response has been sent (logging, analytics, cache warming). */
+/** The platform's bindings for this request: on edge workers, the `env` object (KV, D1, R2,
+ *  secrets); elsewhere, process.env. */
+export function env<T = Record<string, unknown>>(): T {
+  const s = store("env");
+  return (s.env ?? (typeof process !== "undefined" ? process.env : {})) as T;
+}
+
+/** Keep the request alive until `p` settles (edge workers stop when the response is sent
+ *  otherwise). On Bun it simply runs. */
+export function waitUntil(p: Promise<unknown>) {
+  const s = store("waitUntil");
+  const guarded = p.catch((e) => console.error("optz: waitUntil():", e));
+  s.waitUntil?.(guarded);
+}
+
+/** Run `fn` after the response has been sent (logging, analytics, cache warming). Edge workers
+ *  wait for it (waitUntil). */
 export function after(fn: () => unknown) {
   store("after").after.push(fn);
 }

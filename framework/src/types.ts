@@ -234,8 +234,10 @@ export interface Config {
     maxAge?: number;
   };
   /** Forward a path prefix to another server, e.g. { "/api/social": { target: "http://127.0.0.1:3000", strip: true } }.
-   *  `optz nginx` turns these into nginx locations so production traffic never touches Bun. */
-  proxy?: Record<string, { target: string; strip?: boolean; /** nginx micro-cache for GETs, in seconds (0 = off). */ cacheSeconds?: number }>;
+   *  The target's own path is kept (target "http://x/v1" + "/a" -> "http://x/v1/a"). Requests go
+   *  through app/middleware.ts first unless `bypassMiddleware`; with it, `optz nginx` sends the
+   *  prefix straight to the target so that traffic never touches Bun. */
+  proxy?: Record<string, ProxyRule>;
 
   /** What the browser gets. */
   client?: {
@@ -341,6 +343,20 @@ export interface Config {
      *  Default 0 (off). */
     cdnMaxAge?: number;
   };
+}
+
+export interface ProxyRule {
+  target: string;
+  /** Drop the prefix: "/api/social/feed" -> target + "/feed". */
+  strip?: boolean;
+  /** Skip app/middleware.ts (and let `optz nginx` route it without Bun). Default false. */
+  bypassMiddleware?: boolean;
+  /** Give up on the target after this many milliseconds (504). Default 30000. */
+  timeoutMs?: number;
+  /** Largest request body forwarded, in bytes. Default server.maxRequestBodySize. */
+  maxBodySize?: number;
+  /** nginx micro-cache for GETs, in seconds (0 = off). */
+  cacheSeconds?: number;
 }
 
 /** Config with every default filled in. */
