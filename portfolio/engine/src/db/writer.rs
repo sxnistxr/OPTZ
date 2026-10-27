@@ -35,9 +35,16 @@ pub struct Job {
 }
 
 pub enum Outcome {
-    Liked { post: i64, already: bool },
+    Liked {
+        post: i64,
+        already: bool,
+    },
     NoPost,
-    Created { id: i64, created_at: [u8; 32], created_len: u8 },
+    Created {
+        id: i64,
+        created_at: [u8; 32],
+        created_len: u8,
+    },
     /// The schema rejected the body (its CHECK counts characters up to the first NUL).
     BadBody,
     Failed,
@@ -336,9 +343,8 @@ mod tests {
     #[test]
     fn transaction_abort_replays_batch_without_the_poisoned_job() {
         // A test-only trigger (never on the real schema) that aborts the whole transaction.
-        let (path, mut w) = fresh(
-            "CREATE TRIGGER boom BEFORE INSERT ON posts WHEN NEW.body = 'abort' BEGIN SELECT RAISE(ROLLBACK, 'boom'); END;",
-        );
+        let (path, mut w) =
+            fresh("CREATE TRIGGER boom BEFORE INSERT ON posts WHEN NEW.body = 'abort' BEGIN SELECT RAISE(ROLLBACK, 'boom'); END;");
         let out = w.batch(&[create(b"a1"), create(b"abort"), create(b"a2")]);
         assert!(matches!(out[0], Outcome::Created { .. }));
         assert!(matches!(out[1], Outcome::Failed));

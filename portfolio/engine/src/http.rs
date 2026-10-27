@@ -178,7 +178,10 @@ mod tests {
     fn parses_k6_style_requests() {
         let raw = b"POST /posts/12/like HTTP/1.1\r\nHost: x\r\nUser-Agent: k6\r\nAuthorization: Bearer t.o.k\r\nContent-Type: application/json\r\nContent-Length: 0\r\n\r\n";
         let (r, n) = done(raw);
-        assert_eq!((r.method, r.path, r.authorization, r.body, r.close, n), (Method::Post, &b"/posts/12/like"[..], Some(&b"Bearer t.o.k"[..]), &b""[..], false, raw.len()));
+        assert_eq!(
+            (r.method, r.path, r.authorization, r.body, r.close, n),
+            (Method::Post, &b"/posts/12/like"[..], Some(&b"Bearer t.o.k"[..]), &b""[..], false, raw.len())
+        );
         let (r, _) = done(b"GET /feed?x=1 HTTP/1.1\r\nconnection: Close\r\n\r\n");
         assert_eq!((r.path, r.close), (&b"/feed"[..], true));
         let (r, _) = done(b"GET / HTTP/1.0\r\n\r\n");
@@ -212,6 +215,9 @@ mod tests {
         begin(&mut out);
         out.extend_from_slice(b"{\"a\":1}");
         let start = finish(&mut out, 201, true);
-        assert_eq!(&out[start..], b"HTTP/1.1 201 Created\r\nContent-Type: application/json\r\nContent-Length: 7\r\nConnection: close\r\n\r\n{\"a\":1}");
+        assert_eq!(
+            &out[start..],
+            b"HTTP/1.1 201 Created\r\nContent-Type: application/json\r\nContent-Length: 7\r\nConnection: close\r\n\r\n{\"a\":1}"
+        );
     }
 }

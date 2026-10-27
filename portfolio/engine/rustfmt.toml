@@ -1,0 +1,3 @@
+# The engine's style: long lines, compact expressions. `cargo fmt --check` runs in CI.
+max_width = 140
+use_small_heuristics = "Max"
