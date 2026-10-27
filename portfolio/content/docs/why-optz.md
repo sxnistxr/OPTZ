@@ -20,8 +20,8 @@ Full method and raw numbers: [optz vs Next.js](/docs/vs-nextjs).
 The ratio (40–60× on this site's pages) is what carries over; the absolute req/s depends on the
 CPU.
 
-And against nginx, written in C, serving the same files: the same speed
-([would C be faster?](/docs/native)).
+And against nginx, written in C, serving the same files: nginx is 20-30% faster on pages, optz
+sends fewer bytes (brotli), nginx uses less memory ([would C be faster?](/docs/native)).
 
 ## Why it's fast
 
