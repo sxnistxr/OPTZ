@@ -28,7 +28,7 @@
     "name": "optz",
     "area": "Web framework",
     "status": "shipped",
-    "summary": "The React framework for Bun this site runs on: HTML by default, islands for interactivity, Server Actions, streaming and ISR. About 100× the requests per second of Next.js on one core.",
+    "summary": "The React framework for Bun this site runs on: HTML by default, islands for interactivity, Server Actions, streaming and ISR. About 40–60× the requests per second of Next.js on one core.",
     "href": "/docs/introduction"
   },
   {

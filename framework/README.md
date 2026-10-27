@@ -426,10 +426,11 @@ React (for Fast Refresh), whatever `client.runtime` says.
 
 ## Measured (one core)
 
-Static pages ~55k req/s, prerendered API ~55k req/s, memory ~35 MB idle and ~50 MB under load.
-Against Next.js 16 on the same app: ~100× the requests per second, a sixth of the memory, 2.9 vs
-145 KB of JS on a blog post ([docs/OPTZ-VS-NEXTJS.md](../docs/OPTZ-VS-NEXTJS.md)). Against
-nginx serving the same files: the same speed ([docs/NATIVE.md](../docs/NATIVE.md)).
+Against Next.js 16 on the same app, each pinned to one core of the same VM: about 40–60× the
+requests per second (24k–29k vs 440–740 req/s on that machine; absolute numbers vary by CPU),
+37 vs 131 MB idle and 47 vs 331 MB under load, and 4 vs 142 KB of JavaScript on a blog post.
+Method, every run and its provenance: [docs/OPTZ-VS-NEXTJS.md](../docs/OPTZ-VS-NEXTJS.md),
+`bench/results.json`. Against nginx serving the same files: [docs/NATIVE.md](../docs/NATIVE.md).
 
 ## Tests
 
