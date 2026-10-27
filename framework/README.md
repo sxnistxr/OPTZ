@@ -341,6 +341,8 @@ headers: [{ source: "/api/[...rest]", headers: { "Access-Control-Allow-Origin": 
 ```
 
 `app/middleware.ts` can limit itself to some paths: `export const matcher = ["/admin/[...rest]"]`.
+Middleware never runs for `/assets/*` (hashed, immutable build output, served straight from
+memory), nor for proxy prefixes marked `bypassMiddleware`.
 
 ## Caching data, and revalidating everywhere
 
@@ -435,4 +437,6 @@ nginx serving the same files: the same speed ([docs/NATIVE.md](../docs/NATIVE.md
 actions, fonts, SEO files, MCP (schemas, the stdio server, `optz agents`), and the whole `apps/features` app in-process (streaming with nonces,
 actions and CSRF, ISR, dynamicParams, intercepts, draft mode, i18n, MCP over HTTP, llms.txt). Browser checks:
 `node apps/features/e2e.cjs` (25), `node apps/spa/e2e.cjs` (SPA mode, 7), `node portfolio/e2e.cjs`
-(30) and `node apps/features/hmr.cjs` (dev server, 6). CI runs all of them.
+(30) and `node apps/features/hmr.cjs` (dev server, 6). CI runs all of them. The browser suites
+need Playwright with Chromium (`npm i -g playwright@1.63.0 && npx playwright install chromium`,
+or `NODE_PATH` pointing at an install).
