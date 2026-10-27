@@ -8,9 +8,9 @@
 // them is a map lookup. React's server renderer isn't even loaded until a dynamic page needs it.
 import { BOUND_FIELD, tagModule } from "./actions-runtime";
 import { cacheControl, ResponseCache } from "./cache";
-import { inStore, newStore, setRevalidator, type RequestStore } from "./context";
+import { als, inStore, newStore, setRevalidator, type RequestStore } from "./context";
 import { apiStaticPath, htmlPath, ogPath, type Manifest, type ManifestRoute, type ManifestSlot } from "./manifest";
-import { inScope, matchRoute, matchSegments } from "./match";
+import { inScope, matchRoute, matchSegments, safeDecode } from "./match";
 import { fnv, send, type StaticEntry } from "./static";
 import type { LocaleInfo } from "./runtime";
 import type { RenderInput, Rendered, SlotInput } from "./render";
@@ -157,21 +157,58 @@ export async function createApp({ manifest, config, files, platform, middleware 
     ));
 
   // ---- draft mode: a cookie signed with the secret ----
-  const secret = config.draft?.secret ?? (typeof process !== "undefined" ? process.env.OPTZ_DRAFT_SECRET : undefined) ?? crypto.randomUUID();
-  const key = await crypto.subtle.importKey("raw", new TextEncoder().encode(secret), { name: "HMAC", hash: "SHA-256" }, false, ["sign"]);
-  const sig = new Uint8Array(await crypto.subtle.sign("HMAC", key, new TextEncoder().encode("optz-draft")));
-  const draftValue = btoa(String.fromCharCode(...sig)).replace(/[+/=]/g, "");
+  // The cookie is "<expiry>.<nonce>.<HMAC of both>": it expires (Max-Age and the signed expiry),
+  // and each one is different, so a copied cookie stops working when it expires.
+  const env = typeof process !== "undefined" ? process.env : ({} as Record<string, string | undefined>);
+  const configured = config.draft?.secret || env.OPTZ_DRAFT_SECRET || undefined;
+  const secret = configured ?? crypto.randomUUID();
+  const draftMaxAge = config.draft?.maxAge ?? 86400;
+  const key = await crypto.subtle.importKey("raw", new TextEncoder().encode(secret), { name: "HMAC", hash: "SHA-256" }, false, ["sign", "verify"]);
+  const b64 = (b: Uint8Array) => btoa(String.fromCharCode(...b)).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+  const unb64 = (s: string) => {
+    try {
+      return Uint8Array.from(atob(s.replace(/-/g, "+").replace(/_/g, "/")), (c) => c.charCodeAt(0));
+    } catch {
+      return null;
+    }
+  };
+  // Signed synchronously from enable() would need a sync HMAC; instead tokens are pre-signed in
+  // the background, a few at a time.
+  const pool: string[] = [];
+  const mint = async () => {
+    const payload = `${Math.floor(Date.now() / 1000) + draftMaxAge}.${b64(crypto.getRandomValues(new Uint8Array(12)))}`;
+    pool.push(`${payload}.${b64(new Uint8Array(await crypto.subtle.sign("HMAC", key, new TextEncoder().encode(payload))))}`);
+  };
+  await Promise.all([mint(), mint(), mint(), mint()]);
+  let lastToken = pool[0];
   // With a random secret, only cookies set by this process can be valid: skip the check (a
   // header lookup on every static request) until draft mode is first turned on.
-  let draftPossible = !!(config.draft?.secret ?? (typeof process !== "undefined" ? process.env.OPTZ_DRAFT_SECRET : undefined));
+  let draftPossible = !!configured;
+  let warned = false;
   setDraftToken(() => {
     draftPossible = true;
-    return draftValue;
+    if (!configured && !dev && !warned) {
+      warned = true;
+      console.warn("optz: draft mode without draft.secret or OPTZ_DRAFT_SECRET: cookies only work on this server process");
+    }
+    const value = pool.pop() ?? lastToken;
+    lastToken = value;
+    // Refill for the next enable(); a token minted now still expires draftMaxAge from now.
+    void mint();
+    return { value, maxAge: draftMaxAge };
   });
-  const isDraft = (req: Request) => {
+  const isDraft = async (req: Request): Promise<boolean> => {
     if (!draftPossible) return false;
-    const c = req.headers.get("cookie");
-    return !!c && c.includes(`${DRAFT_COOKIE}=${draftValue}`);
+    const header = req.headers.get("cookie");
+    if (!header || !header.includes(DRAFT_COOKIE)) return false;
+    const { parseCookies } = await import("./server-api");
+    const v = parseCookies(header).get(DRAFT_COOKIE);
+    const parts = v?.split(".");
+    if (!parts || parts.length !== 3) return false;
+    const exp = Number(parts[0]);
+    if (!Number.isSafeInteger(exp) || exp < Date.now() / 1000) return false;
+    const sig = unb64(parts[2]);
+    return !!sig && crypto.subtle.verify("HMAC", key, sig as BufferSource, new TextEncoder().encode(`${parts[0]}.${parts[1]}`));
   };
 
   // ---- incremental static regeneration -------------------------------------------------------
@@ -220,11 +257,20 @@ export async function createApp({ manifest, config, files, platform, middleware 
     return { body, type, etag: `"${hash(body)}"`, cache: cacheHeader, gz: text ? platform.gzip?.(body) : undefined, br: text ? platform.brotli?.(body) : undefined };
   };
 
-  function regenerate(ctx: MiddlewareContext, r: ManifestRoute, publicPath: string, inner: string, params: Record<string, string>, locale?: string) {
+  /** A request with no cookies, credentials or other headers, for rendering what everyone gets
+   *  (ISR, on-demand static pages): one visitor's request must never shape a shared page. */
+  const anonymous = (url: URL, publicPath: string): MiddlewareContext => {
+    const u = new URL(publicPath, url.origin);
+    return { request: new Request(u), url: u, locals: {} as Locals };
+  };
+
+  function regenerate(trigger: MiddlewareContext, r: ManifestRoute, publicPath: string, inner: string, params: Record<string, string>, locale?: string) {
     if (regenerating.has(publicPath)) return;
     regenerating.add(publicPath);
     const started = Date.now();
-    (async () => {
+    const ctx = anonymous(trigger.url, publicPath);
+    // Its own request store, too: headers() and cookies() in the loader see the anonymous request.
+    als.run(newStore({ request: ctx.request, url: ctx.url, locals: ctx.locals, locale, draft: false }), () => (async () => {
       if (r.kind === "api") {
         const mod = await load<Record<string, unknown>>(r.file);
         const res = await (mod.GET as (c: ApiContext) => Promise<Response>)({ ...ctx, params });
@@ -240,7 +286,7 @@ export async function createApp({ manifest, config, files, platform, middleware 
       renderedAt.set(publicPath, started);
     })()
       .catch((e) => console.error(`optz: regenerating ${publicPath} failed (serving the previous version):`, e))
-      .finally(() => regenerating.delete(publicPath));
+      .finally(() => regenerating.delete(publicPath)));
   }
 
   // ---- rendering -------------------------------------------------------------------------------
@@ -335,7 +381,17 @@ export async function createApp({ manifest, config, files, platform, middleware 
   const withCache = (ctx: MiddlewareContext, rc: RouteCache | undefined, produce: () => Promise<Response>) => {
     rc ??= config.cache.default;
     if (!cache || !rc || (ctx.request.method !== "GET" && ctx.request.method !== "HEAD")) return produce();
-    return cache.handle(ctx.request, ResponseCache.key(ctx.request, ctx.url, rc), rc, produce);
+    const vary = new Set(["accept-encoding", ...(rc.vary ?? []).map((v) => v.toLowerCase())]);
+    return cache.handle(ctx.request, ResponseCache.key(ctx.request, ctx.url, rc), rc, async () => {
+      const res = await produce();
+      // It read request headers (headers(), cookies()) the route doesn't vary on: the response is
+      // this visitor's, so it's neither stored nor shared by a CDN.
+      const reads = als.getStore()?.reads;
+      if (reads && [...reads].some((h) => !vary.has(h)) && !res.headers.get("vary")?.includes("*")) {
+        res.headers.set("Cache-Control", "private, no-store");
+      }
+      return res;
+    });
   };
 
   async function notFound(ctx: MiddlewareContext, locale?: string): Promise<Response> {
@@ -355,26 +411,31 @@ export async function createApp({ manifest, config, files, platform, middleware 
     return new Response("Not found", { status: 404, headers: { "Content-Type": "text/plain" } });
   }
 
-  async function data(ctx: MiddlewareContext): Promise<Response> {
+  async function data(ctx: MiddlewareContext, s: RequestStore): Promise<Response> {
     const p = ctx.url.pathname;
-    if (live) {
+    const draft = s.draft;
+    if (live && !draft) {
       const f = files.get(p);
       if (f) return send(f, ctx.request);
     }
     const pathname = p.slice("/_optz/data".length, -".json".length);
     const target = pathname === "/index" ? "/" : pathname;
     const { locale, inner } = splitLocale(target);
+    s.locale = locale;
     const m = matchRoute(manifest.routes, inner);
-    if (!m || m.route.kind !== "page" || (live && m.route.render !== "dynamic" && !m.route.dynamicParams)) return jsonRes({ error: "not found" }, 404);
+    if (!m || m.route.kind !== "page" || (live && !draft && m.route.render !== "dynamic" && !m.route.dynamicParams)) return jsonRes({ error: "not found" }, 404);
     const route = m.route;
-    const input = await renderInput(route, ctx, target, inner, m.params, locale);
-    return withCache(ctx, input.page.cache, async () => {
+    const input = await renderInput(route, ctx, target, inner, m.params, locale, draft);
+    const produce = async () => {
       const { loadData } = await render();
       const r = await loadData(input);
-      if (r.kind === "redirect") return jsonRes({ redirect: r.response.headers.get("Location") });
-      if (r.kind === "notFound") return jsonRes({ error: "not found" }, 404);
-      return jsonRes(r.payload);
-    });
+      const extra = draft ? { "Cache-Control": "private, no-store" } : undefined;
+      if (r.kind === "redirect") return jsonRes({ redirect: r.response.headers.get("Location") }, 200, extra);
+      if (r.kind === "notFound") return jsonRes({ error: "not found" }, 404, extra);
+      return jsonRes(r.payload, 200, extra);
+    };
+    // Draft data is per viewer: never from or into the shared cache.
+    return draft ? produce() : withCache(ctx, input.page.cache, produce);
   }
 
   function splitLocale(path: string): { locale?: string; inner: string; prefixed: boolean } {
@@ -384,11 +445,41 @@ export async function createApp({ manifest, config, files, platform, middleware 
     return { locale: i18n.defaultLocale, inner: path, prefixed: false };
   }
 
+  // ---- same-origin checks ------------------------------------------------------------------------
+  // The site's public origin comes from config (site.url), never from what a client says: Host
+  // and X-Forwarded-Host are request headers anyone can set (X-Forwarded-Host only counts with
+  // server.trustProxy). Without site.url, the request's own origin is the best there is.
+  const siteOrigin = (() => {
+    try {
+      return config.site?.url ? new URL(config.site.url).origin : undefined;
+    } catch {
+      return undefined;
+    }
+  })();
+  const loopback = (host: string) => /^(localhost|127\.0\.0\.1|\[::1\])(:\d+)?$/.test(host);
+  function sameSite(req: Request, url: URL, value: string | null): boolean {
+    if (!value) return false;
+    let o: URL;
+    try {
+      o = new URL(value);
+    } catch {
+      return false;
+    }
+    if (siteOrigin && o.origin === siteOrigin) return true;
+    const fwd = config.server.trustProxy ? req.headers.get("x-forwarded-host") : null;
+    const proto = config.server.trustProxy ? req.headers.get("x-forwarded-proto") : null;
+    if (fwd) return o.host === fwd && (!proto || o.protocol === proto + ":");
+    // With site.url set, another host is only trusted on a loopback name (dev); without it, the
+    // request's own host is all we know.
+    if (siteOrigin && !loopback(url.host)) return false;
+    return o.host === url.host;
+  }
+
   // ---- Server Actions ---------------------------------------------------------------------------
   async function action(ctx: MiddlewareContext, s: RequestStore): Promise<Response> {
     const { request: req, url } = ctx;
     const [, , , id, rawName] = url.pathname.split("/");
-    const name = decodeURIComponent(rawName ?? "");
+    const name = safeDecode(rawName ?? "") ?? "";
     const def = manifest.actions?.[id];
     if (!F.actions || !def || !def.exports.includes(name)) return jsonRes({ ok: false, error: "No such action." }, 404);
     if (req.method !== "POST") return new Response(null, { status: 405, headers: { Allow: "POST" } });
@@ -397,11 +488,20 @@ export async function createApp({ manifest, config, files, platform, middleware 
     // plain form posts must come from this site.
     if (!mode) {
       const origin = req.headers.get("origin");
-      const site = req.headers.get("sec-fetch-site");
-      const host = req.headers.get("x-forwarded-host") ?? req.headers.get("host") ?? url.host;
-      const ok = origin ? new URL(origin).host === host : site === "same-origin";
+      const fetchSite = req.headers.get("sec-fetch-site");
+      const ok = origin && origin !== "null" ? sameSite(req, url, origin) : fetchSite === "same-origin";
       if (!ok) return new Response("Cross-site form posts aren't allowed.", { status: 403 });
     }
+    // Where to go back to, worked out before the action runs: a bad Referer can't turn a
+    // finished mutation into an error (and a retry into a second mutation).
+    const ref = req.headers.get("referer");
+    const back = (() => {
+      if (!ref || !sameSite(req, url, ref)) return "/";
+      const r = new URL(ref);
+      return r.pathname + r.search;
+    })();
+    // The page the action was called from decides the locale.
+    if (i18n) s.locale = splitLocale(ref && sameSite(req, url, ref) ? new URL(ref).pathname : "/").locale;
     const fn = (await load<Record<string, unknown>>(def.file))[name] as (...a: unknown[]) => unknown;
     let args: unknown[];
     if (mode === "json") {
@@ -413,20 +513,25 @@ export async function createApp({ manifest, config, files, platform, middleware 
       const lead: unknown[] = [];
       for (const field of ["$optz_args", BOUND_FIELD]) {
         const v = fd.get(field);
-        if (typeof v === "string") lead.push(...(JSON.parse(v) as unknown[]));
+        if (typeof v === "string") {
+          let parsed: unknown;
+          try {
+            parsed = JSON.parse(v);
+          } catch {
+            parsed = undefined;
+          }
+          if (!Array.isArray(parsed)) return jsonRes({ ok: false, error: "Bad arguments." }, 400);
+          lead.push(...parsed);
+        }
         fd.delete(field);
       }
       // React's progressive-enhancement fields for bound/hidden data.
       for (const k of [...fd.keys()]) if (k.startsWith("$ACTION")) fd.delete(k);
       args = [...lead, fd];
     }
-    const back = () => {
-      const ref = req.headers.get("referer");
-      return ref && new URL(ref).host === url.host ? new URL(ref).pathname + new URL(ref).search : "/";
-    };
     try {
       const value = await fn(...args);
-      if (!mode) return new Response(null, { status: 303, headers: { Location: back() } });
+      if (!mode) return new Response(null, { status: 303, headers: { Location: back } });
       return jsonRes({ ok: true, value: value ?? null, revalidated: s.revalidated || undefined });
     } catch (e) {
       if (e instanceof Response && e.headers.get("location")) {
@@ -436,8 +541,8 @@ export async function createApp({ manifest, config, files, platform, middleware 
       const { ActionError } = await import("./server-api");
       const msg = e instanceof ActionError || dev ? (e as Error).message : "Something went wrong.";
       if (!(e instanceof ActionError)) console.error(`optz: action ${def.file}#${name}:`, e);
-      // An ActionError is an expected outcome ("write something first"), not a failed request.
-      if (e instanceof ActionError) return mode ? jsonRes({ ok: false, error: msg }) : new Response(msg, { status: 400, headers: { "Content-Type": "text/plain; charset=utf-8" } });
+      // An ActionError is an expected outcome ("write something first"): 422, with the message.
+      if (e instanceof ActionError) return mode ? jsonRes({ ok: false, error: msg }, 422) : new Response(msg, { status: 422, headers: { "Content-Type": "text/plain; charset=utf-8" } });
       return mode ? jsonRes({ ok: false, error: msg }, 500) : new Response(msg, { status: 500 });
     }
   }
@@ -467,9 +572,13 @@ export async function createApp({ manifest, config, files, platform, middleware 
     const { request: req, url } = ctx;
     const p = url.pathname;
     if (p.length > 1 && p.endsWith("/")) return new Response(null, { status: 308, headers: { Location: p.replace(/\/+$/, "") + url.search } });
+    // The request store is complete before any branch runs: draft and locale are the same for
+    // pages, their data, actions and API routes.
+    s.draft = await isDraft(req);
+    s.locale = splitLocale(p).locale;
     if (mcpOn && p === mcpPath) return inStore(s, async () => (await mcp()).handle(ctx));
     if (p.startsWith("/_optz/action/")) return inStore(s, () => action(ctx, s));
-    if (p.startsWith("/_optz/data/") && p.endsWith(".json")) return inStore(s, () => data(ctx));
+    if (p.startsWith("/_optz/data/") && p.endsWith(".json")) return inStore(s, () => data(ctx, s));
     if (p.startsWith("/_optz/og/") && p.endsWith(".png")) return inStore(s, () => og(ctx));
     if (p === "/_optz/404" && prerender) return notFound(ctx, url.searchParams.get("locale") ?? undefined);
     if (p === "/_optz/image") return F.images && platform.images ? platform.images(req, url, files) : notFound(ctx);
@@ -491,8 +600,11 @@ export async function createApp({ manifest, config, files, platform, middleware 
     const redir = manifest.redirects[p];
     if (redir) return new Response(null, { status: redir.status, headers: { Location: redir.location } });
 
-    // Intercepting routes: in-app navigation from inside their folder.
-    const from = hasIntercepts && req.headers.get("x-optz-swap") ? req.headers.get("x-optz-from") : null;
+    // Intercepting routes: in-app navigation from inside their folder. X-Optz-From says which
+    // page the navigation started on; it's a request header, so the page it names must be one
+    // this visitor may see (the middleware lets a GET for it through) before it's rendered.
+    const claimed = hasIntercepts && req.headers.get("x-optz-swap") ? req.headers.get("x-optz-from") : null;
+    const from = claimed && claimed.startsWith("/") && !claimed.startsWith("//") && (await allowedBy(claimed, req)) ? claimed.split(/[?#]/)[0] : null;
     if (from) {
       const fromInner = splitLocale(from).inner;
       const headers = { "Cache-Control": "no-store", Vary: "X-Optz-From" };
@@ -524,6 +636,8 @@ export async function createApp({ manifest, config, files, platform, middleware 
     if (!m) {
       const f = files.get(p);
       if (f && !p.endsWith(".html")) return send(f, req);
+      // API clients get JSON, not the HTML not-found page.
+      if (inner === "/api" || inner.startsWith("/api/")) return jsonRes({ error: "Not found" }, 404);
       return notFound(ctx, locale);
     }
     const r = m.route;
@@ -539,11 +653,19 @@ export async function createApp({ manifest, config, files, platform, middleware 
       const mod = await load<Record<string, unknown> & ApiModule>(r.file);
       const handler = (mod[req.method] ?? (req.method === "HEAD" ? mod.GET : undefined)) as ((c: ApiContext) => Response | Promise<Response>) | undefined;
       if (typeof handler !== "function") {
-        const allow = ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"].filter((k) => typeof mod[k] === "function").join(", ");
-        return new Response(null, { status: 405, headers: { Allow: allow } });
+        const allow = ["GET", "HEAD", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"].filter((k) => typeof mod[k] === "function" || (k === "HEAD" && typeof mod.GET === "function")).join(", ");
+        return jsonRes({ error: `${req.method} isn't allowed here` }, 405, { Allow: allow });
       }
       const run = async () => {
-        const res = await handler({ ...ctx, params: m.params });
+        let res: Response;
+        try {
+          res = await handler({ ...ctx, params: m.params });
+        } catch (e) {
+          // A thrown Response (redirect(), readJson()'s 400/415, or your own) is the answer.
+          if (e instanceof Response) return e;
+          if (e instanceof Error && e.name === "NotFound") return jsonRes({ error: e.message || "Not found" }, 404);
+          throw e;
+        }
         const rc = mod.cache ?? config.cache.default;
         if (rc && !res.headers.has("cache-control") && res.status === 200) res.headers.set("Cache-Control", cacheControl(rc));
         return res;
@@ -552,8 +674,7 @@ export async function createApp({ manifest, config, files, platform, middleware 
     }
     if (req.method !== "GET" && req.method !== "HEAD") return new Response(null, { status: 405, headers: { Allow: "GET, HEAD" } });
 
-    const draft = r.render !== "dynamic" && isDraft(req);
-    s.draft = draft || isDraft(req);
+    const draft = s.draft;
     if (live && !draft && r.render === "static") {
       const f = files.get(htmlPath(p));
       if (f) {
@@ -561,12 +682,18 @@ export async function createApp({ manifest, config, files, platform, middleware 
         return send(f, req);
       }
       if (!r.dynamicParams) return notFound(ctx, locale);
-      // Params paths() didn't list: render once, keep it like a built page (bounded by the cache).
-      const input = await renderInput(r, ctx, p, inner, m.params, locale);
-      return inStore(s, () => withCache(ctx, { maxAge: r.revalidate ?? 31536000, staleWhileRevalidate: r.revalidate ? 31536000 : undefined, tags: r.tags }, async () => {
-        const { renderPage } = await render();
-        return finish(await renderPage(input, assets(r), config), ctx);
-      }));
+      // Params paths() didn't list: render once, keep it like a built page (bounded by the
+      // cache). Shared by everyone, so rendered from an anonymous request.
+      const input = await renderInput(r, anonymous(url, p), p, inner, m.params, locale);
+      const anon = input.ctx;
+      return inStore(s, () =>
+        withCache(ctx, { maxAge: r.revalidate ?? 31536000, staleWhileRevalidate: r.revalidate ? 31536000 : undefined, tags: r.tags }, () =>
+          als.run(newStore({ request: anon.request!, url: anon.url, locals: anon.locals, locale, draft: false }), async () => {
+            const { renderPage } = await render();
+            return finish(await renderPage(input, assets(r), config), ctx);
+          }),
+        ),
+      );
     }
     if (live && !draft && r.render === "client" && r.shell) {
       const f = files.get(r.shell);
@@ -586,6 +713,31 @@ export async function createApp({ manifest, config, files, platform, middleware 
   }
 
   const hasIntercepts = !!(manifest.intercepts?.length || manifest.slots?.some((x) => x.intercepts.length));
+
+  /** Would the middleware let this visitor GET `path`? Runs the chain with this request's
+   *  headers and a stand-in for the page (so nothing renders). */
+  async function allowedBy(path: string, req: Request): Promise<boolean> {
+    if (!middleware.length) return true;
+    let u: URL;
+    try {
+      u = new URL(path, req.url);
+    } catch {
+      return false;
+    }
+    const headers = new Headers(req.headers);
+    headers.delete("x-optz-swap");
+    headers.delete("x-optz-from");
+    const r = new Request(u, { headers });
+    const ctx: MiddlewareContext = { request: r, url: u, locals: {} as Locals };
+    const stub = (i: number): Promise<Response> =>
+      i < middleware.length ? Promise.resolve(middleware[i](ctx, () => stub(i + 1))) : Promise.resolve(new Response(null, { status: 200 }));
+    try {
+      const res = await stub(0);
+      return res.status >= 200 && res.status < 300;
+    } catch {
+      return false;
+    }
+  }
 
   const run = (ctx: MiddlewareContext, s: RequestStore, i: number): Promise<Response> =>
     i < middleware.length ? Promise.resolve(middleware[i](ctx, () => run(ctx, s, i + 1))) : route(ctx, s);

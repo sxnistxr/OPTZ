@@ -226,4 +226,115 @@ describe("features app", () => {
     expect(txt).toMatch(/- \[[^\]]+\]\(https:\/\/features\.example\/docs\/guide\/setup\)/);
     expect(await (await get("/llms-full.txt")).text()).toContain("Source: https://features.example/docs/guide/setup");
   });
+  // ---- boundaries (audit: C3-C11, X3, X9, X10, A5, A10, A15) ----
+
+  test("Server Actions trust site.url, not Host or X-Forwarded-Host (CSRF)", async () => {
+    const id = Object.keys(manifest.actions)[0];
+    const form = () => {
+      const f = new FormData();
+      f.set("text", "csrf");
+      return f;
+    };
+    // A forged X-Forwarded-Host no longer makes a foreign origin look like ours.
+    expect((await post(actionUrl(id, "addNote"), form(), { Origin: "https://evil.example", "X-Forwarded-Host": "evil.example" })).status).toBe(403);
+    // DNS rebinding: Host and Origin both the attacker's name.
+    const rebound = await app.fetch(new Request(`http://evil.example${actionUrl(id, "addNote")}`, { method: "POST", body: form(), headers: { Origin: "http://evil.example" } }));
+    expect(rebound.status).toBe(403);
+    // The configured site origin works.
+    expect((await post(actionUrl(id, "addNote"), form(), { Origin: "https://features.example" })).status).toBe(303);
+    // Malformed Origin and Referer: 403 and a safe redirect, never a 500.
+    expect((await post(actionUrl(id, "addNote"), form(), { Origin: "http://[bad" })).status).toBe(403);
+    const r = await post(actionUrl(id, "addNote"), form(), { Origin: "http://localhost", Referer: "http://[bad" });
+    expect(r.status).toBe(303);
+    expect(r.headers.get("location")).toBe("/");
+  });
+
+  test("malformed action arguments and names are 400/404, not 500", async () => {
+    const id = Object.keys(manifest.actions)[0];
+    for (const bad of ["not-json", '{"a":1}']) {
+      const f = new FormData();
+      f.set("$optz_args", bad);
+      const r = await post(actionUrl(id, "addNote"), f, { "X-Optz-Action": "form" });
+      expect(r.status).toBe(400);
+    }
+    expect((await post(`/_optz/action/${id}/%zz`, "[]", { "X-Optz-Action": "json" })).status).toBe(404);
+    // ActionError is an expected outcome, with its own status.
+    const empty = new FormData();
+    empty.set("text", "");
+    expect((await post(actionUrl(id, "addNote"), empty, { "X-Optz-Action": "form" })).status).toBe(422);
+  });
+
+  test("malformed percent-encoding is a 404, not a 500", async () => {
+    for (const p of ["/products/%", "/products/%zz", "/products/%E0%A4%A", "/docs/%zz"]) expect((await get(p)).status).toBe(404);
+  });
+
+  test("handler().body(): 400 for bad JSON, 415 for other types; API 404s and 405s are JSON", async () => {
+    expect((await post("/api/echo", '{"text":"hi"}', { "Content-Type": "application/json" })).status).toBe(201);
+    const bad = await post("/api/echo", "{nope", { "Content-Type": "application/json" });
+    expect(bad.status).toBe(400);
+    expect(await bad.json()).toEqual({ error: "The body isn't valid JSON." });
+    expect((await post("/api/echo", '{"text":"hi"}', { "Content-Type": "text/plain" })).status).toBe(415);
+    const missing = await get("/api/nothing-here");
+    expect(missing.status).toBe(404);
+    expect(missing.headers.get("content-type")).toBe("application/json");
+    const wrong = await get("/api/echo");
+    expect(wrong.status).toBe(405);
+    expect(wrong.headers.get("allow")).toBe("POST");
+  });
+
+  test("intercepting routes don't render a page the middleware forbids (X-Optz-From)", async () => {
+    expect((await get("/gallery/private")).status).toBe(403);
+    const swapped = await get("/gallery/photo/1", { "X-Optz-Swap": "1", "X-Optz-From": "/gallery/private" });
+    expect(await swapped.text()).not.toContain("private gallery secret");
+    const admin = await get("/gallery/photo/1", { "X-Optz-Swap": "1", "X-Optz-From": "/gallery/private", Cookie: "admin=1" });
+    expect(await admin.text()).toContain("private gallery secret");
+  });
+
+  test("draft mode: expiring signed cookie, on dynamic pages and data too, never cached", async () => {
+    const on = await get("/api/draft?secret=dev-draft-secret&to=/preview");
+    const setCookie = on.headers.get("set-cookie")!;
+    expect(setCookie).toMatch(/Max-Age=86400/);
+    const cookie = setCookie.split(";")[0];
+    // Every token is different.
+    const again = (await get("/api/draft?secret=dev-draft-secret")).headers.get("set-cookie")!.split(";")[0];
+    expect(again).not.toBe(cookie);
+    // A cached dynamic page: the published copy is shared, the draft one is private.
+    const published = await (await get("/preview")).text();
+    expect(published).toContain("published");
+    const draft = await get("/preview", { Cookie: cookie });
+    expect(await draft.text()).toContain("draft preview");
+    expect(draft.headers.get("cache-control")).toBe("private, no-store");
+    expect(await (await get("/preview")).text()).toBe(published);
+    // Suffix matches and expired tokens don't count.
+    expect(await (await get("/draft", { Cookie: `x${cookie}` })).text()).toContain("published view");
+    const [exp, nonce, sig] = cookie.split("=")[1].split(".");
+    expect(await (await get("/draft", { Cookie: `__optz_draft=${Number(exp) - 200000}.${nonce}.${sig}` })).text()).toContain("published view");
+    // The data endpoint sees draft mode too.
+    const data = await get("/_optz/data/draft.json", { Cookie: cookie });
+    expect(data.headers.get("cache-control")).toBe("private, no-store");
+  });
+
+  test("the data endpoint knows the locale", async () => {
+    const r = await get("/_optz/data/fr/preview.json");
+    expect(r.status).toBe(200);
+    expect(JSON.stringify(await r.json())).toContain('"locale":"fr"');
+  });
+
+  test("ISR regenerates from an anonymous request: one visitor's cookie never lands in the shared page", async () => {
+    const text = async (r: Response) => (await r.text()).replace(/<!-- -->/g, "");
+    expect(await text(await get("/isr-visitor"))).toContain("cookie: none");
+    await Bun.sleep(1100);
+    await get("/isr-visitor", { Cookie: "u=alice" });
+    await Bun.sleep(200);
+    const html = await text(await get("/isr-visitor", { Cookie: "u=bob" }));
+    expect(html).not.toContain("alice");
+    expect(html).toContain("cookie: none");
+  });
+
+  test("cookies: names and attributes can't be injected; SameSite=None is Secure", () => {
+    expect(() => serializeCookie("sid=abc; Domain=evil.example", "x")).toThrow();
+    expect(() => serializeCookie("a\r\nSet-Cookie", "x")).toThrow();
+    expect(() => serializeCookie("a", "x", { domain: "x; HttpOnly" })).toThrow();
+    expect(serializeCookie("a", "x\r\n", { sameSite: "none" })).toBe("a=x%0D%0A; Path=/; Secure; HttpOnly; SameSite=None");
+  });
 });

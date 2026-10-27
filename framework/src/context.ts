@@ -16,6 +16,9 @@ export interface RequestStore {
   after: Array<() => unknown>;
   /** Did this request call revalidatePath/revalidateTag? (Actions tell the browser to refresh.) */
   revalidated: boolean;
+  /** Request headers server code read through headers()/cookies(), lowercased: a cached
+   *  response that depends on one the route doesn't vary on mustn't be shared. */
+  reads: Set<string>;
 }
 
 export const als = new AsyncLocalStorage<RequestStore>();
@@ -37,10 +40,10 @@ export const setRevalidator = (r: Revalidator | null) => {
 };
 export const getRevalidator = () => revalidator;
 
-export const newStore = (init: Omit<RequestStore, "setCookies" | "after" | "revalidated">): RequestStore => ({ ...init, setCookies: [], after: [], revalidated: false });
+export const newStore = (init: Omit<RequestStore, "setCookies" | "after" | "revalidated" | "reads">): RequestStore => ({ ...init, setCookies: [], after: [], revalidated: false, reads: new Set() });
 
 /** Runs `fn` with a fresh request store and applies its cookies and `after()` work. */
-export const withStore = (init: Omit<RequestStore, "setCookies" | "after" | "revalidated">, fn: (s: RequestStore) => Promise<Response>) => inStore(newStore(init), fn);
+export const withStore = (init: Omit<RequestStore, "setCookies" | "after" | "revalidated" | "reads">, fn: (s: RequestStore) => Promise<Response>) => inStore(newStore(init), fn);
 
 /** Runs `fn` inside the request's store (entered only where server code can use it: static
  *  files skip it, which keeps them cheap) and applies its cookies and `after()` work. */

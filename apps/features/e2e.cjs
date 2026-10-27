@@ -16,7 +16,8 @@ const check = (name, ok, detail = "") => results.push(`${ok ? "ok  " : "FAIL"} $
   pg.on("pageerror", (e) => errs.push(e.message));
   // Failed requests are reported with their URL (the browser's console message has none).
   pg.on("console", (m) => (m.type() === "error" || m.type() === "warning") && !m.text().startsWith("Failed to load resource") && errs.push(m.text()));
-  pg.on("response", (r) => r.status() >= 400 && !/\/boom$/.test(r.url()) && errs.push(`${r.status()} ${r.request().method()} ${r.url()}`));
+  // 422 from an action is an ActionError the page shows on purpose ("write something first").
+  pg.on("response", (r) => r.status() >= 400 && !/\/boom$/.test(r.url()) && !(r.status() === 422 && r.url().includes("/_optz/action/")) && errs.push(`${r.status()} ${r.request().method()} ${r.url()}`));
   const docs = [];
   pg.on("request", (r) => r.resourceType() === "document" && docs.push(r.url()));
 

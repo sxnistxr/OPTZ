@@ -26,8 +26,12 @@ export const notFound = (message?: string): never => {
 };
 
 /** A JSON response whose body type flows to the typed `api()` client. */
-export const json = <T,>(data: T, init: ResponseInit = {}): TypedResponse<T> =>
-  new Response(JSON.stringify(data), { ...init, headers: { "Content-Type": "application/json", ...init.headers } });
+export const json = <T,>(data: T, init: ResponseInit = {}): TypedResponse<T> => {
+  // init.headers may be a Headers object or [k, v] pairs, which spreading would lose.
+  const headers = new Headers(init.headers);
+  if (!headers.has("content-type")) headers.set("Content-Type", "application/json");
+  return new Response(JSON.stringify(data), { ...init, headers });
+};
 
 /** What a `handler()` receives: the usual API context plus a typed JSON body reader. */
 export interface HandlerContext<P extends Params = Params, B = unknown> extends ApiContext<P> {
@@ -39,8 +43,21 @@ export interface HandlerContext<P extends Params = Params, B = unknown> extends 
  *  export const POST = handler(async ({ params, body }: HandlerContext<{ id: string }, { text: string }>) =>
  *    json({ saved: (await body()).text }, { status: 201 })); */
 export function handler<P extends Params, B, R extends TypedResponse<unknown> | Promise<TypedResponse<unknown>>>(fn: (ctx: HandlerContext<P, B>) => R) {
-  const h = (ctx: ApiContext<P>) => fn({ ...ctx, body: () => ctx.request.json() as Promise<B> });
+  const h = (ctx: ApiContext<P>) => fn({ ...ctx, body: () => readJson<B>(ctx.request) });
   return h as ((ctx: ApiContext<P>) => R) & { readonly __body?: B };
+}
+
+/** The request's JSON body. Answers for you (the thrown Response is sent as is) with 415 when
+ *  it isn't JSON and 400 when it doesn't parse. */
+export async function readJson<B = unknown>(request: Request): Promise<B> {
+  const type = request.headers.get("content-type") ?? "";
+  if (!/^application\/([\w.+-]+\+)?json\b/i.test(type)) throw json({ error: "Send the body as JSON (Content-Type: application/json)." }, { status: 415 });
+  const text = await request.text();
+  try {
+    return JSON.parse(text) as B;
+  } catch {
+    throw json({ error: "The body isn't valid JSON." }, { status: 400 });
+  }
 }
 
 export type { RouteCache };

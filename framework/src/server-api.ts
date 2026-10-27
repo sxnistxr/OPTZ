@@ -4,9 +4,22 @@ import { getRevalidator, store } from "./context";
 
 export { NotFound, notFound, redirect } from "./index";
 
-/** The current request's headers (read-only). */
+/** The current request's headers (read-only). Reading one makes a cached response private
+ *  unless the route's `cache.vary` lists it. */
 export function headers(): Headers {
-  return store("headers").request.headers;
+  const s = store("headers");
+  const h = s.request.headers;
+  const note = (name: string) => s.reads.add(name.toLowerCase());
+  return new Proxy(h, {
+    get(t, k) {
+      if (k === "get" || k === "has") return (name: string) => (note(name), t[k](name));
+      if (k === "entries" || k === "forEach" || k === "keys" || k === "values" || k === Symbol.iterator) {
+        t.forEach((_v, name) => note(name));
+      }
+      const v = Reflect.get(t, k, t);
+      return typeof v === "function" ? v.bind(t) : v;
+    },
+  });
 }
 
 export interface CookieOptions {
@@ -19,27 +32,44 @@ export interface CookieOptions {
   sameSite?: "strict" | "lax" | "none";
 }
 
+/** Cookie names are RFC 6265 tokens: no spaces, separators or control characters. */
+const TOKEN = /^[!#$%&'*+\-.^_`|~0-9A-Za-z]+$/;
+/** Domain and Path attribute values: no ";" and no control characters. */
+const ATTR = /^[^;\x00-\x1f\x7f]*$/;
+
 export function serializeCookie(name: string, value: string, o: CookieOptions = {}) {
-  let c = `${name}=${encodeURIComponent(value)}; Path=${o.path ?? "/"}`;
+  if (!TOKEN.test(name)) throw new TypeError(`optz: invalid cookie name ${JSON.stringify(name)}`);
+  const path = o.path ?? "/";
+  if (!ATTR.test(path)) throw new TypeError(`optz: invalid cookie path ${JSON.stringify(path)}`);
+  if (o.domain !== undefined && !ATTR.test(o.domain)) throw new TypeError(`optz: invalid cookie domain ${JSON.stringify(o.domain)}`);
+  const sameSite = o.sameSite ?? "lax";
+  if (!["strict", "lax", "none"].includes(sameSite)) throw new TypeError(`optz: invalid SameSite ${JSON.stringify(sameSite)}`);
+  let c = `${name}=${encodeURIComponent(value)}; Path=${path}`;
   if (o.maxAge !== undefined) c += `; Max-Age=${Math.floor(o.maxAge)}`;
   if (o.expires) c += `; Expires=${o.expires.toUTCString()}`;
   if (o.domain) c += `; Domain=${o.domain}`;
-  if (o.secure) c += "; Secure";
+  // Browsers drop SameSite=None cookies that aren't Secure.
+  if (o.secure || sameSite === "none") c += "; Secure";
   if (o.httpOnly ?? true) c += "; HttpOnly";
-  c += `; SameSite=${o.sameSite ? o.sameSite[0].toUpperCase() + o.sameSite.slice(1) : "Lax"}`;
+  c += `; SameSite=${sameSite[0].toUpperCase() + sameSite.slice(1)}`;
   return c;
 }
 
+/** Parses a Cookie header. The first value of a name wins (browsers send the most specific
+ *  path first); quoted values are unquoted. */
 export function parseCookies(header: string | null): Map<string, string> {
   const m = new Map<string, string>();
   for (const part of (header ?? "").split(";")) {
     const i = part.indexOf("=");
     if (i < 1) continue;
     const k = part.slice(0, i).trim();
+    if (!k || m.has(k)) continue;
+    let v = part.slice(i + 1).trim();
+    if (v.length >= 2 && v.startsWith('"') && v.endsWith('"')) v = v.slice(1, -1);
     try {
-      m.set(k, decodeURIComponent(part.slice(i + 1).trim()));
+      m.set(k, decodeURIComponent(v));
     } catch {
-      m.set(k, part.slice(i + 1).trim());
+      m.set(k, v);
     }
   }
   return m;
@@ -49,6 +79,7 @@ export function parseCookies(header: string | null): Map<string, string> {
  *  Actions; a page render can only read). HttpOnly and SameSite=Lax unless you say otherwise. */
 export function cookies() {
   const s = store("cookies");
+  s.reads.add("cookie");
   const jar = parseCookies(s.request.headers.get("cookie"));
   const secure = s.url.protocol === "https:" || s.request.headers.get("x-forwarded-proto") === "https";
   return {
@@ -67,9 +98,9 @@ export function cookies() {
 }
 
 export const DRAFT_COOKIE = "__optz_draft";
-let draftToken: (() => string) | null = null;
-/** Set by the server: the signed value the draft cookie must have. */
-export const setDraftToken = (f: () => string) => {
+let draftToken: (() => { value: string; maxAge: number }) | null = null;
+/** Set by the server: makes a new signed draft cookie value (expiring after maxAge seconds). */
+export const setDraftToken = (f: () => { value: string; maxAge: number }) => {
   draftToken = f;
 };
 
@@ -81,7 +112,8 @@ export function draftMode() {
     isEnabled: s.draft,
     enable() {
       if (!draftToken) throw new Error("optz: draft mode isn't available here");
-      s.setCookies.push(serializeCookie(DRAFT_COOKIE, draftToken(), { secure: s.url.protocol === "https:" }));
+      const t = draftToken();
+      s.setCookies.push(serializeCookie(DRAFT_COOKIE, t.value, { secure: s.url.protocol === "https:", maxAge: t.maxAge }));
       s.draft = true;
     },
     disable() {

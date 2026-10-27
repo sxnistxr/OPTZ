@@ -227,8 +227,11 @@ export interface Config {
   }>;
   /** Draft mode: a signed cookie that makes static pages render per request (for previews). */
   draft?: {
-    /** Secret that signs the cookie. Default the OPTZ_DRAFT_SECRET env var, else random per process. */
+    /** Secret that signs the cookie. Default the OPTZ_DRAFT_SECRET env var, else random per
+     *  process (which only works with one server process). */
     secret?: string;
+    /** Seconds a draft cookie stays valid. Default 86400 (a day). */
+    maxAge?: number;
   };
   /** Forward a path prefix to another server, e.g. { "/api/social": { target: "http://127.0.0.1:3000", strip: true } }.
    *  `optz nginx` turns these into nginx locations so production traffic never touches Bun. */
@@ -329,6 +332,10 @@ export interface Config {
     idleTimeout?: number;
     /** Largest request body accepted, in bytes. Default 1 MB. */
     maxRequestBodySize?: number;
+    /** Behind a reverse proxy you control that sets X-Forwarded-Host/-Proto: trust them for
+     *  the public origin (CSRF checks, absolute URLs). Off: they're ignored, since any client can
+     *  send them. Default false. */
+    trustProxy?: boolean;
     /** Let a CDN (Cloudflare, ...) cache built HTML pages for this many seconds (`s-maxage`, with
      *  stale-while-revalidate). Browsers still revalidate every time. Purge the CDN on deploy.
      *  Default 0 (off). */
@@ -350,6 +357,6 @@ export function resolveConfig(c: Config = {}): ResolvedConfig {
     client: { mode: "islands", navigation: true, prefetch: true, runtime: "react", speculation: true, ...c.client },
     features: { middleware: true, dynamic: true, api: true, cache: true, dynamicCompression: true, etag: true, requestLog: false, streaming: true, actions: true, images: true, mcp: true, ...c.features },
     cache: { maxEntries: 500, maxBytes: 32 << 20, ...c.cache },
-    server: { idleTimeout: 30, maxRequestBodySize: 1 << 20, cdnMaxAge: 0, ...c.server },
+    server: { idleTimeout: 30, maxRequestBodySize: 1 << 20, cdnMaxAge: 0, trustProxy: false, ...c.server },
   };
 }
