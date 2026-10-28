@@ -14,13 +14,16 @@ for. Everything needed to run it as a real service lives here.
 | `backup/optz-backup.{py,service,timer}` | Hourly online snapshot backup, `integrity_check` on every copy, gzip + sha256, keeps 24 hourly + 14 daily; the unit fails loudly if verification fails |
 | `journald/optz.conf` | Caps journal disk use at 200 MB |
 | `RESTORE.md` | Step-by-step restore |
-| `runner/` | Signed remote-command runner used for testing on the VPS (not needed in production) |
+| `migrate-autodeploy.py`, `autodeploy/` | One-time migration to CI-gated SSH deployment, isolated builds and rollback; see `autodeploy/README.md` |
+| `runner/` | Optional SSH-only, unprivileged allowlisted tasks; see runner/README.md |
 
-## Continuous deployment from this repo
+## Reviewed deployment
 
-`deploy/` (set up on the VPS) pulls the tracked branch every 30 s and runs
-`deploy/post-deploy.sh`, which calls `ops/deploy.sh` once production is installed. So every push
-gets built and deployed, and a bad commit is rolled back automatically.
+The old root branch-polling timer is retired. Run `sudo bash deploy/setup-vps.sh` on existing
+installations to disable it. Review and check out the commit to promote, then run
+`sudo bash ops/deploy.sh /path/to/reviewed-checkout`. Builds and application configuration
+execution run as the unprivileged `optz` user; release switching remains administrative.
+See `deploy/README.md` and `runner/README.md` for migration steps.
 
 ```sh
 # on the VPS, once:

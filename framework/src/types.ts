@@ -230,7 +230,7 @@ export interface Config {
     /** Where optimized images are kept on disk (relative to the project or absolute). Default
      *  the OPTZ_IMAGE_CACHE_DIR env var, else .optz/cache/images. */
     cacheDir?: string;
-    /** Images encoded at the same time. Default the CPU cores minus one (1 to 4). */
+    /** Complete image jobs at once (downloads and encodes), clamped to 1–4. At most 8 queued requests; overload is 503. Default cores minus one (1 to 4). */
     concurrency?: number;
   };
   /** Self-hosted web fonts: Google Fonts CSS URLs downloaded at build time and served from

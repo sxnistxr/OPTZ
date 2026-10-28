@@ -278,6 +278,27 @@ export default defineMiddleware(async (ctx, next) => {
 });
 ```
 
+Middleware sees the resolved logical route in both `ctx.url` and `ctx.request.url`, including
+loader JSON and Open Graph requests. Export `matcher = ["/admin/[...rest]"]` to scope an access
+policy: it is checked against source paths, rewrite destinations and locale-free page paths.
+A scoped policy may run for more than one matching identity in a rewrite chain; keep access
+checks free of mutation side effects. Unscoped response middleware runs once on the resolved
+route. `next()` dispatches the endpoint once, preserving its original representation.
+
+Response caching is opt-in through a route's `cache` policy. Requests carrying Cookie or
+Authorization and responses using middleware locals bypass shared caching and are private.
+Private/no-store/Set-Cookie responses are recomputed for concurrent callers. Raw Request
+header reads are tracked like `headers()`; declare intentional public variation in `cache.vary`.
+App caches, revalidation callbacks, draft signers and server image sizes are isolated per app.
+
+Remote images require HTTPS on port 443 and an explicit `images.remoteHosts` entry. Every
+redirect and socket DNS result is checked; private/special-use addresses are denied. Input
+streams stop at 20 MiB, complete jobs are limited to 1–4 concurrently with at most 8 queued
+requests, and overload returns 503. Put trusted private assets in the app's static files.
+Generated nginx HTTPS upstreams verify their certificates against the system CA store; use
+`optz nginx --upstream-ca /path/to/ca-bundle.pem` for a private CA without disabling verification.
+MCP batches are limited to 32 calls and bodies to `server.maxRequestBodySize`.
+
 ## AI: MCP server, llms.txt and coding agents
 
 **Your app as an MCP server.** Every file in `app/mcp` is a tool, prompt or resource that AI

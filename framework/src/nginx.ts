@@ -19,6 +19,8 @@ export interface NginxOptions {
   tls?: { certDir: string };
   /** The app has middleware: proxy prefixes without bypassMiddleware must go through Bun. */
   hasMiddleware?: boolean;
+  /** Trusted CA bundle for HTTPS upstreams; defaults to the Debian/Ubuntu system store. */
+  upstreamCaFile?: string;
 }
 
 /** The site's name: opts.serverName, else site.url's host, else "_" (any). */
@@ -69,7 +71,9 @@ export function nginxConfig(config: ResolvedConfig, opts: NginxOptions) {
         proxy_no_cache $http_authorization $http_cookie;
         add_header X-Cache $upstream_cache_status always;`
         : "";
-      const tls = t.protocol === "https:" ? `\n        proxy_ssl_server_name on;\n        proxy_ssl_name ${t.hostname};` : "";
+      const ca = opts.upstreamCaFile ?? "/etc/ssl/certs/ca-certificates.crt";
+      if (/[\r\n";{}]/.test(ca)) throw new Error("Invalid upstream CA path");
+      const tls = t.protocol === "https:" ? `\n        proxy_ssl_server_name on;\n        proxy_ssl_name ${t.hostname};\n        proxy_ssl_verify on;\n        proxy_ssl_verify_depth 5;\n        proxy_ssl_trusted_certificate "${ca}";` : "";
       return `    location ${prefix}/ {
         proxy_pass ${target};
         proxy_http_version 1.1;

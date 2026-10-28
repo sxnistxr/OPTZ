@@ -1,51 +1,34 @@
 #!/usr/bin/env python3
-"""Client for runner.py.
+"""Run a named task via the optz-runner SSH forced command.
 
-  remote.py run  "<cmd>" [timeout]     run and print output, exit with its code
-  remote.py job  "<cmd>"               start a background job, follow its output
-  remote.py tail <id>                  follow an existing job
-  remote.py kill <id>
-
-Env: RUNNER_URL (default http://162.35.162.49), RUNNER_SECRET_FILE (path to the shared secret).
+  RUNNER_SSH_HOST=optz-runner@your-host python3 remote.py run health
+Use ~/.ssh/config for keys, port and bastion settings. Host keys must already be trusted.
 """
-import hashlib, hmac, json, os, secrets, sys, time, urllib.request
-
-URL = os.environ.get("RUNNER_URL", "http://162.35.162.49").rstrip("/")
-SECRET = open(os.environ["RUNNER_SECRET_FILE"], "rb").read().strip()
-
-
-def call(method, path, obj=None, timeout=130):
-    body = json.dumps(obj).encode() if obj is not None else b""
-    ts, nonce = str(int(time.time())), secrets.token_hex(12)
-    msg = f"{method}\n{path}\n{ts}\n{nonce}\n{hashlib.sha256(body).hexdigest()}".encode()
-    req = urllib.request.Request(URL + path, data=body if method == "POST" else None, method=method, headers={
-        "X-Ts": ts, "X-Nonce": nonce, "X-Sig": hmac.new(SECRET, msg, hashlib.sha256).hexdigest(),
-        "Content-Type": "application/json"})
-    with urllib.request.urlopen(req, timeout=timeout) as r:
-        return json.loads(r.read())
+import json
+import os
+import re
+import subprocess
+import sys
 
 
-def follow(jid):
-    off = 0
-    while True:
-        r = call("GET", f"/jobs/{jid}?offset={off}")
-        sys.stdout.write(r["output"]); sys.stdout.flush()
-        off = r["offset"]
-        if not r["running"] and not r["output"]:
-            print(f"[job {jid} exit {r['exit']}]")
-            return r["exit"] or 0
-        if not r["output"]:
-            time.sleep(2)
+def call(task):
+    host = os.environ.get("RUNNER_SSH_HOST", "")
+    if not re.fullmatch(r"[A-Za-z0-9_][A-Za-z0-9_.@:\[\]-]*", host):
+        raise ValueError("set RUNNER_SSH_HOST to a trusted SSH destination")
+    r = subprocess.run(["ssh", "-T", "-oBatchMode=yes", "-oStrictHostKeyChecking=yes",
+                        "-oConnectTimeout=10", "-oServerAliveInterval=15", "-oServerAliveCountMax=2", host],
+                       input=json.dumps({"task": task}) + "\n", text=True, capture_output=True, timeout=130)
+    if r.returncode == 255:
+        raise ValueError("SSH connection failed: " + r.stderr.strip())
+    return json.loads(r.stdout)
 
 
 if __name__ == "__main__":
-    op = sys.argv[1]
-    if op == "run":
-        r = call("POST", "/run", {"cmd": sys.argv[2], "timeout": float(sys.argv[3]) if len(sys.argv) > 3 else 100})
-        sys.stdout.write(r["output"]); sys.exit(0 if r["exit"] == 0 else 1)
-    elif op == "job":
-        r = call("POST", "/jobs", {"cmd": sys.argv[2]}); print(f"[job {r['id']}]"); sys.exit(follow(r["id"]))
-    elif op == "tail":
-        sys.exit(follow(sys.argv[2]))
-    elif op == "kill":
-        print(call("POST", f"/jobs/{sys.argv[2]}/kill"))
+    if len(sys.argv) != 3 or sys.argv[1] != "run":
+        sys.exit("usage: remote.py run <allowlisted-task>")
+    try:
+        result = call(sys.argv[2])
+        sys.stdout.write(result["output"])
+        sys.exit(0 if result["exit"] == 0 else 1)
+    except (ValueError, OSError, subprocess.TimeoutExpired) as e:
+        sys.exit(str(e))

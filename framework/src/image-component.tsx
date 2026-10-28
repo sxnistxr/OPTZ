@@ -4,14 +4,17 @@
 //
 //   import { Image } from "optz/image";
 //   <Image src="/photos/desk.jpg" width={1200} height={800} alt="My desk" sizes="(min-width: 768px) 50vw, 100vw" />
+import { createContext, useContext } from "react";
 import type { CSSProperties, ImgHTMLAttributes } from "react";
 
 const DEFAULT_SIZES = [384, 640, 828, 1080, 1200, 1920, 2048];
 /** The widths the optimizer produces (config images.sizes): set by the server and compiled into
  *  browser bundles, so srcset never offers a width the server would round down. */
-const configuredSizes = (): number[] => {
+export const ImageSizesContext = createContext<number[] | undefined>(undefined);
+const configuredSizes = (scoped?: number[]): number[] => {
   const s = (globalThis as { __OPTZ_IMAGE_SIZES__?: number[] }).__OPTZ_IMAGE_SIZES__;
-  return s?.length ? [...s].sort((a, b) => a - b) : DEFAULT_SIZES;
+  const sizes = scoped ?? s;
+  return sizes?.length ? [...sizes].sort((a, b) => a - b) : DEFAULT_SIZES;
 };
 
 export interface ImageProps extends Omit<ImgHTMLAttributes<HTMLImageElement>, "src" | "width" | "height" | "loading" | "srcSet"> {
@@ -42,7 +45,7 @@ export function Image({ src, alt, width, height, fill, sizes, quality, priority,
   const plain = unoptimized || src.endsWith(".svg") || src.startsWith("data:");
   let srcSet: string | undefined;
   let url = src;
-  const SIZES = configuredSizes();
+  const SIZES = configuredSizes(useContext(ImageSizesContext));
   if (!plain) {
     if (sizes || fill) {
       srcSet = SIZES.map((w) => `${imageUrl(src, w, quality)} ${w}w`).join(", ");

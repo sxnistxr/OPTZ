@@ -3,8 +3,8 @@
 // - fresh: served from memory (already compressed, with an ETag; 304 when the client has it)
 // - stale but within staleWhileRevalidate: served from memory while ONE background request
 //   refreshes it
-// - miss: concurrent requests for the same key share one render (no stampede); each gets its
-//   own copy of the response, so an uncacheable one (404, redirect, private) works for all
+// - miss: identical anonymous requests share public work; private results are recomputed
+//   independently for every caller, including callers already waiting on that work.
 // Bounded by entry count and total bytes (least recently used goes first). Responses that set
 // cookies, aren't 200, say private/no-store, or vary on Cookie, Authorization or * are never
 // stored. Other headers a response varies on become part of its key, like `rc.vary`.
@@ -35,10 +35,7 @@ interface Entry {
 interface Inflight {
   promise: Promise<Entry | Response>;
   rc: RouteCache;
-  /** Requests waiting for this render besides the one that started it. */
-  waiters: number;
-  /** Their copies of an uncacheable response, cloned before anyone reads it. */
-  copies: Response[];
+
 }
 
 /** Request headers whose responses must never be shared between users. */
@@ -55,8 +52,6 @@ export interface CacheStats {
 export class ResponseCache {
   private map = new Map<string, Entry>();
   private inflight = new Map<string, Inflight>();
-  /** Headers responses for a base key were found to vary on (from their Vary header). */
-  private learned = new Map<string, string[]>();
   /** Bumped by invalidate(): renders that started earlier don't store their result. */
   private generation = 0;
   private bytes = 0;
@@ -88,19 +83,15 @@ export class ResponseCache {
     return k;
   }
 
-  /** The full key: `key` plus the request's values of headers responses were seen to vary on. */
-  private fullKey(req: Request, key: string): string {
-    const extra = this.learned.get(key);
-    if (!extra) return key;
-    let k = key;
-    for (const h of extra) k += `\n${h}:${req.headers.get(h) ?? ""}`;
-    return k;
-  }
-
   /** Serves `key` from the cache, or produces, stores and serves it. */
   async handle(req: Request, key: string, rc: RouteCache, produce: () => Promise<Response>): Promise<Response> {
-    const base = key;
-    key = this.fullKey(req, key);
+    // Never serve or coalesce authenticated work through the shared response cache.
+    if (req.headers.has("cookie") || req.headers.has("authorization")) {
+      return privateResponse(await produce());
+    }
+    // Raw Request header reads are just as significant as headers()/cookies() reads.
+    // Include all non-transport inputs even before a response teaches us its Vary fields.
+    key += "\nrequest:" + JSON.stringify([req.method, req.url, [...req.headers].filter(([h]) => !["accept-encoding", "if-none-match"].includes(h))]);
     const now = Date.now();
     const hit = this.map.get(key);
     if (hit) {
@@ -113,24 +104,23 @@ export class ResponseCache {
       if (age < hit.rc.maxAge + (hit.rc.staleWhileRevalidate ?? 0)) {
         this.touch(key, hit);
         this.stats.stale++;
-        if (!this.inflight.has(key)) this.fill(req, base, key, rc, produce).promise.catch(() => {});
+        if (!this.inflight.has(key)) this.fill(req, key, rc, produce).promise.catch(() => {});
         return respond(hit, req, age);
       }
     }
     this.stats.misses++;
     const running = this.inflight.get(key);
     if (running) {
-      running.waiters++;
       const r = await running.promise;
-      return r instanceof Response ? running.copies.pop()! : respond(r, req, 0);
+      return r instanceof Response ? produce() : respond(r, req, 0);
     }
-    const r = await this.fill(req, base, key, rc, produce).promise;
+    const r = await this.fill(req, key, rc, produce).promise;
     return r instanceof Response ? r : respond(r, req, 0);
   }
 
-  private fill(req: Request, base: string, key: string, rc: RouteCache, produce: () => Promise<Response>): Inflight {
+  private fill(req: Request, key: string, rc: RouteCache, produce: () => Promise<Response>): Inflight {
     const gen = this.generation;
-    const f: Inflight = { rc, waiters: 0, copies: [], promise: null as never };
+    const f: Inflight = { rc, promise: null as never };
     f.promise = (async () => {
       let res: Response;
       try {
@@ -144,21 +134,12 @@ export class ResponseCache {
         .split(",")
         .map((v) => v.trim().toLowerCase())
         .filter((v) => v && v !== "accept-encoding");
-      if (res.status !== 200 || res.headers.has("set-cookie") || /no-store|private/.test(cc) || vary.some((v) => PERSONAL.test(v))) {
-        // Every waiter gets its own copy, made before anyone reads the body.
-        for (let i = 0; i < f.waiters; i++) f.copies.push(res.clone());
+      if (res.status !== 200 || res.headers.has("set-cookie") || /no-store|private/i.test(cc) || vary.some((v) => PERSONAL.test(v))) {
+        // Waiters must run their own producer: even a no-store response may set a session.
         return res;
       }
       const configured = (rc.vary ?? []).map((v) => v.toLowerCase());
-      const extra = vary.filter((v) => !configured.includes(v));
-      let storeKey = key;
-      if (extra.length) {
-        // The response varies on more than the route said: key it (and later lookups) by those too.
-        const known = this.learned.get(base) ?? [];
-        const merged = [...new Set([...known, ...extra])].sort();
-        if (merged.length !== known.length) this.learned.set(base, merged);
-        storeKey = this.fullKey(req, base);
-      }
+      const storeKey = key;
       const body = new Uint8Array(await res.arrayBuffer());
       const headers: [string, string][] = [];
       res.headers.forEach((v, k) => {
@@ -211,7 +192,7 @@ export class ResponseCache {
 
   clear() {
     this.generation++;
-    this.learned.clear();
+    this.inflight.clear();
     this.map.clear();
     this.bytes = 0;
   }
@@ -240,4 +221,11 @@ function respond(e: Entry, req: Request, age: number): Response {
     h.set("Content-Encoding", "gzip");
   }
   return new Response(body as BodyInit, { status: e.status, headers: h });
+}
+
+/** Fetch responses can have immutable headers; never mutate them to enforce privacy. */
+export function privateResponse(res: Response): Response {
+  const headers = new Headers(res.headers);
+  headers.set("Cache-Control", "private, no-store");
+  return new Response(res.body, { status: res.status, statusText: res.statusText, headers });
 }

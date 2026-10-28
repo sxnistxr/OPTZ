@@ -1,3 +1,4 @@
+import { BodyLimitError, readBody } from "./body";
 // Model Context Protocol: the app as a server AI clients can use (Claude, ChatGPT, Codex,
 // Cursor, VS Code, Gemini CLI, ...). Files in app/mcp become tools, prompts and resources:
 //
@@ -507,11 +508,13 @@ export function createMcpServer({ config, modules, pages, canRead, dev }: McpSer
       if (v && !PROTOCOL_VERSIONS.includes(v)) return json(rpcError(null, -32600, `Unsupported MCP-Protocol-Version: ${v}`), 400);
       let body: unknown;
       try {
-        body = await req.json();
-      } catch {
+        body = JSON.parse(new TextDecoder().decode(await readBody(req.body, config.server.maxRequestBodySize)));
+      } catch (e) {
+        if (e instanceof BodyLimitError) return json(rpcError(null, -32600, "Request body limit exceeded"), 413);
         return json(rpcError(null, -32700, "Parse error"), 400);
       }
       if (Array.isArray(body)) {
+        if (body.length > 32) return json(rpcError(null, -32600, "Batch limit is 32 requests"), 413);
         if (!body.length) return json(rpcError(null, -32600, "Invalid Request"), 400);
         const out = (await Promise.all(body.map((m) => one(m, ctx)))).filter((x) => x !== null);
         return out.length ? json(out) : new Response(null, { status: 202 });

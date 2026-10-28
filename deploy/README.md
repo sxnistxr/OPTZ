@@ -1,22 +1,16 @@
-# VPS auto-sync
+# Deployment
 
-The VPS polls GitHub every 30 seconds and pulls new commits on `main` into
-`/srv/optz`. After each update it runs `deploy/post-deploy.sh`, so edit that
-file to build or restart whatever needs to go live.
+The old root service that polled a mutable Git branch and ran repository hooks is retired. On existing VPS installations, run `sudo bash deploy/setup-vps.sh` to stop and disable `optz-sync.timer` and its service. Repository changes alone do not stop an installed timer.
 
-## One-time setup (on the VPS)
+Use `ops/install-prod.sh` for initial installation. Promote an explicitly reviewed commit with `sudo bash ops/deploy.sh /path/to/reviewed-checkout`; it builds unprivileged and uses health-checked releases with rollback. Do not run deployment through the task runner or enable unattended repository hooks. Review deployment scripts and configuration along with the commit being promoted.
 
-```sh
-ssh root@162.35.162.49
-curl -fsSL https://raw.githubusercontent.com/sxnistxr/OPTZ/main/deploy/setup-vps.sh | sudo bash
-```
+For CI automation, publish immutable build artifacts identified by commit and digest and give a separate deployment identity only permission to promote those approved artifacts. No root credentials belong in pull-request jobs. Runtime data stays outside the checkout under `/var/lib/optz`.
 
-## Useful commands
+## Restore automatic GitHub deployment
 
-- Follow sync logs: `journalctl -u optz-sync.service -f`
-- Force a sync now: `sudo systemctl start optz-sync.service`
-- Stop syncing: `sudo systemctl disable --now optz-sync.timer`
-
-Note: each update discards local edits and untracked (non-gitignored) files in
-`/srv/optz`, so
-keep runtime data (uploads, databases, `.env`) outside that directory.
+Run `sudo python3 ops/migrate-autodeploy.py --host your-server.example --configure-github`
+from the updated server checkout. It migrates the existing production installation, preserves
+its app/database, installs a restricted SSH deployment identity and sandboxed builder, and uses
+an authenticated GitHub CLI session to configure production secrets and the Deploy workflow.
+Preview with `--dry-run`. See [automatic deployment migration](../ops/autodeploy/README.md)
+for prerequisites, private repositories, SSH ports, backups and retry behavior.
