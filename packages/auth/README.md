@@ -174,6 +174,9 @@ need their own policy tests; the MFA contract here covers the built-in sign-ins 
 - `onEvent` provides only endpoint templates, method, status and duration. Dynamic reset/provider
   paths, queries, cookies, passwords and codes are excluded. Provider delivery failures are generic;
   auth telemetry and raw library logging are disabled.
+- Apply `Referrer-Policy: no-referrer` and private/no-store caching to the application's recovery
+  pages too. Redact query strings, reset-token path segments and cookies from reverse-proxy/APM
+  access logs; token-bearing URLs must not enter analytics. The example enforces these page headers.
 
 ## Verification and performance
 
