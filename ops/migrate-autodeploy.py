@@ -290,7 +290,7 @@ def migrate(args):
         print("GitHub production environment secrets and deploy workflow configured. Successful main CI will trigger deployment.")
     else:
         print("GitHub activation remains: rerun with --configure-github after authenticating gh, or follow ops/autodeploy/README.md.")
-        print("Workflow: " + str(ROOT / "deploy.yml") + "; secret input files: " + str(secret_dir))
+        print("Workflow: " + str(ROOT / "deploy.yml") + "; secret input files are stored in the managed root-only secrets directory.")
 
 
 if __name__ == "__main__":
