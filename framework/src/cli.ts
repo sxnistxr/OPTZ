@@ -82,7 +82,7 @@ switch (cmd) {
     const { nginxConfig } = await import("./nginx");
     const tls = args.indexOf("--tls");
     const certDir = tls >= 0 ? args[tls + 1] : undefined;
-    const positional = args.filter((a, i) => !a.startsWith("--") && args[i - 1] !== "--tls" && args[i - 1] !== "--server-name");
+    const positional = args.filter((a, i) => !a.startsWith("--") && args[i - 1] !== "--tls" && args[i - 1] !== "--server-name" && args[i - 1] !== "--upstream-ca");
     const sn = args.indexOf("--server-name");
     const hasMiddleware = ["ts", "tsx", "js"].some((e) => existsSync(join(root, `app/middleware.${e}`)));
     process.stdout.write(
@@ -91,6 +91,7 @@ switch (cmd) {
         tls: certDir ? { certDir } : undefined,
         serverName: sn >= 0 ? args[sn + 1] : undefined,
         hasMiddleware,
+        upstreamCaFile: args.includes("--upstream-ca") ? args[args.indexOf("--upstream-ca") + 1] : undefined,
       }),
     );
     break;
@@ -169,7 +170,7 @@ switch (cmd) {
   optz start          serve the build (PORT/HOST env vars override optz.config.ts)
   optz export         static site in dist/static (no server features)
   optz check          generate route types and type-check (tsc)
-  optz nginx [dir] [--tls certdir]   print an nginx config (dir: deployed dist/ path)
+  optz nginx [dir] [--tls certdir] [--upstream-ca file]   print an nginx config (dir: deployed dist/ path)
   optz create <dir>   start a new app
   optz mcp            MCP server (stdio) with this project's tools, for coding agents
   optz agents         write AGENTS.md, agent skills and MCP configs for Claude Code,

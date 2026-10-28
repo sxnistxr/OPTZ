@@ -82,7 +82,7 @@ test("vary headers split the key", () => {
   expect(ResponseCache.key(req({ "accept-language": "en" }), url, rc)).not.toBe(ResponseCache.key(req({ "accept-language": "de" }), url, rc));
 });
 
-test("concurrent waiters each get their own copy of an uncacheable response (404, redirect, private)", async () => {
+test("concurrent waiters independently produce uncacheable responses", async () => {
   const c = new ResponseCache(10, 1 << 20, z);
   let calls = 0;
   const produce = async () => {
@@ -91,7 +91,7 @@ test("concurrent waiters each get their own copy of an uncacheable response (404
     return new Response("missing", { status: 404 });
   };
   const rs = await Promise.all(Array.from({ length: 4 }, () => c.handle(req(), "k", { maxAge: 60 }, produce)));
-  expect(calls).toBe(1);
+  expect(calls).toBe(4);
   expect(rs.map((r) => r.status)).toEqual([404, 404, 404, 404]);
   expect(await Promise.all(rs.map((r) => r.text()))).toEqual(["missing", "missing", "missing", "missing"]);
 });
@@ -123,7 +123,7 @@ test("a response's own Vary header keys the cache; Vary: Cookie is never shared"
 test("configured vary on Cookie is private for CDNs", async () => {
   const c = new ResponseCache(10, 1 << 20, z);
   const r = await c.handle(req({ cookie: "a=1" }), "k\ncookie:a=1", { maxAge: 60, vary: ["cookie"] }, async () => body(1));
-  expect(r.headers.get("cache-control")).toBe("private, max-age=0");
+  expect(r.headers.get("cache-control")).toBe("private, no-store");
 });
 
 test("invalidating while a render runs: its result isn't stored", async () => {

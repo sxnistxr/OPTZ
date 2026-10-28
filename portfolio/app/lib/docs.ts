@@ -1,3 +1,4 @@
+import { safeHtml } from "./safe-html";
 // The documentation: Markdown files from anywhere in the repository (content/docs/index.json
 // lists them by section), rendered at build time. Headings get ids and anchors, links to other
 // docs pages become /docs/<slug>, links to other repository files go to GitHub.
@@ -125,7 +126,7 @@ function render(e: Entry, body: string): { html: string; toc: TocEntry[] } {
       },
     },
   });
-  return { html: md.parse(body, { async: false }) as string, toc };
+  return { html: safeHtml(md.parse(body, { async: false }) as string), toc };
 }
 
 export function docSections(): { section: string; pages: DocMeta[] }[] {

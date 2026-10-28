@@ -11,7 +11,7 @@ The code behind [dihlabs.lol](https://dihlabs.lol), a dev lab by sxnistxr. Full 
 | `apps/social/` | The social network demo over the Rust engine (it used to be on the site) |
 | `submissions/rust-iouring-sxnistxr` | Link to `portfolio/engine` (the $12 Server Challenge entry) |
 | `ops/` | Production: systemd units, generated nginx, deploys with rollback, verified backups |
-| `deploy/` | The VPS auto-sync (pulls this branch every 30 s and deploys) |
+| `deploy/` | CI-gated automatic deployment migration; reviewed release workflow |
 | `bench/` | The portfolio ported to Next.js (`compare.sh`), and optz vs nginx in C (`native.sh`) |
 | `docs/` | Design notes and measurements ([optz vs Next.js](docs/OPTZ-VS-NEXTJS.md), [would C be faster?](docs/NATIVE.md)) |
 

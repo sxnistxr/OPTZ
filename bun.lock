@@ -94,6 +94,7 @@
     "portfolio": {
       "name": "portfolio",
       "dependencies": {
+        "htmlparser2": "12.0.0",
         "marked": "18.1.1",
         "optz": "workspace:*",
         "react": "19.3.1",

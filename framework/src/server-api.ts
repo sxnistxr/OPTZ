@@ -1,6 +1,6 @@
 // optz/server: functions for server code (API routes, Server Actions, dynamic pages, loaders).
 // Never import this from an island or other browser code.
-import { dataCaches, getRevalidator, store } from "./context";
+import { als, dataCaches, getRevalidator, store, type AppServices } from "./context";
 
 export { NotFound, notFound, redirect } from "./index";
 
@@ -98,12 +98,6 @@ export function cookies() {
 }
 
 export const DRAFT_COOKIE = "__optz_draft";
-let draftToken: (() => { value: string; maxAge: number }) | null = null;
-/** Set by the server: makes a new signed draft cookie value (expiring after maxAge seconds). */
-export const setDraftToken = (f: () => { value: string; maxAge: number }) => {
-  draftToken = f;
-};
-
 /** Draft mode: static pages render per request (for previewing unpublished content) while the
  *  cookie is set. Turn it on from an API route your CMS calls, after checking its secret. */
 export function draftMode() {
@@ -111,6 +105,7 @@ export function draftMode() {
   return {
     isEnabled: s.draft,
     enable() {
+      const draftToken = s.services?.draftToken;
       if (!draftToken) throw new Error("optz: draft mode isn't available here");
       const t = draftToken();
       s.setCookies.push(serializeCookie(DRAFT_COOKIE, t.value, { secure: s.url.protocol === "https:", maxAge: t.maxAge }));
@@ -189,10 +184,20 @@ export class ActionError extends Error {
  *
  *  Only for data that's the same for every visitor: nothing request-specific goes in. */
 export function cache<A extends unknown[], R>(fn: (...args: A) => R | Promise<R>, opts: { tags?: string[]; revalidate?: number; maxEntries?: number } = {}): (...args: A) => Promise<Awaited<R>> {
-  const entries = new Map<string, { at: number; value: Promise<Awaited<R>> }>();
+  type Entries = Map<string, { at: number; value: Promise<Awaited<R>> }>;
+  const globalEntries: Entries = new Map();
+  const scoped = new WeakMap<AppServices, Entries>();
   const max = opts.maxEntries ?? 1000;
-  dataCaches.add({ tags: opts.tags ?? [], clear: () => entries.clear() });
+  dataCaches.add({ tags: opts.tags ?? [], clear: () => globalEntries.clear() });
   return (...args: A) => {
+    const owner = als.getStore()?.services;
+    let entries = owner ? scoped.get(owner) : globalEntries;
+    if (!entries) {
+      entries = new Map();
+      scoped.set(owner!, entries);
+      const owned = entries;
+      (owner!.dataCaches ??= new Set()).add({ tags: opts.tags ?? [], clear: () => owned.clear() });
+    }
     const key = JSON.stringify(args);
     const hit = entries.get(key);
     if (hit && (opts.revalidate === undefined || Date.now() - hit.at < opts.revalidate * 1000)) return hit.value;

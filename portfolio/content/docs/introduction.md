@@ -16,7 +16,7 @@ and everything that deploys them.
 | `apps/social/` | A small social network over the Rust engine (it used to be on this site) |
 | `apps/example/` | The starter `optz create` makes |
 | `bench/` | The site ported to Next.js, and the benchmark scripts |
-| `ops/`, `deploy/` | Production: systemd units, generated nginx, deploys with rollback, backups, auto-sync |
+| `ops/`, `deploy/` | Production: systemd units, generated nginx, deploys with rollback, backups, reviewed releases |
 | `docs/` | Design notes and measurements |
 
 ## The short version

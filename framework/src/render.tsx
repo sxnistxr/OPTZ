@@ -6,6 +6,7 @@ import type { ComponentType, ReactNode } from "react";
 import { renderToReadableStream } from "react-dom/server";
 import { prerender } from "react-dom/static";
 import type { Segment } from "./match";
+import { ImageSizesContext } from "./image-component";
 import { NotFound } from "./index";
 import { StaticRouter, type LocaleInfo, type PageState } from "./runtime";
 import type { ErrorModule, Head, LayoutModule, LoaderContext, PageModule, Params, RenderMode, ResolvedConfig } from "./types";
@@ -247,7 +248,7 @@ ${preload.map((p) => `<link rel="modulepreload" href="${p}">`).join("\n")}${scri
     let late: Extract<Loaded, { kind: "redirect" | "notFound" }> | null = null;
     let reactStream: ReadableStream<Uint8Array>;
     try {
-      reactStream = await renderToReadableStream(<StaticRouter state={state} />, {
+      reactStream = await renderToReadableStream(<ImageSizesContext.Provider value={config.images.sizes}><StaticRouter state={state} /></ImageSizesContext.Provider>, {
         nonce,
         onError(e) {
           const c = control(e);
@@ -287,7 +288,7 @@ ${preload.map((p) => `<link rel="modulepreload" href="${p}">`).join("\n")}${scri
   let body: string;
   let thrown: Extract<Loaded, { kind: "redirect" | "notFound" }> | null = null;
   try {
-    const { prelude } = await prerender(<StaticRouter state={state} />, {
+    const { prelude } = await prerender(<ImageSizesContext.Provider value={config.images.sizes}><StaticRouter state={state} /></ImageSizesContext.Provider>, {
       onError(e) {
         const c = control(e);
         if (c) thrown ??= c;
@@ -348,7 +349,7 @@ async function renderError(
     err = Object.assign(new Error("Something went wrong."), { digest });
   }
   const failed: PageState = { ...state, Loading: undefined, Page: () => <View error={err} params={input.params} /> };
-  const { prelude } = await prerender(<StaticRouter state={failed} />);
+  const { prelude } = await prerender(<ImageSizesContext.Provider value={config.images.sizes}><StaticRouter state={failed} /></ImageSizesContext.Provider>);
   const body = await new Response(prelude).text();
   return { kind: "page", ...assemble(body, docHead, boot, assets, islandsMode, config), payload: { data: null, head: {} }, status: 500 };
 }
