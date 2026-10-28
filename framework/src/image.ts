@@ -11,6 +11,7 @@ import { createHash } from "node:crypto";
 import { mkdir, readdir, readFile, stat, unlink, writeFile } from "node:fs/promises";
 import { availableParallelism } from "node:os";
 import { isAbsolute, join } from "node:path";
+import { fetchRemoteImage, ImageDownloadError } from "./remote-image";
 import type { StaticEntry } from "./static";
 import type { ResolvedConfig } from "./types";
 
@@ -28,24 +29,19 @@ interface Out {
   etag: string;
 }
 
-const memory = new Map<string, Out>();
-let memoryBytes = 0;
-const inflight = new Map<string, Promise<Out>>();
-// Encoding is CPU-bound: a few at a time, leaving a core for serving requests.
-let running = 0;
-const waiting: Array<() => void> = [];
-async function pooled<T>(limit: number, f: () => Promise<T>): Promise<T> {
-  if (running >= limit) await new Promise<void>((r) => waiting.push(r));
-  running++;
-  try {
-    return await f();
-  } finally {
-    running--;
-    waiting.shift()?.();
-  }
+// State belongs to this app's static-file map, never to another app in the process.
+interface ImageState {
+  memory: Map<string, Out>;
+  memoryBytes: number;
+  inflight: Map<string, Promise<Out>>;
+  sources: Map<string, Promise<{ body: Uint8Array; type: string }>>;
+  active: number;
+  waiting: Array<() => void>;
+  diskWarned: boolean;
+  lastTrim: number;
 }
+const states = new WeakMap<Map<string, StaticEntry>, ImageState>();
 const defaultConcurrency = () => Math.max(1, Math.min(4, availableParallelism() - 1));
-let diskWarned = false;
 
 /** Where optimized images are kept on disk. */
 export function imageCacheDir(root: string, config: ResolvedConfig): string {
@@ -55,7 +51,28 @@ export function imageCacheDir(root: string, config: ResolvedConfig): string {
 
 const bad = (msg: string, status = 400) => new Response(msg, { status, headers: { "Content-Type": "text/plain", "Cache-Control": "no-store" } });
 
-export async function handleImage(req: Request, url: URL, { root, config, files }: Ctx): Promise<Response> {
+export async function handleImage(req: Request, url: URL, ctx: Ctx): Promise<Response> {
+  let state = states.get(ctx.files);
+  if (!state) {
+    state = { memory: new Map(), memoryBytes: 0, inflight: new Map(), sources: new Map(), active: 0, waiting: [], diskWarned: false, lastTrim: 0 };
+    states.set(ctx.files, state);
+  }
+  // Admission happens before downloading/retaining inputs. The small queue holds requests only.
+  const limit = Math.max(1, Math.min(4, Math.floor(ctx.config.images.concurrency ?? defaultConcurrency()) || 1));
+  if (state.active >= limit) {
+    if (state.waiting.length >= 8) return bad("image service busy", 503);
+    await new Promise<void>((resolve) => state.waiting.push(resolve));
+  } else state.active++;
+  try { return await processImage(req, url, ctx, state); }
+  catch (e) { return bad(e instanceof ImageDownloadError ? e.message : "couldn't process the image", e instanceof ImageDownloadError ? e.status : 422); }
+  finally {
+    const next = state.waiting.shift();
+    if (next) next(); else state.active--;
+  }
+}
+
+async function processImage(req: Request, url: URL, { root, config, files }: Ctx, state: ImageState): Promise<Response> {
+  const { memory, inflight } = state;
   const o = config.images ?? {};
   const sizes = (o.sizes ?? DEFAULT_SIZES).slice().sort((a, b) => a - b);
   const src = url.searchParams.get("url") ?? "";
@@ -84,15 +101,16 @@ export async function handleImage(req: Request, url: URL, { root, config, files 
     } catch {
       return bad("bad url");
     }
-    if (u.protocol !== "https:" || !(o.remoteHosts ?? []).includes(u.hostname)) return bad(`${u.hostname} isn't in images.remoteHosts`, 403);
-    const r = await fetch(u, { signal: AbortSignal.timeout(8000) }).catch(() => null);
-    if (!r?.ok) return bad("couldn't fetch the image", 502);
-    const len = Number(r.headers.get("content-length") ?? 0);
-    if (len > 20 << 20) return bad("image too large", 413);
-    input = new Uint8Array(await r.arrayBuffer());
-    if (input.length > 20 << 20) return bad("image too large", 413);
-    srcType = r.headers.get("content-type") ?? "";
-    srcTag = r.headers.get("etag") ?? String(input.length);
+    let source = state.sources.get(src);
+    if (!source) {
+      source = fetchRemoteImage(u, o.remoteHosts ?? []);
+      state.sources.set(src, source);
+      void source.finally(() => state.sources.delete(src)).catch(() => {});
+    }
+    const downloaded = await source;
+    input = downloaded.body;
+    srcType = downloaded.type;
+    srcTag = createHash("sha256").update(input).digest("hex");
   }
   // Vector and animated images are sent as they are.
   if (srcType.includes("svg") || srcType.includes("gif")) {
@@ -121,19 +139,19 @@ export async function handleImage(req: Request, url: URL, { root, config, files 
       if (cached) return { body: new Uint8Array(cached), type: `image/${fmt}`, etag: `"${key}"` };
       const sharp = await loadSharp();
       if (!sharp) return { body: input, type: srcType, etag: `"${key}-orig"` };
-      const body = await pooled(o.concurrency ?? defaultConcurrency(), async () => {
+      const body = await (async () => {
         const img = sharp(input, { failOn: "error", limitInputPixels: 40_000_000 }).rotate().resize({ width, withoutEnlargement: true });
         const enc = fmt === "avif" ? img.avif({ quality: Math.max(1, q - 20), effort: 3 }) : fmt === "webp" ? img.webp({ quality: q }) : fmt === "png" ? img.png({ palette: true, quality: q }) : img.jpeg({ quality: q, mozjpeg: true });
         return new Uint8Array(await enc.toBuffer());
-      });
+      })();
       // The disk copy is an optimization: a read-only cache directory only costs re-encodes.
       try {
         await mkdir(dir, { recursive: true });
         await writeFile(file, body);
-        void trimDisk(dir, (o.cacheMB ?? 256) << 20).catch(() => {});
+        void trimDisk(dir, (o.cacheMB ?? 256) * (1 << 20), state).catch(() => {});
       } catch (e) {
-        if (!diskWarned) {
-          diskWarned = true;
+        if (!state.diskWarned) {
+          state.diskWarned = true;
           console.warn(`optz: can't write the image cache in ${dir} (${(e as Error).message}); keeping optimized images in memory only. Set images.cacheDir or OPTZ_IMAGE_CACHE_DIR to a writable directory.`);
         }
       }
@@ -149,12 +167,13 @@ export async function handleImage(req: Request, url: URL, { root, config, files 
     console.error(`optz: image ${src}:`, e);
     return bad("couldn't process the image", 422);
   }
+  state.memoryBytes -= memory.get(key)?.body.length ?? 0;
   memory.set(key, out);
-  memoryBytes += out.body.length;
-  while (memoryBytes > 32 << 20) {
+  state.memoryBytes += out.body.length;
+  while (state.memoryBytes > 32 << 20 && memory.size) {
     const [k, v] = memory.entries().next().value as [string, Out];
     memory.delete(k);
-    memoryBytes -= v.body.length;
+    state.memoryBytes -= v.body.length;
   }
   return new Response(out.body as BodyInit, { headers: headers(out) });
 }
@@ -171,10 +190,9 @@ const loadSharp = () =>
     },
   ));
 
-let lastTrim = 0;
-async function trimDisk(dir: string, max: number) {
-  if (Date.now() - lastTrim < 60_000) return;
-  lastTrim = Date.now();
+async function trimDisk(dir: string, max: number, state: ImageState) {
+  if (Date.now() - state.lastTrim < 60_000) return;
+  state.lastTrim = Date.now();
   const files = await Promise.all(
     (await readdir(dir)).map(async (f) => {
       const s = await stat(join(dir, f));

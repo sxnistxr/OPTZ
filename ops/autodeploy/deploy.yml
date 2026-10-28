@@ -1,0 +1,46 @@
+name: Deploy
+on:
+  workflow_run:
+    workflows: [CI]
+    types: [completed]
+permissions: {}
+concurrency:
+  group: production-deploy
+  cancel-in-progress: false
+jobs:
+  deploy:
+    if: >-
+      github.event.workflow_run.conclusion == 'success' &&
+      github.event.workflow_run.event == 'push' &&
+      github.event.workflow_run.head_branch == 'main' &&
+      github.event.workflow_run.head_repository.full_name == github.repository
+    runs-on: ubuntu-24.04
+    environment: production
+    timeout-minutes: 35
+    steps:
+      # No checkout or artifacts from the triggering workflow: only its validated identifiers.
+      - name: Deploy the exact commit that passed CI
+        env:
+          DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
+          DEPLOY_PORT: ${{ secrets.DEPLOY_PORT }}
+          DEPLOY_KEY: ${{ secrets.DEPLOY_KEY }}
+          DEPLOY_KNOWN_HOSTS: ${{ secrets.DEPLOY_KNOWN_HOSTS }}
+          DEPLOY_SHA: ${{ github.event.workflow_run.head_sha }}
+          CI_RUN_ID: ${{ github.event.workflow_run.id }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          [[ "$DEPLOY_HOST" =~ ^[A-Za-z0-9][A-Za-z0-9.-]*$ ]] || { echo 'Invalid DEPLOY_HOST'; exit 1; }
+          [[ "$DEPLOY_PORT" =~ ^[0-9]+$ ]] && (( DEPLOY_PORT > 0 && DEPLOY_PORT < 65536 )) || exit 1
+          [[ "$DEPLOY_SHA" =~ ^[0-9a-f]{40}$ ]] && [[ "$CI_RUN_ID" =~ ^[1-9][0-9]*$ ]] || exit 1
+          [[ -n "$DEPLOY_KEY" && -n "$DEPLOY_KNOWN_HOSTS" ]] || { echo 'Deployment secrets are missing'; exit 1; }
+          umask 077
+          task_ssh_dir="$(mktemp -d)"
+          trap 'rm -rf "$task_ssh_dir"' EXIT
+          printf '%s\n' "$DEPLOY_KEY" > "$task_ssh_dir/key"
+          printf '%s\n' "$DEPLOY_KNOWN_HOSTS" > "$task_ssh_dir/known_hosts"
+          ssh -T -i "$task_ssh_dir/key" -p "$DEPLOY_PORT" \
+            -oBatchMode=yes -oIdentitiesOnly=yes -oStrictHostKeyChecking=yes \
+            -oUserKnownHostsFile="$task_ssh_dir/known_hosts" \
+            -oConnectTimeout=15 -oServerAliveInterval=15 -oServerAliveCountMax=3 \
+            "optz-deploy@$DEPLOY_HOST" "deploy $DEPLOY_SHA $CI_RUN_ID"

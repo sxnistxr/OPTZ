@@ -29,6 +29,11 @@ jobs:
         with:
           bun-version: ${{ env.BUN_VERSION }}
       - run: bun install --frozen-lockfile
+      - name: Administrative tooling security checks
+        run: |
+          python3 -m unittest discover -s ops/runner -p 'test_*.py'
+          python3 -m unittest discover -s ops/autodeploy -p 'test_*.py'
+          bash -n ops/autodeploy/build.sh ops/runner/install.sh ops/deploy.sh deploy/setup-vps.sh deploy/sync.sh deploy/post-deploy.sh
       - name: Dependency audit
         run: bun audit
       - name: Framework types

@@ -5,6 +5,7 @@ import { AsyncLocalStorage } from "node:async_hooks";
 import type { Locals } from "./types";
 
 export interface RequestStore {
+  services?: AppServices;
   request: Request;
   url: URL;
   locals: Locals;
@@ -32,16 +33,39 @@ export function store(fn: string): RequestStore {
   return s;
 }
 
+/** Track raw Request header reads at the user-code boundary, just like headers(). */
+export function trackRequest(req: Request, s: RequestStore | undefined, url = req.url): Request {
+  if (!s) return req;
+  const headers = new Proxy(req.headers, {
+    get(t, k) {
+      if (k === "get" || k === "has") return (name: string) => { s.reads.add(name.toLowerCase()); return t[k](name); };
+      if ((k === "entries" || k === "keys" || k === "values" || k === "forEach" || k === Symbol.iterator)) s.reads.add("*");
+      const value = Reflect.get(t, k, t);
+      return typeof value === "function" ? value.bind(t) : value;
+    },
+  });
+  return new Proxy(req, {
+    get(t, k) {
+      if (k === "url") return url;
+      if (k === "headers") return headers;
+      if (k === "clone") return () => trackRequest(t.clone(), s, url);
+      const value = Reflect.get(t, k, t);
+      return typeof value === "function" ? value.bind(t) : value;
+    },
+  });
+}
+
 /** Hooks the running app registers so revalidatePath/revalidateTag can reach its caches. */
 export interface Revalidator {
   path(path: string, type: "page" | "layout"): void;
   tag(tag: string): void;
 }
-let revalidator: Revalidator | null = null;
-export const setRevalidator = (r: Revalidator | null) => {
-  revalidator = r;
-};
-export const getRevalidator = () => revalidator;
+export interface AppServices {
+  revalidator?: Revalidator;
+  draftToken?: () => { value: string; maxAge: number };
+  dataCaches?: Set<DataCache>;
+}
+export const getRevalidator = () => als.getStore()?.services?.revalidator;
 
 export const newStore = (init: Omit<RequestStore, "setCookies" | "after" | "revalidated" | "reads" | "env" | "waitUntil"> & Partial<Pick<RequestStore, "env" | "waitUntil">>): RequestStore => ({ ...init, setCookies: [], after: [], revalidated: false, reads: new Set() });
 
@@ -90,8 +114,8 @@ export interface DataCache {
 }
 export const dataCaches = new Set<DataCache>();
 /** Drops every data cache that has one of `tags`. */
-export function clearDataCaches(tags: string[]) {
+export function clearDataCaches(tags: string[], services?: AppServices) {
   if (!tags.length) return;
-  for (const c of dataCaches) if (c.tags.some((t) => tags.includes(t))) c.clear();
+  for (const c of [...dataCaches, ...(services?.dataCaches ?? [])]) if (c.tags.some((t) => tags.includes(t))) c.clear();
 }
 

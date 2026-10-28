@@ -1,3 +1,4 @@
+import { safeHtml } from "./safe-html";
 // Blog posts from content/blog/*.md. Server-only: used by page loaders, which run at build
 // time for static pages and are stripped from browser bundles.
 import { readdirSync, readFileSync } from "node:fs";
@@ -24,7 +25,7 @@ function parse(file: string): Post {
     m[1].split("\n").filter(Boolean).map((l) => [l.slice(0, l.indexOf(":")).trim(), l.slice(l.indexOf(":") + 1).trim()]),
   );
   for (const k of ["title", "date"]) if (!meta[k]) throw new Error(`${file}: missing ${k}`);
-  return { slug: file.replace(/\.md$/, ""), title: meta.title, date: meta.date, summary: meta.summary, html: marked.parse(text.slice(m[0].length), { async: false }) };
+  return { slug: file.replace(/\.md$/, ""), title: meta.title, date: meta.date, summary: meta.summary, html: safeHtml(marked.parse(text.slice(m[0].length), { async: false })) };
 }
 
 export function allPosts(): Post[] {

@@ -1,8 +1,7 @@
 # Deployment
 
 dihlabs.lol runs on one $1.50 VPS: 1 vCPU, 2 GB of memory, Ubuntu 24.04. nginx in front, the site
-on Bun, the Rust engine next to it, all under systemd, updated from this repository
-automatically.
+on Bun, the Rust engine next to it, all under systemd, promoted from explicitly reviewed commits.
 
 ## Production layout
 
@@ -19,8 +18,9 @@ automatically.
 
 ```sh
 ssh root@your-server
-# clone into /srv/optz and pull the branch every 30 s (BRANCH defaults to main)
-curl -fsSL https://raw.githubusercontent.com/sxnistxr/OPTZ/main/deploy/setup-vps.sh | sudo BRANCH=main bash
+# Clone, review and select the exact commit before running administrative scripts.
+git clone https://github.com/sxnistxr/OPTZ.git /srv/optz
+git -C /srv/optz checkout --detach YOUR_REVIEWED_COMMIT
 sudo bash /srv/optz/ops/install-prod.sh        # users, toolchains (pinned, checksummed), units, first deploy
 ```
 
@@ -32,7 +32,12 @@ the systemd units and runs the first deploy.
 
 `ops/deploy.sh` builds the commit, switches releases and health-checks them; it rolls back by
 itself if the new release isn't healthy within 30 seconds, and keeps the five newest releases.
-Follow it with `journalctl -u optz-sync.service -f`.
+Run `sudo bash /srv/optz/ops/deploy.sh /srv/optz` after selecting the reviewed commit.
+Follow service logs with `journalctl -u optz -u optz-web -f`.
+
+On existing installations, run `sudo bash /srv/optz/deploy/setup-vps.sh` to stop the old root
+branch-polling timer. The old HTTP runner must also be disabled; the optional replacement is
+an SSH forced command with fixed tasks and an unprivileged account (see `ops/runner/README.md`).
 
 The site build downloads its fonts from Google at build time and renders Open Graph images, so
 the server needs outbound HTTPS while building (not while serving). Downloads are cached in

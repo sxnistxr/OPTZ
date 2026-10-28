@@ -69,8 +69,7 @@ Both pin the server to one core with `taskset` and run `wrk` on the others. Numb
 ## From commit to production
 
 ```
-git push  ──>  VPS polls GitHub every 30 s (deploy/sync.sh, systemd timer)
-               └─ deploy/post-deploy.sh ─> ops/deploy.sh
+review commit + checks  ──>  administrator promotes that checkout with ops/deploy.sh
                     1. build the engine (Rust, as the unprivileged optz user, cached)
                     2. bun install --frozen-lockfile, optz check, optz build (the site)
                     3. generate nginx config from optz.config.ts

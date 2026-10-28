@@ -6,15 +6,16 @@
 // Speed comes from doing almost nothing per request for the common cases: pre-rendered pages,
 // their data and every asset are in memory with brotli and gzip copies and an ETag, so serving
 // them is a map lookup. React's server renderer isn't even loaded until a dynamic page needs it.
+import { readBody } from "./body";
 import { BOUND_FIELD, tagModule } from "./actions-runtime";
-import { cacheControl, ResponseCache } from "./cache";
-import { als, clearDataCaches, inStore, newStore, setRevalidator, type RequestStore } from "./context";
+import { cacheControl, privateResponse, ResponseCache } from "./cache";
+import { als, clearDataCaches, inStore, newStore, trackRequest, type AppServices, type RequestStore } from "./context";
 import { apiStaticPath, htmlPath, ogPath, type Manifest, type ManifestRoute, type ManifestSlot } from "./manifest";
 import { compilePattern, fillDestination, inScope, matchRoute, matchSegments, safeDecode } from "./match";
 import { fnv, send, type StaticEntry } from "./static";
 import type { LocaleInfo } from "./runtime";
 import type { RenderInput, Rendered, SlotInput } from "./render";
-import { DRAFT_COOKIE, setDraftToken } from "./server-api";
+import { DRAFT_COOKIE } from "./server-api";
 import type { ApiContext, ApiModule, ErrorModule, LayoutModule, Locals, Middleware, MiddlewareContext, PageModule, ResolvedConfig, RevalidationChange, RouteCache } from "./types";
 
 export interface Platform {
@@ -53,12 +54,18 @@ export interface App {
 
 /** A middleware module's functions, limited to its `matcher` paths when it exports one:
  *  export const matcher = ["/admin/[...rest]", "/api/[...rest]"]   (route syntax). */
+const scopedMiddleware = new WeakMap<Middleware, { run: Middleware; matches: (path: string) => boolean }>();
+
 export function middlewareFrom(mod: { default?: Middleware | Middleware[]; matcher?: string | string[] }): Middleware[] {
   const list = mod.default ? (Array.isArray(mod.default) ? mod.default : [mod.default]) : [];
   if (!mod.matcher) return list;
   const patterns = (Array.isArray(mod.matcher) ? mod.matcher : [mod.matcher]).map(compilePattern);
   const matches = (p: string) => patterns.some((seg) => matchSegments(seg, p) !== null);
-  return list.map((mw): Middleware => (ctx, next) => (matches(ctx.url.pathname) ? mw(ctx, next) : next()));
+  return list.map((mw): Middleware => {
+    const wrapped: Middleware = (ctx, next) => matches(ctx.url.pathname) ? mw(ctx, next) : next();
+    scopedMiddleware.set(wrapped, { run: mw, matches });
+    return wrapped;
+  });
 }
 
 /** Hop-by-hop headers (RFC 9110) and forwarding headers a client could forge: never passed on. */
@@ -110,7 +117,8 @@ export function pickLocale(header: string | null, locales: string[]): string | u
 export async function createApp({ manifest, config, files, platform, middleware = [], dev, prerender }: AppOptions): Promise<App> {
   const F = config.features;
   // <Image> rendered on the server offers the widths the optimizer produces.
-  if (config.images?.sizes) (globalThis as { __OPTZ_IMAGE_SIZES__?: number[] }).__OPTZ_IMAGE_SIZES__ = config.images.sizes;
+  const services: AppServices = {};
+  const appStore = (init: Parameters<typeof newStore>[0]) => newStore({ ...init, services });
   /** Serve built files (production) rather than rendering (dev, build). */
   const live = !dev && !prerender;
   const hash = platform.hash ?? fnv;
@@ -163,9 +171,8 @@ export async function createApp({ manifest, config, files, platform, middleware 
     const hasBody = req.method !== "GET" && req.method !== "HEAD" && req.body;
     let body: BodyInit | undefined;
     if (hasBody) {
-      const buf = new Uint8Array(await req.arrayBuffer());
-      if (buf.length > limit) return jsonRes({ error: "request body too large" }, 413);
-      body = buf;
+      try { body = await readBody(req.body, limit, rule.timeoutMs ?? 30_000) as BodyInit; }
+      catch { return jsonRes({ error: "request body too large or timed out" }, 413); }
     }
     try {
       const res = await globalThis.fetch(dest, { method: req.method, headers, body, redirect: "manual", signal: AbortSignal.timeout(rule.timeoutMs ?? 30_000) });
@@ -233,7 +240,7 @@ export async function createApp({ manifest, config, files, platform, middleware 
               }
               const req = new Request(new URL(path, c.url), { headers });
               const url = new URL(req.url);
-              const res = await run({ request: req, url, locals: {} as Locals }, newStore({ request: req, url, locals: {} as Locals, draft: false }), 0);
+              const res = await run({ request: req, url, locals: {} as Locals }, appStore({ request: req, url, locals: {} as Locals, draft: false }), 0);
               await res.body?.cancel();
               return res.status === 200;
             }
@@ -270,7 +277,7 @@ export async function createApp({ manifest, config, files, platform, middleware 
   // header lookup on every static request) until draft mode is first turned on.
   let draftPossible = !!configured;
   let warned = false;
-  setDraftToken(() => {
+  services.draftToken = () => {
     draftPossible = true;
     if (!configured && !dev && !warned) {
       warned = true;
@@ -281,7 +288,7 @@ export async function createApp({ manifest, config, files, platform, middleware 
     // Refill for the next enable(); a token minted now still expires draftMaxAge from now.
     void mint();
     return { value, maxAge: draftMaxAge };
-  });
+  };
   const isDraft = async (req: Request): Promise<boolean> => {
     if (!draftPossible) return false;
     const header = req.headers.get("cookie");
@@ -335,7 +342,7 @@ export async function createApp({ manifest, config, files, platform, middleware 
       stamp(tagStamps, tag, now);
       cache?.invalidate((_k, rc) => !!rc.tags?.includes(tag));
     }
-    clearDataCaches(change.tags);
+    clearDataCaches(change.tags, services);
   }
 
   // ---- revalidation beyond this process: peers and the CDN ----
@@ -389,14 +396,14 @@ export async function createApp({ manifest, config, files, platform, middleware 
     return jsonRes({ ok: true });
   }
 
-  setRevalidator({
+  services.revalidator = {
     path(path, type) {
       publish({ paths: [{ path: path.length > 1 ? path.replace(/\/+$/, "") : path, prefix: type === "layout" }], tags: [] });
     },
     tag(tag) {
       publish({ paths: [], tags: [tag] });
     },
-  });
+  };
 
   let anyStamps = false;
   function isStale(path: string, r: ManifestRoute): boolean {
@@ -429,7 +436,7 @@ export async function createApp({ manifest, config, files, platform, middleware 
     const started = Date.now();
     const ctx = anonymous(trigger.url, publicPath);
     // Its own request store, too: headers() and cookies() in the loader see the anonymous request.
-    als.run(newStore({ request: ctx.request, url: ctx.url, locals: ctx.locals, locale, draft: false }), () => (async () => {
+    als.run(appStore({ request: ctx.request, url: ctx.url, locals: ctx.locals, locale, draft: false }), () => (async () => {
       if (r.kind === "api") {
         const mod = await load<Record<string, unknown>>(r.file);
         const res = await (mod.GET as (c: ApiContext) => Promise<Response>)({ ...ctx, params });
@@ -499,7 +506,7 @@ export async function createApp({ manifest, config, files, platform, middleware 
       params,
       og: r.og ? ogPath(publicPath) : undefined,
       i18n: localeInfo(locale),
-      ctx: { url: ctx.url, request: ctx.request, locals: ctx.locals, locale, draft },
+      ctx: { url: ctx.url, request: trackRequest(ctx.request, als.getStore()), locals: ctx.locals, locale, draft },
     };
     if (i18n) {
       const langs: Record<string, string> = {};
@@ -539,6 +546,7 @@ export async function createApp({ manifest, config, files, platform, middleware 
 
   const withCache = (ctx: MiddlewareContext, rc: RouteCache | undefined, produce: () => Promise<Response>) => {
     rc ??= config.cache.default;
+    if (Object.keys(ctx.locals).length) return produce().then(privateResponse);
     if (!cache || !rc || (ctx.request.method !== "GET" && ctx.request.method !== "HEAD")) return produce();
     const vary = new Set(["accept-encoding", ...(rc.vary ?? []).map((v) => v.toLowerCase())]);
     return cache.handle(ctx.request, ResponseCache.key(ctx.request, ctx.url, rc), rc, async () => {
@@ -546,8 +554,8 @@ export async function createApp({ manifest, config, files, platform, middleware 
       // It read request headers (headers(), cookies()) the route doesn't vary on: the response is
       // this visitor's, so it's neither stored nor shared by a CDN.
       const reads = als.getStore()?.reads;
-      if (reads && [...reads].some((h) => !vary.has(h)) && !res.headers.get("vary")?.includes("*")) {
-        res.headers.set("Cache-Control", "private, no-store");
+      if (als.getStore()?.setCookies.length || (reads && [...reads].some((h) => !vary.has(h)) && !res.headers.get("vary")?.includes("*"))) {
+        return privateResponse(res);
       }
       return res;
     });
@@ -845,7 +853,7 @@ export async function createApp({ manifest, config, files, platform, middleware 
       const run = async () => {
         let res: Response;
         try {
-          res = await handler({ ...ctx, params: m.params });
+          res = await handler({ ...ctx, request: trackRequest(ctx.request, s), params: m.params });
         } catch (e) {
           // A thrown Response (redirect(), readJson()'s 400/415, or your own) is the answer.
           if (e instanceof Response) return e;
@@ -874,7 +882,7 @@ export async function createApp({ manifest, config, files, platform, middleware 
       const anon = input.ctx;
       return inStore(s, () =>
         withCache(ctx, { maxAge: r.revalidate ?? 31536000, staleWhileRevalidate: r.revalidate ? 31536000 : undefined, tags: r.tags }, () =>
-          als.run(newStore({ request: anon.request!, url: anon.url, locals: anon.locals, locale, draft: false }), async () => {
+          als.run(appStore({ request: anon.request!, url: anon.url, locals: anon.locals, locale, draft: false }), async () => {
             const { renderPage } = await render();
             return finish(await renderPage(input, assets(r), config), ctx);
           }),
@@ -915,18 +923,64 @@ export async function createApp({ manifest, config, files, platform, middleware 
     headers.delete("x-optz-from");
     const r = new Request(u, { headers });
     const ctx: MiddlewareContext = { request: r, url: u, locals: {} as Locals };
-    const stub = (i: number): Promise<Response> =>
-      i < middleware.length ? Promise.resolve(middleware[i](ctx, () => stub(i + 1))) : Promise.resolve(new Response(null, { status: 200 }));
     try {
-      const res = await stub(0);
+      const res = await run(ctx, appStore({ request: r, url: u, locals: ctx.locals, draft: false }), 0, () => Promise.resolve(new Response(null, { status: 200 })));
       return res.status >= 200 && res.status < 300;
     } catch {
       return false;
     }
   }
 
-  const run = (ctx: MiddlewareContext, s: RequestStore, i: number): Promise<Response> =>
-    i < middleware.length ? Promise.resolve(middleware[i](ctx, () => run(ctx, s, i + 1))) : route(ctx, s);
+  /** Resolve every protected identity before middleware runs. Dispatch still uses the transport
+   *  URL, so JSON stays JSON; policies see the logical page or rewrite destination. */
+  function policyUrls(url: URL): URL[] {
+    const urls = new Map<string, URL>();
+    const add = (u: URL) => {
+      urls.set(u.href, u);
+      const inner = splitLocale(u.pathname).inner;
+      if (inner !== u.pathname) { const v = new URL(u); v.pathname = inner; urls.set(v.href, v); }
+    };
+    let u = new URL(url);
+    add(u);
+    for (let hops = 0; hops <= 4; hops++) {
+      const data = u.pathname.startsWith("/_optz/data/") && u.pathname.endsWith(".json");
+      const og = u.pathname.startsWith("/_optz/og/") && u.pathname.endsWith(".png");
+      if (data || og) {
+        u = new URL(u);
+        const p = u.pathname.slice(data ? "/_optz/data".length : "/_optz/og".length, data ? -5 : -4);
+        u.pathname = p === "/index" ? "/" : p;
+        add(u);
+        break; // These representations dispatch directly, without config rewrites.
+      }
+      if (u.pathname.length > 1 && u.pathname.endsWith("/")) {
+        u = new URL(u); u.pathname = u.pathname.replace(/\/+$/, ""); add(u); break;
+      }
+      if (proxyFor(u.pathname) || firstMatch(redirectRules, u.pathname) || hops === 4) break;
+      const r = firstMatch(rewriteRules, u.pathname);
+      if (!r) break;
+      const dest = new URL(fillDestination(r.rule.destination, r.params), u);
+      if (dest.origin !== url.origin) break;
+      for (const [k, v] of u.searchParams) if (!dest.searchParams.has(k)) dest.searchParams.append(k, v);
+      u = dest; add(u);
+    }
+    return [...urls.values()];
+  }
+
+  const run = (ctx: MiddlewareContext, s: RequestStore, _i: number, finish = () => route(ctx, s)): Promise<Response> => {
+    const urls = policyUrls(ctx.url);
+    const chain = middleware.flatMap((mw) => {
+      const scoped = scopedMiddleware.get(mw);
+      // Global response middleware runs once, on the resolved route. Scoped policies run for
+      // each matching identity, so an alias cannot remove the source OR destination policy.
+      return scoped ? urls.filter((u) => scoped.matches(u.pathname)).map((url) => ({ mw: scoped.run, url })) : [{ mw, url: urls[urls.length - 1] }];
+    });
+    const next = (i: number): Promise<Response> => {
+      const step = chain[i];
+      if (!step) return finish();
+      return als.run(s, () => Promise.resolve(step.mw({ ...ctx, request: trackRequest(ctx.request, s, step.url.href), url: step.url }, () => next(i + 1))));
+    };
+    return next(0);
+  };
 
   async function fetch(req: Request, plat?: RequestPlatform): Promise<Response> {
     const url = new URL(req.url);
@@ -942,7 +996,7 @@ export async function createApp({ manifest, config, files, platform, middleware 
     const ctx: MiddlewareContext = { request: req, url, locals: {} as Locals };
     const t0 = F.requestLog ? performance.now() : 0;
     try {
-      const res = await run(ctx, newStore({ request: req, url, locals: ctx.locals, draft: false, env: plat?.env, waitUntil: plat?.waitUntil }), 0);
+      const res = await run(ctx, appStore({ request: req, url, locals: ctx.locals, draft: false, env: plat?.env, waitUntil: plat?.waitUntil }), 0);
       const nonce = streamed.has(ctx) ? res.headers.get(NONCE) : null;
       if (nonce) {
         res.headers.delete(NONCE);
