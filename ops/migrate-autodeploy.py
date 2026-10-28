@@ -50,7 +50,7 @@ def repository_name(repo, override):
     return name
 
 
-def write(path, content, mode=0o644):
+def write(path, content, mode=0o600):
     """Publish configuration atomically; never follow an existing destination symlink."""
     path.parent.mkdir(parents=True, exist_ok=True)
     fd, temporary = tempfile.mkstemp(prefix=".optz-", dir=path.parent)
