@@ -24,22 +24,13 @@ export default function Pulse() {
 
   const ms = s.state === "live" ? `${s.ms < 10 ? s.ms.toFixed(1) : Math.round(s.ms)} ms` : s.state === "down" ? "no time" : "…";
   return (
-    <section aria-label="Live server status" className="mt-10 border-l-2 border-rule pl-5">
-      <p className="flex items-center gap-2.5 text-sm text-muted">
+    <section aria-label="Live server status" className="server-status">
+      <p className="server-response">
         <span className="signal-dot" data-state={s.state === "checking" ? "idle" : s.state} />
-        <span role="status">{s.state === "live" ? "Live, timed from your browser" : s.state === "down" ? "The server isn't answering right now" : "Checking the server"}</span>
+        <span role="status">{s.state === "live" ? <>Server online <span className="server-latency">{ms} response</span></> : s.state === "down" ? "Server status unavailable" : "Checking server status"}</span>
       </p>
-      <p className="mt-2 text-2xl leading-snug tracking-tight md:text-3xl">
-        The server behind this page answered in <strong className="font-semibold tabular-nums">{ms}</strong>.
-      </p>
-      <p className="mt-1 text-muted">
-        It has been up for <span className="tabular-nums text-ink">{s.state === "live" ? duration(s.uptime) : s.state === "down" ? "an unknown time" : "…"}</span>
-        {s.state === "live" && (
-          <>
-            , using <span className="tabular-nums text-ink">{s.mib} MB</span> of memory
-          </>
-        )}{" "}
-        on one CPU core.
+      <p className="server-details">
+        {s.state === "live" ? <>{duration(s.uptime)} uptime <span aria-hidden="true">/</span> {s.mib} MB memory <span aria-hidden="true">/</span> One CPU core</> : "Timed from your browser"}
       </p>
     </section>
   );

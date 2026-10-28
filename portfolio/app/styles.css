@@ -3,7 +3,7 @@
 /* Scan everything under app/ for class names. */
 @source ".";
 
-/* dihlabs.lol: a lab notebook. Calm near-white paper, blue-grey ink, one warm signal colour
+/* dihlabs.lol: a dev lab. White space, slate ink, one blue signal colour
    that only ever marks where you are or what's live. Reading comfort first: ~68 characters
    per line, generous leading, space (not rules) between sections, code and tables set apart. */
 @theme {
@@ -11,30 +11,31 @@
   --font-serif: "Newsreader", "Newsreader Fallback", ui-serif, Georgia, serif;
   --font-mono: ui-monospace, "SF Mono", "JetBrains Mono", Menlo, Consolas, monospace;
 
-  --color-paper: #f6f7f9; /* page */
-  --color-ink: #18202c; /* headings, emphasis */
-  --color-body: #2c3646; /* running text: softer than ink, less glare */
-  --color-muted: #5d6a7b; /* secondary text, captions */
-  --color-rule: #d6dce4; /* hairlines */
-  --color-panel: #eaeef3; /* table heads, inline code, hover */
-  --color-code: #18202c; /* code blocks */
+  --color-paper: #ffffff; /* page */
+  --color-ink: #20242c; /* headings, emphasis */
+  --color-body: #3e4652; /* running text: softer than ink, less glare */
+  --color-muted: #626b78; /* secondary text, captions */
+  --color-rule: #e3e7ed; /* hairlines */
+  --color-panel: #f3f5f8; /* table heads, inline code, hover */
+  --color-code: #20242c; /* code blocks */
   --color-code-ink: #e3e9f0;
-  --color-signal: #e8a33d; /* you are here / live */
-  /* Focus rings need 3:1 against the page: the signal amber is 2:1 on light paper. */
-  --color-focus: #a8650f;
+  --color-signal: #315bd6; /* you are here / live */
+  /* Blue also provides a visible focus ring on the page. */
+  --color-focus: #315bd6;
 }
 
 @layer base {
-  /* Dark scheme: same roles, inverted. The signal colour stays the one warm thing. */
+  /* Keep the same hierarchy in the system dark scheme. */
   @media (prefers-color-scheme: dark) {
     :root {
-      --color-paper: #11161e;
+      --color-paper: #14171d;
       --color-ink: #e9edf2;
       --color-body: #c7cfd9;
       --color-muted: #8f9cad;
       --color-rule: #283240;
       --color-panel: #19212c;
-      --color-focus: #e8a33d;
+      --color-focus: #93adff;
+      --color-signal: #93adff;
       --color-code: #0b0f15;
       --color-code-ink: #d9e1ea;
     }
@@ -189,12 +190,12 @@
   .toc a:hover { color: var(--color-ink); }
   .toc a[aria-current="true"] { color: var(--color-ink); border-left-color: var(--color-signal); }
 
-  /* Lab status: amber while exploring, ink once shipped. */
+  /* Lab status: blue while exploring, ink once shipped. */
   .status-dot { width: 0.45rem; height: 0.45rem; border-radius: 9999px; display: inline-block; background: var(--color-rule); }
   .status-dot[data-status="exploring"] { background: var(--color-signal); }
   .status-dot[data-status="shipped"] { background: var(--color-ink); }
 
-  /* The live signal dot: the only motion on the site, and only while live. */
+  /* The live dot gives status without continuous motion. */
   .signal-dot {
     width: 0.5rem;
     height: 0.5rem;
@@ -204,14 +205,71 @@
   }
   .signal-dot[data-state="live"] {
     background: var(--color-signal);
-    box-shadow: 0 0 0 0 color-mix(in srgb, var(--color-signal) 60%, transparent);
-    animation: pulse 2.4s ease-out infinite;
+
   }
   .signal-dot[data-state="down"] { background: #c2483d; }
 }
 
-@keyframes pulse {
-  0% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--color-signal) 55%, transparent); }
-  70% { box-shadow: 0 0 0 7px transparent; }
-  100% { box-shadow: 0 0 0 0 transparent; }
+
+@layer components {
+  .site-shell { max-width: 72rem; margin-inline: auto; padding-inline: 2.5rem; }
+  .site-shell-docs { max-width: 92rem; }
+  .site-header { display: flex; align-items: center; justify-content: space-between; gap: 2rem; padding-block: 1.75rem; border-bottom: 1px solid var(--color-rule); }
+  .site-brand { display: flex; align-items: baseline; gap: .75rem; font-weight: 600; color: var(--color-ink); letter-spacing: -.03em; white-space: nowrap; }
+  .brand-author { font-size: .75rem; font-weight: 400; color: var(--color-muted); letter-spacing: 0; }
+  .site-nav { display: flex; flex-wrap: wrap; gap: 1.5rem; font-size: .875rem; }
+  .site-nav a { padding-block: .5rem; color: var(--color-muted); }
+  .site-nav a:hover, .site-nav a[aria-current="page"] { color: var(--color-ink); }
+  .site-nav a[aria-current="page"] { text-decoration: underline; text-decoration-color: var(--color-signal); text-underline-offset: .55rem; text-decoration-thickness: 2px; }
+  .site-main { padding-block: 4.5rem 5rem; }
+  .docs-main { padding-block: 2.5rem; }
+  .skip-link { position: absolute; left: 1rem; top: -5rem; z-index: 30; padding: .75rem 1rem; background: var(--color-paper); }
+  .skip-link:focus { top: 1rem; }
+  .navigation-progress { position: fixed; inset: 0 0 auto; height: 2px; background: var(--color-signal); transform: scaleX(0); transform-origin: left; z-index: 20; transition: transform .3s; }
+  .optz-navigating .navigation-progress { transform: scaleX(.75); }
+  .intro-byline { color: var(--color-muted); font-size: .9375rem; }
+  .home-intro h1 { font-size: clamp(3.75rem, 9.2vw, 8rem); line-height: 1.12; letter-spacing: -.075em; font-weight: 500; margin: .5rem 0 1.75rem; }
+  .intro-description { max-width: 36rem; font-size: 1.25rem; line-height: 1.65; }
+  .intro-links { display: flex; flex-wrap: wrap; align-items: center; gap: 1.5rem; margin-top: 1.75rem; font-size: .875rem; }
+  .intro-links a:not(.primary-link), .site-footer a { color: var(--color-muted); text-decoration: underline; text-underline-offset: 4px; text-decoration-color: var(--color-rule); }
+  .intro-links a:hover, .site-footer a:hover { color: var(--color-ink); text-decoration-color: currentColor; }
+  .primary-link { padding: .75rem 1rem; border-radius: 6px; background: var(--color-ink); color: var(--color-paper); font-weight: 500; }
+  .primary-link:hover { background: var(--color-body); }
+  .server-status { display: flex; flex-wrap: wrap; justify-content: space-between; gap: .75rem 2rem; margin-top: 3rem; padding-block: 1rem; border-block: 1px solid var(--color-rule); color: var(--color-muted); font-size: .75rem; }
+  .server-response { display: flex; align-items: center; gap: .6rem; }
+  .server-latency { margin-left: .75rem; font-variant-numeric: tabular-nums; }
+  .server-details { display: flex; flex-wrap: wrap; align-items: center; gap: .65rem; font-variant-numeric: tabular-nums; }
+  .home-section { margin-top: 4rem; }
+  .section-heading { margin-bottom: 1.5rem; font-size: 1.25rem; font-weight: 500; letter-spacing: -.025em; }
+  .lab-list { border-top: 1px solid var(--color-rule); }
+  .lab-item { display: grid; grid-template-columns: minmax(0, 1fr) 10rem; gap: 1rem 3rem; padding-block: 1.75rem; border-bottom: 1px solid var(--color-rule); }
+  .lab-title { font-size: 1.125rem; font-weight: 600; line-height: 1.4; letter-spacing: -.02em; }
+  .lab-summary { max-width: 66ch; margin-top: .5rem; font-size: .9375rem; line-height: 1.7; color: var(--color-muted); }
+  .lab-meta { font-size: .75rem; color: var(--color-muted); padding-top: .25rem; }
+  .lab-area { display: block; }
+  .lab-status { display: inline-flex; align-items: center; gap: .5rem; margin-top: .5rem; }
+  .post-list { border-top: 1px solid var(--color-rule); }
+  .post-link { display: grid; grid-template-columns: minmax(0,1fr) 10rem; column-gap: 3rem; padding-block: 1.5rem; border-bottom: 1px solid var(--color-rule); }
+  .post-link > span { grid-column: 1; }
+  .post-link > span:first-child { font-size: 1.125rem; }
+  .post-link > span:nth-child(2) { font-size: .9375rem; line-height: 1.7; }
+  .post-date { grid-column: 2; grid-row: 1 / 3; padding-top: .25rem; font-size: .75rem; color: var(--color-muted); }
+  .home-docs { max-width: 42rem; }
+  .home-docs > p { font-size: .9375rem; color: var(--color-muted); }
+  .site-footer { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 1rem; padding-block: 1.5rem 2rem; border-top: 1px solid var(--color-rule); font-size: .75rem; }
+  @media (max-width: 640px) {
+    .site-shell { padding-inline: 1.25rem; }
+    .site-header { flex-direction: column; align-items: flex-start; gap: .75rem; padding-block: 1.25rem; }
+    .site-nav { justify-content: space-between; width: 100%; gap: .75rem; font-size: .8125rem; }
+    .site-main { padding-block: 3rem; }
+    .home-intro h1 { font-size: clamp(2.75rem, 13vw, 5rem); margin-bottom: 1.25rem; }
+    .intro-description { font-size: 1.0625rem; }
+    .server-status { margin-top: 2rem; }
+    .home-section { margin-top: 3rem; }
+    .lab-item { grid-template-columns: minmax(0,1fr); padding-block: 1.5rem; gap: .75rem; }
+    .lab-meta { display: flex; align-items: center; gap: 1rem; padding: 0; }
+    .lab-status { margin: 0; }
+    .post-link { grid-template-columns: minmax(0,1fr); gap: .5rem; }
+    .post-date { grid-column: 1; grid-row: auto; }
+  }
 }
