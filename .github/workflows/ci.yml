@@ -45,7 +45,7 @@ jobs:
         run: bun framework/scripts/check-package.ts
       - name: Every app type-checks and builds
         run: |
-          for app in apps/example apps/features apps/social apps/spa portfolio; do
+          for app in apps/example apps/features apps/social apps/spa apps/fullstack portfolio; do
             echo "::group::$app"
             (cd "$app" && bun "$GITHUB_WORKSPACE/framework/src/cli.ts" check)
             echo "::endgroup::"
@@ -119,6 +119,19 @@ jobs:
           for i in $(seq 30); do curl -sf -o /dev/null http://127.0.0.1:3001/ && break; sleep 0.5; done
           node e2e.cjs http://127.0.0.1:3001 | tee e2e.txt
           ! grep -q '^FAIL' e2e.txt
+
+      - name: Full-stack starter with JavaScript disabled
+        env:
+          NODE_PATH: /tmp/pw/node_modules
+          PUBLIC_URL: http://localhost:3007
+          DATABASE_PATH: /tmp/optz-fullstack-ci.sqlite
+          UPLOAD_DIR: /tmp/optz-fullstack-ci-uploads
+        working-directory: apps/fullstack
+        run: |
+          bun ../../framework/src/cli.ts build
+          bun ../../framework/src/cli.ts start &
+          for i in $(seq 30); do curl -sf -o /dev/null http://localhost:3007/ && break; sleep 0.5; done
+          node e2e.cjs http://localhost:3007
 
   nginx:
     runs-on: ubuntu-24.04

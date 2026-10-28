@@ -157,7 +157,9 @@ switch (cmd) {
       console.error("usage: optz create <dir>");
       process.exit(2);
     }
-    create(resolve(dir));
+    const template = args.includes("--template") ? args[args.indexOf("--template") + 1] : "basic";
+    if (template !== "basic" && template !== "fullstack") throw new Error("Unknown template; use basic or fullstack");
+    create(resolve(dir), template);
     break;
   }
   default:

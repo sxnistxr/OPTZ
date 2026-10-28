@@ -31,6 +31,19 @@
         "@types/react-dom": "19.3.0",
       },
     },
+    "apps/fullstack": {
+      "name": "fullstack",
+      "dependencies": {
+        "optz": "workspace:*",
+        "react": "19.3.1",
+        "react-dom": "19.3.1",
+      },
+      "devDependencies": {
+        "@types/bun": "1.4.4",
+        "@types/react": "19.3.0",
+        "@types/react-dom": "19.3.0",
+      },
+    },
     "apps/social": {
       "name": "social",
       "dependencies": {
@@ -59,7 +72,7 @@
     },
     "framework": {
       "name": "optz",
-      "version": "0.3.0",
+      "version": "0.4.0",
       "bin": {
         "optz": "./src/cli.ts",
       },
@@ -358,6 +371,8 @@
     "fflate": ["fflate@0.7.5", "", {}, "sha512-QieYf//cis6ywHNi5qW1+PXPQ4bC+XVJAtS4AXIML8P76GroEiOxm/oQtn1f02UkJY1+KsXMJcC+R2v/Eg4G3g=="],
 
     "fill-range": ["fill-range@7.1.1", "", { "dependencies": { "to-regex-range": "^5.0.1" } }, "sha512-YsGpe3WHLK8ZYi4tWDg2Jy3ebRz2rXowDxnld4bkQB00cc/1Zw9AWnC0i9ztDJitivtQvaI9KaLyKrc+hBW0yg=="],
+
+    "fullstack": ["fullstack@workspace:apps/fullstack"],
 
     "graceful-fs": ["graceful-fs@4.2.11", "", {}, "sha512-RbJ5/jmFcNNCcDV5o9eTnBLJ/HszWV0P73bc+Ff4nS/rJj+YaS6IGyiOL0VoBYX+l1Wrl3k63h/KrH+nhJ0XvQ=="],
 

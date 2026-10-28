@@ -1,3 +1,4 @@
+import { serverBoundaries } from "./boundaries";
 import { codeLiteral } from "./code-literal";
 // `optz build`: everything a production server (or a plain static host) needs, in dist/.
 //
@@ -46,7 +47,7 @@ function walk(dir: string): string[] {
 function stripServerExports(routesDir: string): BunPlugin {
   const transpiler = new Bun.Transpiler({
     loader: "tsx",
-    exports: { eliminate: ["loader", "paths", "cache"] },
+    exports: { eliminate: ["loader", "paths", "cache", "head", "config", "revalidate", "tags", "dynamicParams"] },
     trimUnusedImports: true,
     tsconfig: JSON.stringify({ compilerOptions: { jsx: "react-jsx", jsxImportSource: "react" } }),
   });
@@ -207,7 +208,7 @@ export async function build({ root, config, dev, exportOnly }: BuildOptions): Pr
 
   // ---- browser bundles ----
   const entryFile = join(gen, "entry.tsx");
-  const plugins: BunPlugin[] = [actionStubs(root, actions)];
+  const plugins: BunPlugin[] = [actionStubs(root, actions), serverBoundaries(new Set(Object.values(actions).map(a => join(root, a.file))))];
   // Dev (islands): React from one vendor bundle, so Fast Refresh can hot-swap island code.
   const hot = !!dev && islandsMode;
   if (hot) {

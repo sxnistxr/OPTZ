@@ -6,6 +6,7 @@
 // Speed comes from doing almost nothing per request for the common cases: pre-rendered pages,
 // their data and every asset are in memory with brotli and gzip copies and an ETag, so serving
 // them is a map lookup. React's server renderer isn't even loaded until a dynamic page needs it.
+import { createRouteMatcher } from "./route-index";
 import { readBody } from "./body";
 import { BOUND_FIELD, tagModule } from "./actions-runtime";
 import { cacheControl, privateResponse, ResponseCache } from "./cache";
@@ -116,6 +117,7 @@ export function pickLocale(header: string | null, locales: string[]): string | u
 
 export async function createApp({ manifest, config, files, platform, middleware = [], dev, prerender }: AppOptions): Promise<App> {
   const F = config.features;
+  const matchPage = createRouteMatcher(manifest.routes);
   // <Image> rendered on the server offers the widths the optimizer produces.
   const services: AppServices = {};
   const appStore = (init: Parameters<typeof newStore>[0]) => newStore({ ...init, services });
@@ -201,7 +203,7 @@ export async function createApp({ manifest, config, files, platform, middleware 
   const cdnTagged = !!config.server.cdnMaxAge;
   const pageHeadersFor = (path: string): Record<string, string> => {
     if (!cdnTagged) return pageHeaders;
-    const route = matchRoute(manifest.routes, splitLocale(path).inner)?.route;
+    const route = matchPage( splitLocale(path).inner)?.route;
     const tags = [`optz-path:${path}`, ...(route?.tags ?? [])];
     return { ...pageHeaders, "Cache-Tag": tags.join(","), "Surrogate-Key": tags.join(" ") };
   };
@@ -589,7 +591,7 @@ export async function createApp({ manifest, config, files, platform, middleware 
     const target = pathname === "/index" ? "/" : pathname;
     const { locale, inner } = splitLocale(target);
     s.locale = locale;
-    const m = matchRoute(manifest.routes, inner);
+    const m = matchPage( inner);
     if (!m || m.route.kind !== "page" || (live && !draft && m.route.render !== "dynamic" && !m.route.dynamicParams)) return jsonRes({ error: "not found" }, 404);
     const route = m.route;
     const input = await renderInput(route, ctx, target, inner, m.params, locale, draft);
@@ -723,7 +725,7 @@ export async function createApp({ manifest, config, files, platform, middleware 
     const path = ctx.url.pathname.slice("/_optz/og".length, -".png".length);
     const target = path === "/index" ? "/" : path;
     const { locale, inner } = splitLocale(target);
-    const m = matchRoute(manifest.routes, inner);
+    const m = matchPage( inner);
     if (!m?.route.og) return notFound(ctx);
     const route = m.route;
     return withCache(ctx, { maxAge: 3600, staleWhileRevalidate: 86400 }, async () => {
@@ -806,7 +808,7 @@ export async function createApp({ manifest, config, files, platform, middleware 
         for (const ir of slot.intercepts) {
           const params = matchSegments(ir.segments, inner);
           if (!params || !ir.scope || !inScope(ir.scope, fromInner)) continue;
-          const under = matchRoute(manifest.routes, fromInner);
+          const under = matchPage( fromInner);
           if (!under || under.route.kind !== "page" || !under.route.layouts.includes(slot.layout)) continue;
           const route = under.route, uparams = under.params;
           return inStore(s, async () => {
@@ -826,7 +828,7 @@ export async function createApp({ manifest, config, files, platform, middleware 
       }
     }
 
-    const m = matchRoute(manifest.routes, inner);
+    const m = matchPage( inner);
     if (!m) {
       const f = files.get(p);
       if (f && !p.endsWith(".html")) return send(f, req);
@@ -924,7 +926,7 @@ export async function createApp({ manifest, config, files, platform, middleware 
     const r = new Request(u, { headers });
     const ctx: MiddlewareContext = { request: r, url: u, locals: {} as Locals };
     try {
-      const res = await run(ctx, appStore({ request: r, url: u, locals: ctx.locals, draft: false }), 0, () => Promise.resolve(new Response(null, { status: 200 })));
+      let res = await run(ctx, appStore({ request: r, url: u, locals: ctx.locals, draft: false }), 0, () => Promise.resolve(new Response(null, { status: 200 })));
       return res.status >= 200 && res.status < 300;
     } catch {
       return false;
@@ -967,6 +969,7 @@ export async function createApp({ manifest, config, files, platform, middleware 
   }
 
   const run = (ctx: MiddlewareContext, s: RequestStore, _i: number, finish = () => route(ctx, s)): Promise<Response> => {
+    if (!middleware.length) return finish();
     const urls = policyUrls(ctx.url);
     const chain = middleware.flatMap((mw) => {
       const scoped = scopedMiddleware.get(mw);
@@ -996,7 +999,8 @@ export async function createApp({ manifest, config, files, platform, middleware 
     const ctx: MiddlewareContext = { request: req, url, locals: {} as Locals };
     const t0 = F.requestLog ? performance.now() : 0;
     try {
-      const res = await run(ctx, appStore({ request: req, url, locals: ctx.locals, draft: false, env: plat?.env, waitUntil: plat?.waitUntil }), 0);
+      let res = await run(ctx, appStore({ request: req, url, locals: ctx.locals, draft: false, env: plat?.env, waitUntil: plat?.waitUntil }), 0);
+      if (req.headers.has("cookie") || req.headers.has("authorization")) res = privateResponse(res);
       const nonce = streamed.has(ctx) ? res.headers.get(NONCE) : null;
       if (nonce) {
         res.headers.delete(NONCE);

@@ -5,9 +5,10 @@ The same site built twice: `portfolio/` on optz and `bench/nextjs-portfolio/` on
 API and the proxy to the Rust engine are equivalent; the components are the same files with
 `"use client"` and `next/link` in place of islands and `optz`'s `Link`.
 
-Every Next.js feature optz didn't have is now built in (see [Features](#features)), and
+The selected routing/rendering features below are built in (see [Features](#features)), and
 `apps/features/` uses all of them in one app, checked by a browser suite (`e2e.cjs`) that CI
-runs, plus the edge worker in `workerd`.
+runs, plus the edge worker in `workerd`. Application services and ecosystem coverage differ;
+see [full-stack research and roadmap](FULLSTACK-RESEARCH.md).
 
 `bench/nextjs-portfolio` is a port of the site; `bench/compare.sh` measures the URLs both still
 share. Every number below comes from one run of that script, saved with its provenance in

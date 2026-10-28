@@ -6,3 +6,6 @@ dist.next/
 dist.old/
 framework/.tmp/
 __pycache__/
+
+# Local full-stack starter state (never publish databases or attachments).
+.data/
