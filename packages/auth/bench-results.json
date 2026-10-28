@@ -1,0 +1,66 @@
+{
+  "runtime": "1.4.4",
+  "platform": "linux",
+  "cpu": "AMD EPYC 9V45 96-Core Processor",
+  "date": "2026-10-28T22:49:22.852Z",
+  "sourceSha256": "a9c59f4a9d9ee4afe8c7d80fcfd0870c1d454ab3c05a0bd7074276a1ac6c91b4",
+  "coldImport": {
+    "ms": 125.893648,
+    "rss": 50462720
+  },
+  "results": [
+    {
+      "name": "public middleware bypass (auth already imported)",
+      "unit": "microseconds/op",
+      "count": 5000,
+      "samples": [
+        0.49804639999999833,
+        0.7165759999999978,
+        0.6906292000000007,
+        0.1878353999999945,
+        0.14734680000000253
+      ],
+      "median": 0.49804639999999833
+    },
+    {
+      "name": "anonymous session lookup",
+      "unit": "microseconds/op",
+      "count": 2000,
+      "samples": [
+        19.496151499999996,
+        15.734659499999992,
+        19.85320250000001,
+        14.931314499999987,
+        14.506943999999976
+      ],
+      "median": 15.734659499999992
+    },
+    {
+      "name": "authenticated SQLite session lookup",
+      "unit": "microseconds/op",
+      "count": 2000,
+      "samples": [
+        134.07018200000005,
+        123.55419550000005,
+        121.3892045,
+        119.03742299999999,
+        113.518281
+      ],
+      "median": 121.3892045
+    },
+    {
+      "name": "persistent SQLite budget consume",
+      "unit": "microseconds/op",
+      "count": 2000,
+      "samples": [
+        2.4927220000000716,
+        2.4065785000000233,
+        2.4020414999999957,
+        2.433042500000056,
+        2.4507289999999102
+      ],
+      "median": 2.433042500000056
+    }
+  ],
+  "limitations": "Five warmed sequential in-process samples, in-memory SQLite, same request reused, no cookie cache. Not network throughput, disk durability latency, full page rendering or a hosted-auth comparison."
+}

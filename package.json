@@ -4,7 +4,8 @@
   "workspaces": [
     "framework",
     "portfolio",
-    "apps/*"
+    "apps/*",
+    "packages/*"
   ],
   "overrides": {
     "fflate": "0.7.5"

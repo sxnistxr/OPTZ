@@ -121,6 +121,12 @@ test("browser build rejects direct and transitive server-only modules",async()=>
     const result = await Bun.build({entrypoints:[join(root,"client.ts")],target:"browser",plugins:[serverBoundaries()]}).catch(error => error);
     expect(result.success === false || result instanceof Error).toBe(true);
     expect((result.logs ?? result.errors ?? []).map((log: {message:string}) => log.message).join(" ")).toContain("Server-only");
+    for (const name of ["@optz/auth", "@optz/auth/sqlite", "@optz/auth/delivery", "@optz/auth/plugins"]) {
+      await Bun.write(join(root,"client.ts"),`import * as secret from ${JSON.stringify(name)}; console.log(secret)`);
+      const blocked = await Bun.build({entrypoints:[join(root,"client.ts")],target:"browser",plugins:[serverBoundaries()]}).catch(error=>error);
+      expect(blocked.success === false || blocked instanceof Error).toBe(true);
+      expect((blocked.logs ?? blocked.errors ?? []).map((log:{message:string})=>log.message).join(" ")).toContain("Server-only");
+    }
   }finally{rmSync(root,{recursive:true,force:true});}
 });
 
