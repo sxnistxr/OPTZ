@@ -63,7 +63,9 @@ test("Standard Schema validation gives field errors without reflecting input val
   const form=new FormData();form.append("__proto__","safe");form.append("tags","a");form.append("tags","b");
   expect(Object.getPrototypeOf(formValues(form))).toBeNull();expect(formValues(form).tags).toEqual(["a","b"]);
   const oversized=new Request("http://x",{method:"POST",body:'"123456"',headers:{"Content-Type":"application/json"}});
-  try{await parseInput(oversized,schema,{maxBytes:2});}catch(e){expect((e as Response).status).toBe(413);}
+  const rejection=await parseInput(oversized,schema,{maxBytes:2}).catch((error:unknown)=>error);
+  expect(rejection).toBeInstanceOf(Response);
+  expect((rejection as Response).status).toBe(413);
 });
 test("CSRF compares configured public origin; CORS allows only declared origins and headers",async()=>{
   expect(()=>assertSameOrigin(new Request("http://internal",{method:"POST",headers:{Origin:"https://evil.test"}}),"https://example.test")).toThrow();
