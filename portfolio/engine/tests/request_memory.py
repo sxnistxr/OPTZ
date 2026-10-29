@@ -23,6 +23,8 @@ def partial_uploads(port, complete=False, count=1024):
             try:
                 client.sendall(incomplete)
             except (BrokenPipeError, ConnectionResetError):
+                # Expected under load: some peers may already be closed/reset.
+                # This test accounts for that later by measuring which sockets remain open.
                 pass
         closed = set()
         with selectors.DefaultSelector() as poll:
