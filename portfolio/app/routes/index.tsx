@@ -1,62 +1,28 @@
 import { Link, type PageProps } from "optz";
-import { LabList } from "$components/Lab";
 import { PostList } from "$components/PostList";
-import Pulse from "$components/Pulse.island";
-import lab from "$lib/lab";
+import { Button } from "$components/ui/button";
+import { Arrow } from "$components/Icons";
+import Trail from "$components/Trail.island";
 import { listPosts, type PostMeta } from "$lib/posts";
 import site from "$lib/site";
 
-// Static: runs once at build time; the browser gets the HTML and one small island.
 export const loader = () => ({ posts: listPosts().slice(0, 5) });
-
 export default function Home({ data }: PageProps<{ posts: PostMeta[] }, "/">) {
-  return (
-    <>
-      <div className="home-intro">
-        <p className="intro-byline">{site.tagline}</p>
-        <h1>{site.name}</h1>
-        <p className="intro-description">{site.about}</p>
-        <div className="intro-links">
-          <Link href="/lab" className="primary-link">Explore the lab</Link>
-          {site.links.map((l) => <a key={l.href} href={l.href}>{l.label}</a>)}
-        </div>
+  return <>
+    <section className="home-hero dark-surface" aria-labelledby="home-title">
+      <div className="site-container"><h1 id="home-title">Curiosity, in progress.</h1></div>
+      <Trail mode="flow" />
+      <div className="site-container home-intro-bottom">
+        <div><p>{site.about}</p><Button asChild size="lg"><Link href="/lab">Explore my work<Arrow /></Link></Button></div>
+        <span className="author-note">{site.tagline}</span>
       </div>
-      <Pulse />
-
-      <section className="home-section" aria-labelledby="lab">
-        <h2 id="lab" className="section-heading">
-          In the lab
-        </h2>
-        <LabList items={lab} />
-      </section>
-
-      <section className="home-section" aria-labelledby="writing">
-        <h2 id="writing" className="section-heading">
-          Writing
-        </h2>
-        <PostList posts={data.posts} />
-      </section>
-
-      <section className="home-section home-docs" aria-labelledby="docs">
-        <h2 id="docs" className="section-heading">
-          The code behind it
-        </h2>
-        <p className="text-lg leading-relaxed">
-          This site runs on optz, a React framework for Bun built in this lab, on a $1.50 server. The docs cover how to build on it, how it's made, and how
-          fast it is.
-        </p>
-        <p className="mt-4 flex flex-wrap gap-x-5 gap-y-2">
-          <Link href="/docs" className="underline decoration-rule underline-offset-4 hover:decoration-ink">
-            Read the docs
-          </Link>
-          <Link href="/docs/why-optz" className="underline decoration-rule underline-offset-4 hover:decoration-ink">
-            Why optz
-          </Link>
-          <Link href="/docs/vs-nextjs" className="underline decoration-rule underline-offset-4 hover:decoration-ink">
-            optz vs Next.js
-          </Link>
-        </p>
-      </section>
-    </>
-  );
+    </section>
+    <section className="content-section site-container" aria-labelledby="workbench">
+      <div className="section-top"><h2 id="workbench">From the workbench</h2><Link href="/lab" className="text-link">All projects<Arrow /></Link></div>
+      <Link href="/docs/engine" className="work-row"><div><h3>The $12 Server Challenge</h3><span>Rust / io_uring / SQLite</span></div><p>A social network backend. One CPU, 2 GB of memory, and a lot of room to experiment.</p><Arrow /></Link>
+      <Link href="/blog" className="work-row"><div><h3>Development notes</h3><span>What I learn along the way</span></div><p>Debugging, benchmarks, and the small details that make software work better.</p><Arrow /></Link>
+    </section>
+    <section className="content-section site-container writing-section" aria-labelledby="writing"><div className="section-top"><h2 id="writing">Notes from the build</h2><Link href="/blog" className="text-link">All writing<Arrow /></Link></div><PostList posts={data.posts} /></section>
+    <section className="closing-section site-container"><h2>Always something<br />worth figuring out.</h2><a className="text-link" href="https://github.com/sxnistxr">Follow the work on GitHub<Arrow /></a></section>
+  </>;
 }

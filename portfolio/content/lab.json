@@ -1,35 +1,11 @@
 [
   {
-    "slug": "sdxl",
-    "name": "SDXL",
-    "area": "Image generation",
-    "status": "exploring",
-    "summary": "Stable Diffusion XL on my own hardware: samplers, schedulers, LoRAs and refiners, and what fits in how much VRAM.",
-    "notes": "Write-ups go in Writing as they're ready."
-  },
-  {
-    "slug": "image-video",
-    "name": "Image and video generation",
-    "area": "Generative media",
-    "status": "exploring",
-    "summary": "Diffusion and video models beyond SDXL: image-to-image, inpainting, upscaling and short clips, and the pipelines that glue them together.",
-    "notes": "Write-ups go in Writing as they're ready."
-  },
-  {
-    "slug": "llms",
-    "name": "LLMs",
-    "area": "Language models",
-    "status": "exploring",
-    "summary": "Running and testing language models: local inference, quantization, prompting, tools and agents, and building small apps on top of them.",
-    "notes": "Write-ups go in Writing as they're ready."
-  },
-  {
     "slug": "optz",
-    "name": "optz",
+    "name": "OPTZ",
     "area": "Web framework",
     "status": "shipped",
-    "summary": "The React framework for Bun this site runs on: HTML by default, islands for interactivity, Server Actions, streaming and ISR. About 40–60× the requests per second of Next.js on one core.",
-    "href": "/docs/introduction"
+    "summary": "The React framework for Bun this site runs on: HTML by default, islands for interactivity, Server Actions, streaming and ISR. About 40\u201360\u00d7 the requests per second of Next.js on one core.",
+    "href": "/optz"
   },
   {
     "slug": "twelve",

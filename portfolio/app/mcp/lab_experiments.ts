@@ -5,7 +5,7 @@ import lab from "$lib/lab";
 
 export default defineTool({
   title: "Lab experiments",
-  description: "List the experiments in the dihlabs.lol lab (diffusion models, LLMs, fast software on small machines), optionally only one status. Returns name, area, status, summary and a link.",
+  description: "List the experiments in the dihlabs.lol lab (software, systems, and fast software on small machines), optionally only one status. Returns name, area, status, summary and a link.",
   input: {
     type: "object",
     properties: { status: { type: "string", enum: ["exploring", "shipped", "paused"], description: "Only experiments with this status" } },

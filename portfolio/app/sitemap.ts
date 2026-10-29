@@ -4,6 +4,7 @@ import { listPosts } from "$lib/posts";
 
 export default (): SitemapEntry[] => [
   { url: "/", changeFrequency: "weekly", priority: 1 },
+  { url: "/optz", changeFrequency: "weekly", priority: 0.9 },
   { url: "/lab", changeFrequency: "weekly" },
   { url: "/blog", changeFrequency: "weekly" },
   { url: "/docs", changeFrequency: "weekly" },

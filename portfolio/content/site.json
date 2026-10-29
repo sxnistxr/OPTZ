@@ -1,12 +1,18 @@
 {
-  "name": "dihlabs.lol",
-  "title": "dihlabs.lol",
+  "name": "DihLabs",
+  "title": "DihLabs \u2014 Software, systems & curiosity",
   "author": "sxnistxr",
   "tagline": "A dev lab by sxnistxr",
-  "about": "I build and break things for fun. Diffusion models, generative media, LLMs, and fast software on small machines.",
+  "about": "I\u2019m sxnistxr. I build software, explore systems, and write about what I learn.",
   "links": [
-    { "label": "GitHub", "href": "https://github.com/sxnistxr" },
-    { "label": "Source", "href": "https://github.com/sxnistxr/OPTZ" }
+    {
+      "label": "GitHub",
+      "href": "https://github.com/sxnistxr"
+    },
+    {
+      "label": "Source",
+      "href": "https://github.com/sxnistxr/OPTZ"
+    }
   ],
   "url": "https://dihlabs.lol",
   "repo": "https://github.com/sxnistxr/OPTZ",

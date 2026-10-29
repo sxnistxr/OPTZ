@@ -1,7 +1,7 @@
 # Introduction
 
-dihlabs.lol is a dev lab by sxnistxr: a place to try things for fun, from diffusion models and
-LLMs to fast software on small machines, and write down what happens. This documentation covers
+dihlabs.lol is a dev lab by sxnistxr: a place to build software, explore systems,
+and write down what happens. This documentation covers
 the code behind it: one repository with a web framework, the site built on it, a Rust backend
 and everything that deploys them.
 
