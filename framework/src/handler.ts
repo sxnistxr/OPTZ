@@ -537,7 +537,11 @@ export async function createApp({ manifest, config, files, platform, middleware 
 
   function html(body: string, req: Request, status = 200, extra?: Record<string, string>): Response {
     const h: Record<string, string> = { "Content-Type": "text/html; charset=utf-8", "Cache-Control": "no-cache", Vary: "Accept-Encoding", ...pageHeaders, ...extra };
-    const encoding = selectEncoding(req.headers.get("accept-encoding"), false, !!(F.dynamicCompression && platform.gzip && body.length > 1024));
+    // The size threshold only decides whether gzip is preferred; a client that refuses identity
+    // still gets gzip for a small body rather than a 406.
+    const accept = req.headers.get("accept-encoding");
+    const canGzip = !!(F.dynamicCompression && platform.gzip);
+    const encoding = selectEncoding(accept, false, canGzip && body.length > 1024) ?? (canGzip ? selectEncoding(accept, false, true) : null);
     if (!encoding) return new Response("No acceptable content encoding", { status: 406, headers: { Vary: "Accept-Encoding" } });
     if (F.etag && status === 200) {
       const etag = `"${hash(body)}"`;

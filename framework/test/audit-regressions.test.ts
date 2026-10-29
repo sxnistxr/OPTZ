@@ -178,3 +178,17 @@ test("dynamic HTML honors gzip rejection and explicit identity preferences", asy
     expect(await response.text()).toContain("content");
   }
 });
+
+test("small dynamic HTML is gzipped when identity is refused, and 406 only when nothing is acceptable", async () => {
+  const route = { ...pageRoute(), render: "dynamic" as const };
+  const app = await createApp({ manifest: manifest([route]), config: resolveConfig({ features: { dynamic: true, dynamicCompression: true, streaming: false } }), files: new Map(), platform: {
+    gzip: bytes => new Uint8Array(gzipSync(bytes)),
+    load: async () => ({ loader: () => ({}), default: () => React.createElement("p", null, "small") }),
+  } });
+  const small = await app.fetch(request("/isr", { headers: { "Accept-Encoding": "gzip" } }));
+  expect(small.headers.has("content-encoding")).toBe(false);
+  const refused = await app.fetch(request("/isr", { headers: { "Accept-Encoding": "gzip, identity;q=0" } }));
+  expect([refused.status, refused.headers.get("content-encoding")]).toEqual([200, "gzip"]);
+  expect(gunzipSync(new Uint8Array(await refused.arrayBuffer())).toString()).toContain("small");
+  expect((await app.fetch(request("/isr", { headers: { "Accept-Encoding": "br, identity;q=0" } }))).status).toBe(406);
+});
