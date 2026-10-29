@@ -1,9 +1,10 @@
+import { fullstackFiles } from "./fullstack-template";
 // `optz create <dir>`: a small app that shows every feature once.
 import { existsSync, mkdirSync, readdirSync, writeFileSync } from "node:fs";
 import { basename, dirname, join, relative } from "node:path";
 import { AGENT_CLIENTS, writeAgentFiles } from "./agents";
 
-export function create(dir: string) {
+export function create(dir: string, template: "basic" | "fullstack" = "basic") {
   if (existsSync(dir) && readdirSync(dir).length) {
     console.error(`optz: ${dir} isn't empty`);
     process.exit(1);
@@ -214,7 +215,9 @@ export default defineTool({
 `,
     "public/robots.txt": "User-agent: *\nAllow: /\n",
   };
-  for (const [f, content] of Object.entries(files)) {
+  const selected = template === "fullstack" ? { ...Object.fromEntries(Object.entries(files).filter(([p]) => ["package.json", "tsconfig.json", ".gitignore"].includes(p))), ...fullstackFiles } : files;
+  if (template === "fullstack") selected[".gitignore"] += ".data/\n.env\n.env.*\n!.env.example\n";
+  for (const [f, content] of Object.entries(selected)) {
     const p = join(dir, f);
     mkdirSync(dirname(p), { recursive: true });
     writeFileSync(p, content);
@@ -227,6 +230,5 @@ export default defineTool({
   bun install
   bun run dev
 
-  AI: the app answers MCP at /mcp (tools in app/mcp), and AGENTS.md, skills and MCP configs
-  for Claude Code, Codex, Cursor, VS Code and Gemini CLI are in place (optz agents updates them).`);
+  ${template === "fullstack" ? "Full-stack: copy .env.example to .env; accounts, private notes and uploads are ready. See README.md." : "AI: MCP tools in app/mcp, plus AGENTS.md and coding-agent configuration (optz agents updates them)."}`);
 }

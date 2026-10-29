@@ -462,3 +462,63 @@ actions and CSRF, ISR, dynamicParams, intercepts, draft mode, i18n, MCP over HTT
 (30) and `node apps/features/hmr.cjs` (dev server, 6). CI runs all of them. The browser suites
 need Playwright with Chromium (`npm i -g playwright@1.63.0 && npx playwright install chromium`,
 or `NODE_PATH` pointing at an install).
+
+## Full applications (0.4)
+
+Create an executable local-data application:
+
+```sh
+optz create apps/my-app --template fullstack
+cd apps/my-app
+bun install
+cp .env.example .env
+bun run dev
+```
+
+The template includes SQLite migrations, password accounts, persistent/revocable opaque sessions,
+private notes, private uploads and an authenticated SSE endpoint. Native forms work without
+JavaScript. Set the real HTTPS `PUBLIC_URL` and persistent database/upload paths for deployment;
+see the generated README. [Research and roadmap](../docs/FULLSTACK-RESEARCH.md) compares the
+implementation with Next.js, SvelteKit, Astro, React Router, Nuxt, Hono and TanStack Start.
+
+These are opt-in exports, adding no database/auth/storage initialization to static serving:
+
+| Import | API | Runtime |
+|---|---|---|
+| `optz/sessions` | `createSessions`, `memorySessionStore`, `SessionStore` | Server/edge with Web Crypto; inject persistent storage |
+| `optz/sqlite` | `openDatabase`, `migrate`, `sqliteSessionStore` | Bun only |
+| `optz/forms` | `parseInput`, `validateInput`, `ValidationError`, `formValues` | Web-standard request/schema validation |
+| `optz/security` | `csrf`, `assertSameOrigin`, `cors`, `secureHeaders`, `createRateLimiter` | Opt-in server middleware/utilities |
+| `optz/storage` | `localStorage` | Node/Bun private local files |
+| `optz/stream` | `eventStream` | Web-standard SSE with backpressure and abort signal |
+| `optz/observe` | `observe` | Opt-in request/error callbacks and Server-Timing |
+
+Use a `.server.ts`/`.server.tsx` filename or `app/lib/server/` directory for server-only code.
+Browser builds fail if these modules, or private OPTZ modules, enter a client dependency graph,
+including through a shared module. A route's eliminated loader imports remain server-side.
+
+Session stores receive SHA-256 token keys and `{ data, expiresAt }`; they implement `get`, `set`
+and `delete`, synchronously or asynchronously. HTTPS sessions use `__Host-` Secure, HttpOnly,
+SameSite=Lax cookies. Login creates a fresh identity and can revoke a previous request's cookie;
+logout deletes server state. The memory store is bounded and intended for prototypes/tests.
+Cookie/Authorization responses are private/no-store, including uncached dynamic pages.
+
+`parseInput(request, schema, { maxBytes, timeoutMs })` accepts JSON, URL-encoded forms or
+multipart input. Use a Standard Schema V1 validator (e.g. Zod/Valibot) or a function that throws
+`new ValidationError({ field: ["message"] })`. Invalid inputs throw a safe 422 Response; malformed,
+unsupported and oversized bodies produce 400/415/413. Errors never automatically echo input values.
+Repeated fields become arrays. TypeScript annotations alone do not perform runtime validation.
+
+`eventStream(request, signal => asyncIterable, { maxEventBytes, onClose })` pulls one event at a
+time and validates event framing. Its source must observe `signal` while awaiting external work.
+Use `onClose` to release application connection budgets even if cancellation happens before
+iteration starts. It is a live response stream, not persistent pub/sub or a durable task queue.
+
+`localStorage(directory)` writes randomized keys with streaming byte limits and private file
+permissions. `.save(file, { maxBytes, types })` returns metadata to store alongside ownership;
+`.response(key, name)` serves as an attachment with nosniff. Authorize access in your data layer.
+A transport MIME allowlist does not inspect file content. Keep the directory outside `public/`.
+
+The local fixed-window limiter refuses new keys when its bounded map is full; it does not evict
+active limits. Use short, trusted identity keys, never unverified forwarding headers. Multiple
+processes require a shared limiter implementation or an ingress limit.

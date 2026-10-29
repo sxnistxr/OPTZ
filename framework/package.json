@@ -1,6 +1,6 @@
 {
   "name": "optz",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "description": "A small, fast React framework for Bun: file routes, layouts, loaders, middleware, static-first rendering.",
   "type": "module",
   "keywords": [
@@ -49,7 +49,14 @@
     "./mcp": "./src/mcp.ts",
     "./dialog": "./src/dialog.tsx",
     "./cdn": "./src/cdn.ts",
-    "./test": "./src/testing.ts"
+    "./test": "./src/testing.ts",
+    "./sessions": "./src/sessions.ts",
+    "./forms": "./src/forms.ts",
+    "./security": "./src/security.ts",
+    "./sqlite": "./src/sqlite.ts",
+    "./stream": "./src/stream.ts",
+    "./storage": "./src/storage.ts",
+    "./observe": "./src/observe.ts"
   },
   "scripts": {
     "test": "bun test",

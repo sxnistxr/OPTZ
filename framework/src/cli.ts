@@ -116,7 +116,7 @@ switch (cmd) {
     };
     spawn();
     let timer: Timer | undefined;
-    const ignored = /(^|[/\\])(node_modules|dist|\.optz|\.git|target)([/\\]|$)/;
+    const ignored = /(^|[/\\])(node_modules|dist|\.optz|\.git|\.data|target)([/\\]|$)/;
     watch(root, { recursive: true }, (_e, file) => {
       if (!file || ignored.test(file)) return;
       clearTimeout(timer);
@@ -157,7 +157,9 @@ switch (cmd) {
       console.error("usage: optz create <dir>");
       process.exit(2);
     }
-    create(resolve(dir));
+    const template = args.includes("--template") ? args[args.indexOf("--template") + 1] : "basic";
+    if (template !== "basic" && template !== "fullstack") throw new Error("Unknown template; use basic or fullstack");
+    create(resolve(dir), template);
     break;
   }
   default:
