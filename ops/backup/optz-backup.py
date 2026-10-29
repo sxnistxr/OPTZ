@@ -25,6 +25,8 @@ def main():
     a = ap.parse_args()
     if a.hourly < 0 or a.daily < 0:
         ap.error("retention counts must be non-negative")
+    if a.hourly == 0 and a.daily == 0:
+        ap.error("at least one retention count must be positive")
     os.makedirs(a.dest, exist_ok=True)
     stamp = datetime.datetime.now(datetime.timezone.utc).strftime("%Y%m%dT%H%M%SZ")
     tmp = os.path.join(a.dest, f".feed-{stamp}.db.partial")

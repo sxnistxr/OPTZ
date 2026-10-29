@@ -34,7 +34,7 @@ class BackupRetentionTests(unittest.TestCase):
         return subprocess.run([sys.executable, str(SCRIPT), "--db", str(self.database), "--dest", str(self.destination), *args], capture_output=True, text=True, timeout=10)
 
     def test_zero_disables_only_its_retention_category(self):
-        for hourly, daily in [(1, 0), (0, 1), (0, 0)]:
+        for hourly, daily in [(1, 0), (0, 1)]:
             with self.subTest(hourly=hourly, daily=daily):
                 self.seed_old_backups()
                 result = self.run_backup("--hourly", str(hourly), "--daily", str(daily))
@@ -43,6 +43,13 @@ class BackupRetentionTests(unittest.TestCase):
                 self.assertEqual(len(copies), max(hourly, daily))
                 self.assertEqual(len(list(self.destination.glob("*.sha256"))), len(copies))
                 self.assertFalse(any(path.name.startswith("feed-2000") for path in copies))
+
+    def test_both_zero_fail_before_writing_or_pruning(self):
+        before = {path.name: path.read_bytes() for path in self.destination.iterdir()}
+        result = self.run_backup("--hourly", "0", "--daily", "0")
+        self.assertEqual(result.returncode, 2)
+        self.assertIn("at least one retention count must be positive", result.stderr)
+        self.assertEqual({path.name: path.read_bytes() for path in self.destination.iterdir()}, before)
 
     def test_defaults_keep_the_newest_24_copies(self):
         result = self.run_backup()

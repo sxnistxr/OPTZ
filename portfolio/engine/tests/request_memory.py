@@ -2,6 +2,7 @@
 """Bound incomplete uploads across existing sockets; verify close/drain reclaims the quota."""
 import argparse
 from pathlib import Path
+import resource
 import selectors
 import shutil
 import socket
@@ -10,6 +11,21 @@ import tempfile
 import time
 
 import harness
+
+
+def ensure_fd_limit(client_count=1024):
+    # Leave room for the selector, health checks and server/log descriptors, too.
+    required = client_count + len(list(Path("/proc/self/fd").iterdir())) + 32
+    soft, hard = resource.getrlimit(resource.RLIMIT_NOFILE)
+    if soft == resource.RLIM_INFINITY or soft >= required:
+        return
+    prerequisite = f"RLIMIT_NOFILE >= {required} is required for {client_count} clients plus existing descriptors (soft={soft}, hard={hard})"
+    if hard != resource.RLIM_INFINITY and hard < required:
+        raise RuntimeError(prerequisite + "; increase the hard limit before running this test")
+    try:
+        resource.setrlimit(resource.RLIMIT_NOFILE, (required, hard))
+    except (OSError, ValueError) as error:
+        raise RuntimeError(prerequisite + "; unable to raise the soft limit") from error
 
 
 def partial_uploads(port, complete=False, count=1024):
@@ -69,6 +85,10 @@ def main():
     parser.add_argument("--binary", default=harness.BINARY)
     parser.add_argument("--port", type=int, default=3192)
     args = parser.parse_args()
+    try:
+        ensure_fd_limit()
+    except RuntimeError as error:
+        parser.error(str(error))
     harness.BINARY = args.binary
     with tempfile.TemporaryDirectory(prefix="optz-request-memory-") as directory:
         seed = Path(directory) / "seed.db"

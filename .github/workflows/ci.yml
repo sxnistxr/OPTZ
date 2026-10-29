@@ -205,4 +205,5 @@ jobs:
       - name: Incomplete upload memory budget and recovery
         run: |
           cargo build --release --locked
+          python3 -m unittest discover -s tests -p 'test_request_memory.py'
           python3 tests/request_memory.py
