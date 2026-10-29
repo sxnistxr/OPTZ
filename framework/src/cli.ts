@@ -116,7 +116,7 @@ switch (cmd) {
     };
     spawn();
     let timer: Timer | undefined;
-    const ignored = /(^|[/\\])(node_modules|dist|\.optz|\.git|target)([/\\]|$)/;
+    const ignored = /(^|[/\\])(node_modules|dist|\.optz|\.git|\.data|target)([/\\]|$)/;
     watch(root, { recursive: true }, (_e, file) => {
       if (!file || ignored.test(file)) return;
       clearTimeout(timer);

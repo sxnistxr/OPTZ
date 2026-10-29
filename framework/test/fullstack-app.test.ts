@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { mkdtempSync, rmSync, readFileSync, readdirSync } from "node:fs";
+import { mkdtempSync, mkdirSync, rmSync, readFileSync, readdirSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fullstackFiles } from "../src/fullstack-template";
@@ -51,3 +51,42 @@ test("full app enforces cross-user ownership, persists sessions, rejects CSRF an
     expect((await fetch(origin+"/dashboard",{headers:{Cookie:alice},redirect:"manual"})).status).toBe(303);
   } finally{await stop();rmSync(temp,{recursive:true,force:true});}
 },30000);
+
+test("development ignores SQLite and upload state while source changes still restart the child",async()=>{
+  const tempRoot=join(import.meta.dir,"../.tmp");mkdirSync(tempRoot,{recursive:true});
+  const root=mkdtempSync(join(tempRoot,"fullstack-dev-"));
+  const cli=join(import.meta.dir,"../src/cli.ts"), port=50000+(process.pid%5000), origin=`http://localhost:${port}`;
+  let server:ReturnType<typeof Bun.spawn>|undefined, output="";
+  const pid=async()=>{
+    try{const response=await fetch(origin+"/api/pid",{signal:AbortSignal.timeout(1000)});if(response.ok)return await response.json() as number;}catch{}
+  };
+  try{
+    create(root,"fullstack");
+    const source=join(root,"app/api/pid.ts");
+    await Bun.write(source,'export const GET=()=>Response.json(process.pid);');
+    server=Bun.spawn([process.execPath,cli,"dev"],{cwd:root,env:{...process.env,PORT:String(port),PUBLIC_URL:origin},stdout:"pipe",stderr:"pipe"});
+    const collect=async(stream:ReadableStream<Uint8Array>)=>{for await(const chunk of stream)output+=new TextDecoder().decode(chunk);};
+    const logs=Promise.all([collect(server.stdout as ReadableStream<Uint8Array>),collect(server.stderr as ReadableStream<Uint8Array>)]);
+    let original:number|undefined;
+    for(let i=0;i<200 && !original;i++){original=await pid();if(!original)await Bun.sleep(25);}
+    if(!original)throw new Error("Development server did not start: "+output);
+    const post=(path:string,body:Record<string,string>,cookie?:string)=>fetch(origin+path,{method:"POST",body:new URLSearchParams(body),headers:{Origin:origin,...(cookie?{Cookie:cookie}:{})},redirect:"manual"});
+    const registration=await post("/api/auth/register",{email:"dev@example.test",password:"development test password"});
+    expect(registration.status).toBe(303);
+    const cookie=registration.headers.get("set-cookie")!.split(";")[0];
+    expect((await post("/api/notes",{text:"Write the SQLite database"},cookie)).status).toBe(303);
+    mkdirSync(join(root,".data/uploads"),{recursive:true});
+    await Bun.write(join(root,".data/uploads/attachment.txt"),"private state");
+    await Bun.sleep(300);
+    expect(output).not.toContain("changed, restarting");
+    expect(await pid()).toBe(original);
+    await Bun.write(source,'export const GET=()=>Response.json(process.pid); // source edit');
+    let restarted:number|undefined;
+    for(let i=0;i<200;i++){const current=await pid();if(current && current!==original){restarted=current;break;}await Bun.sleep(25);}
+    expect(restarted).toBeDefined();
+    server.kill("SIGINT");await server.exited;await logs;server=undefined;
+  }finally{
+    if(server){server.kill("SIGINT");await server.exited;}
+    rmSync(root,{recursive:true,force:true});
+  }
+},20000);
