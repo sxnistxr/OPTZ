@@ -28,6 +28,8 @@ If GitHub configuration succeeds and the latest `main` CI run already passed bef
 ## What changes
 
 - Backs up migration configuration to a timestamped root-only directory under `/var/backups/optz-autodeploy/` and records the old service state.
+  Each snapshot keeps `/etc/optz-deploy` in `config/`, `/usr/local/lib/optz-deploy` in
+  `helpers/`, and `/etc/sudoers.d/optz-deploy` in `sudoers`, so their identical names cannot collide.
 - Stops the legacy polling timer without killing an active deployment; if one is running, migration refuses and can be retried after it finishes.
 - Installs root-owned deployment code under `/usr/local/lib/optz-deploy/`. Automatic deployment never executes updated repository scripts as root and cannot install systemd units or nginx directives from the build.
 - Creates `optz-deploy` for a forced SSH command, with no PTY or forwarding, and one narrowly scoped sudo entrypoint. The entrypoint validates all arguments and accepts no shell commands, repository paths or configuration arguments.

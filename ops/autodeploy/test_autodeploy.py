@@ -183,8 +183,9 @@ class MigrationTests(unittest.TestCase):
     def test_migration_reruns_preserve_key_and_never_restart_app_or_touch_database(self):
         real_run = migration.run
         with tempfile.TemporaryDirectory() as directory, ExitStack() as stack, redirect_stdout(io.StringIO()):
-            root = Path(directory); etc = root / "etc"; state = root / "state"; build = root / "build"
-            lib = root / "lib"; sudoers = root / "sudoers/rule"; host_key = root / "host.pub"
+            root = Path(directory); etc = root / "etc/optz-deploy"; state = root / "state"; build = root / "build"
+            lib = root / "usr/local/lib/optz-deploy"; sudoers = root / "etc/sudoers.d/optz-deploy"; host_key = root / "host.pub"
+            etc.parent.mkdir(parents=True)
             host_key.write_text("ssh-ed25519 AAAAtest host")
             # Redirect every installed path, including backup destinations, into this sandbox.
             stack.enter_context(patch.object(migration, "ROOT", etc)); stack.enter_context(patch.object(migration, "STATE", state))
@@ -214,7 +215,17 @@ class MigrationTests(unittest.TestCase):
             authorized_keys = etc / ".ssh/authorized_keys"
             self.assertEqual(authorized_keys.stat().st_mode & 0o777, 0o644)
             authorized_keys.chmod(0o600)  # Repair an installation made by the old installer.
+            sudo_rule = sudoers.read_bytes()
             migration.migrate(self.args(root))
+            snapshots = sorted((root / "backups").iterdir())
+            self.assertEqual(len(snapshots), 2)
+            saved = snapshots[-1]
+            self.assertEqual(saved.stat().st_mode & 0o777, 0o700)
+            self.assertEqual((saved / "config/github_ed25519").read_bytes(), key)
+            self.assertEqual((saved / "config/github_ed25519").stat().st_mode & 0o777, 0o600)
+            self.assertEqual((saved / "config/.ssh/authorized_keys").stat().st_mode & 0o777, 0o600)
+            self.assertEqual((saved / "helpers/build.sh").read_bytes(), (HERE / "build.sh").read_bytes())
+            self.assertEqual((saved / "sudoers").read_bytes(), sudo_rule)
             self.assertEqual((etc / "github_ed25519").read_bytes(), key)
             self.assertEqual((etc / "github_ed25519").stat().st_mode & 0o777, 0o600)
             self.assertEqual(authorized_keys.stat().st_mode & 0o777, 0o644)
