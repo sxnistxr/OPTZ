@@ -260,7 +260,9 @@ def migrate(args):
     public = output(["ssh-keygen", "-y", "-f", key])
     (ROOT / ".ssh").mkdir(mode=0o755, exist_ok=True)
     (ROOT / ".ssh").chmod(0o755)
-    write(ROOT / ".ssh/authorized_keys", 'restrict,command="/usr/bin/python3 -I /usr/local/lib/optz-deploy/ssh-entry.py" ' + public + "\n")
+    # sshd reads authorized_keys as the login user. Keep this public key root-owned and
+    # non-writable by optz-deploy, but readable; private keys and secrets remain 0600.
+    write(ROOT / ".ssh/authorized_keys", 'restrict,command="/usr/bin/python3 -I /usr/local/lib/optz-deploy/ssh-entry.py" ' + public + "\n", 0o644)
     sudo_rule = "optz-deploy ALL=(root) NOPASSWD: /usr/local/lib/optz-deploy/controller.py *\n"
     with tempfile.NamedTemporaryFile(mode="w") as f:
         f.write(sudo_rule); f.flush()
