@@ -217,12 +217,13 @@ def migrate(args):
         raise ValueError("GitHub API/read token file is missing or empty")
     backup = BACKUPS / datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%S%fZ")
     backup.mkdir(parents=True, mode=0o700)
-    for path in (ROOT, LIB, SUDOERS):
+    # All three production paths are named optz-deploy; keep their snapshots distinct.
+    for path, name in ((ROOT, "config"), (LIB, "helpers"), (SUDOERS, "sudoers")):
         if path.exists():
             if path.is_dir():
-                shutil.copytree(path, backup / path.name, symlinks=True)
+                shutil.copytree(path, backup / name, symlinks=True)
             else:
-                shutil.copy2(path, backup / path.name)
+                shutil.copy2(path, backup / name)
     state = {unit: {prop: output(["systemctl", "show", "-p", prop, "--value", unit]) for prop in ("ActiveState", "UnitFileState")}
              for unit in ("optz-sync.timer", "optz-sync.service", "optz-runner.service")}
     write(backup / "legacy-services.json", json.dumps(state, indent=2), 0o600)
