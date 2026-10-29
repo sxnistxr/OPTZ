@@ -56,6 +56,8 @@ test("development ignores SQLite and upload state while source changes still res
   const tempRoot=join(import.meta.dir,"../.tmp");mkdirSync(tempRoot,{recursive:true});
   const root=mkdtempSync(join(tempRoot,"fullstack-dev-"));
   const cli=join(import.meta.dir,"../src/cli.ts"), port=50000+(process.pid%5000), origin=`http://localhost:${port}`;
+  const env={...process.env,PORT:String(port),PUBLIC_URL:origin,
+    DATABASE_PATH:join(root,".data/app.sqlite"),UPLOAD_DIR:join(root,".data/uploads")};
   let server:ReturnType<typeof Bun.spawn>|undefined, output="";
   const pid=async()=>{
     try{const response=await fetch(origin+"/api/pid",{signal:AbortSignal.timeout(1000)});if(response.ok)return await response.json() as number;}catch{}
@@ -64,7 +66,7 @@ test("development ignores SQLite and upload state while source changes still res
     create(root,"fullstack");
     const source=join(root,"app/api/pid.ts");
     await Bun.write(source,'export const GET=()=>Response.json(process.pid);');
-    server=Bun.spawn([process.execPath,cli,"dev"],{cwd:root,env:{...process.env,PORT:String(port),PUBLIC_URL:origin},stdout:"pipe",stderr:"pipe"});
+    server=Bun.spawn([process.execPath,cli,"dev"],{cwd:root,env,stdout:"pipe",stderr:"pipe"});
     const collect=async(stream:ReadableStream<Uint8Array>)=>{for await(const chunk of stream)output+=new TextDecoder().decode(chunk);};
     const logs=Promise.all([collect(server.stdout as ReadableStream<Uint8Array>),collect(server.stderr as ReadableStream<Uint8Array>)]);
     let original:number|undefined;
