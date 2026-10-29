@@ -10,6 +10,7 @@
 // stored. Other headers a response varies on become part of its key, like `rc.vary`.
 // Invalidation wins over renders already running: what they produce isn't stored.
 import { fnv } from "./static";
+import { selectEncoding } from "./encoding";
 import type { RouteCache } from "./types";
 
 export interface Compressors {
@@ -122,13 +123,7 @@ export class ResponseCache {
     const gen = this.generation;
     const f: Inflight = { rc, promise: null as never };
     f.promise = (async () => {
-      let res: Response;
-      try {
-        res = await produce();
-      } finally {
-        // From here on, new requests start their own render.
-        if (this.inflight.get(key) === f) this.inflight.delete(key);
-      }
+      const res = await produce();
       const cc = res.headers.get("cache-control") ?? "";
       const vary = (res.headers.get("vary") ?? "")
         .split(",")
@@ -164,7 +159,10 @@ export class ResponseCache {
       // includes every header it varies on.
       if (gen === this.generation && e.bytes < this.maxBytes / 4) this.store(storeKey, e);
       return e;
-    })();
+    })().finally(() => {
+      // Keep coalescing until the complete body and cache entry are ready.
+      if (this.inflight.get(key) === f) this.inflight.delete(key);
+    });
     this.inflight.set(key, f);
     f.promise.catch(() => {});
     return f;
@@ -210,13 +208,14 @@ function respond(e: Entry, req: Request, age: number): Response {
   h.set("Cache-Control", cacheControl(e.rc));
   h.set("Age", String(Math.floor(age)));
   h.set("Vary", ["Accept-Encoding", ...e.vary].join(", "));
+  const encoding = selectEncoding(req.headers.get("accept-encoding"), !!e.br, !!e.gz);
+  if (!encoding) return new Response("No acceptable content encoding", { status: 406, headers: { Vary: "Accept-Encoding" } });
   if (req.headers.get("if-none-match") === e.etag) return new Response(null, { status: 304, headers: h });
-  const ae = req.headers.get("accept-encoding") ?? "";
   let body = e.body;
-  if (e.br && ae.includes("br")) {
+  if (e.br && encoding === "br") {
     body = e.br;
     h.set("Content-Encoding", "br");
-  } else if (e.gz && ae.includes("gzip")) {
+  } else if (e.gz && encoding === "gzip") {
     body = e.gz;
     h.set("Content-Encoding", "gzip");
   }

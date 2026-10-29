@@ -53,6 +53,22 @@ For a private repository, or to avoid GitHub's anonymous API rate limit, supply 
 
 ## Monitor and recover
 
+The controller and builder are frozen under `/usr/local/lib/optz-deploy/`; pushing changes
+to their repository copies does not update an existing server. Before deploying this
+backup-layout fix, rerun the migration from a reviewed checkout containing the fix:
+
+```sh
+sudo python3 ops/migrate-autodeploy.py \
+  --repo /srv/optz --host your-server.example --port 22 --configure-github
+```
+
+This refreshes the frozen helpers and preserves the dedicated SSH key, database and running
+app. Install this refresh before merging/deploying the new commit: completed releases for
+an already-deployed SHA are reused, so refreshing the builder does not rebuild that release.
+New releases include the backup script at the installed unit's expected path and preserve
+the authentication workspace links. After the next successful deployment, run
+`sudo systemctl start optz-backup.service` and check `journalctl -u optz-backup.service -n 20`.
+
 Use the GitHub **Deploy** workflow logs and `journalctl -u optz-build` for build failures. An unsuccessful build does not change the live symlink. A failed restart/health check restores the previous symlink and restarts both app services; a failed rollback health check is reported explicitly. A reboot or interrupted SSH session may leave a completed release to reuse on retry; incomplete copied staging directories are cleaned before the same SHA is built again.
 
 The server must be reachable from GitHub-hosted runners over its SSH port. This script does not open firewall ports or remove your administrator keys. If the server is private, use a trusted self-hosted deployment runner with network access and update `runs-on` in the workflow rather than exposing the old HTTP runner.
@@ -61,8 +77,10 @@ For maintenance, disable the Deploy workflow or revoke `/etc/optz-deploy/.ssh/au
 
 ## Local validation
 
-`python3 -m unittest discover -s ops/autodeploy -p 'test_*.py'` covers forced-command injection,
+`python3 -m unittest discover -s ops/autodeploy -p 'test_*.py'` covers release/service paths,
+authentication workspace links, forced-command injection,
 CI provenance, escaping artifacts, dry runs, key-preserving migration reruns, environment-rule
 preservation, one-time CI activation, sandbox construction and failed-health rollback. Tests
 use temporary directories and mocked systemd/GitHub operations; they do not substitute for a
 first deployment on your VPS. `bash -n ops/autodeploy/build.sh` checks the builder script.
+`python3 -m unittest discover -s ops/backup -p 'test_*.py'` checks zero/default/negative retention.

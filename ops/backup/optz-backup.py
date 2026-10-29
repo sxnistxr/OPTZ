@@ -23,6 +23,8 @@ def main():
     ap.add_argument("--hourly", type=int, default=24)
     ap.add_argument("--daily", type=int, default=14)
     a = ap.parse_args()
+    if a.hourly < 0 or a.daily < 0:
+        ap.error("retention counts must be non-negative")
     os.makedirs(a.dest, exist_ok=True)
     stamp = datetime.datetime.now(datetime.timezone.utc).strftime("%Y%m%dT%H%M%SZ")
     tmp = os.path.join(a.dest, f".feed-{stamp}.db.partial")
@@ -54,11 +56,12 @@ def main():
 
     # Retention.
     copies = sorted(f for f in os.listdir(a.dest) if f.startswith("feed-") and f.endswith(".db.gz"))
-    keep = set(copies[-a.hourly:])
+    keep = set(copies[-a.hourly:]) if a.hourly else set()
     by_day = {}
     for f in copies:
         by_day[f[5:13]] = f  # last copy of each day wins
-    keep |= set(sorted(by_day.values())[-a.daily:])
+    if a.daily:
+        keep |= set(sorted(by_day.values())[-a.daily:])
     for f in copies:
         if f not in keep:
             os.remove(os.path.join(a.dest, f))

@@ -1,6 +1,7 @@
 // In-memory static files: body plus brotli and gzip copies and an ETag, served with a map
 // lookup. Web-standard code only, so the same serving logic runs on Bun, Node, Deno and in
 // edge workers.
+import { selectEncoding } from "./encoding";
 
 export interface StaticEntry {
   body: Uint8Array;
@@ -69,14 +70,15 @@ function headsOf(e: StaticEntry) {
 
 export function send(e: StaticEntry, req: Request, status = 200, extra?: Record<string, string>): Response {
   const h = headsOf(e);
+  const encoding = selectEncoding(req.headers.get("accept-encoding"), !!e.br, !!e.gz);
+  if (!encoding) return new Response("No acceptable content encoding", { status: 406, headers: { Vary: "Accept-Encoding" } });
   if (status === 200 && req.headers.get("if-none-match") === e.etag) return new Response(null, { status: 304, headers: extra ? { ...h.raw, ...extra } : h.raw });
-  const ae = req.headers.get("accept-encoding") ?? "";
   let body = e.body;
   let head = h.raw;
-  if (e.br && ae.includes("br")) {
+  if (e.br && encoding === "br") {
     body = e.br;
     head = h.br;
-  } else if (e.gz && ae.includes("gzip")) {
+  } else if (e.gz && encoding === "gzip") {
     body = e.gz;
     head = h.gzip;
   }

@@ -4,6 +4,7 @@ import { constants } from "node:fs";
 import { resolve, join } from "node:path";
 import { Readable } from "node:stream";
 const KEY = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
+const filename = (name: string) => Array.from(name.toWellFormed()).slice(0, 255).join("");
 export function localStorage(root: string) {
   root = resolve(root);
   const path = (key: string) => { if (!KEY.test(key)) throw new TypeError("Invalid storage key"); return join(root, key); };
@@ -29,14 +30,17 @@ export function localStorage(root: string) {
         }
       } catch (error) { await unlink(destination).catch(() => {}); throw error; }
       finally { await fd.close(); await reader.cancel().catch(() => {}); reader.releaseLock(); }
-      return { key, size, name: file.name.slice(0, 255), type: file.type };
+      return { key, size, name: filename(file.name), type: file.type };
     },
     async response(key: string, name = "download") {
+      const disposition = `attachment; filename*=UTF-8''${encodeURIComponent(filename(name)).replace(/[!'()*]/g, c => "%" + c.charCodeAt(0).toString(16))}`;
       const fd = await open(path(key), constants.O_RDONLY | constants.O_NOFOLLOW);
-      const stat = await fd.stat();
-      if (!stat.isFile()) { await fd.close(); throw new TypeError("Storage object is not a file"); }
-      const body = Readable.toWeb(fd.createReadStream()) as unknown as ReadableStream<Uint8Array>;
-      return new Response(body, { headers: { "Content-Type": "application/octet-stream", "Content-Length": String(stat.size), "Content-Disposition": `attachment; filename*=UTF-8''${encodeURIComponent(name.slice(0, 255)).replace(/[!'()*]/g, c => "%" + c.charCodeAt(0).toString(16))}`, "X-Content-Type-Options": "nosniff", "Cache-Control": "private, no-store" } });
+      try {
+        const stat = await fd.stat();
+        if (!stat.isFile()) throw new TypeError("Storage object is not a file");
+        const body = Readable.toWeb(fd.createReadStream()) as unknown as ReadableStream<Uint8Array>;
+        return new Response(body, { headers: { "Content-Type": "application/octet-stream", "Content-Length": String(stat.size), "Content-Disposition": disposition, "X-Content-Type-Options": "nosniff", "Cache-Control": "private, no-store" } });
+      } catch (error) { await fd.close(); throw error; }
     },
     async remove(key: string) { await unlink(path(key)).catch(error => { if (error.code !== "ENOENT") throw error; }); },
   };

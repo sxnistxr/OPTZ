@@ -118,6 +118,7 @@ python3 tests/protocol.py --seed SEED [--long]              # 14 checks: pipelin
 python3 tests/crash.py --seed SEED                          # kill -9 during writes, then verify every acked write
 python3 tests/shards.py --seed SEED                         # spill-over across rings, admission ceiling
 python3 tests/connmem.py --seed SEED --conns N              # kernel + app memory per idle connection
+python3 tests/request_memory.py                           # 1,024 incomplete uploads, quota recovery, peak RSS (synthetic DB)
 ```
 
 Results so far: 42/42; all unit tests, including a 300k-case differential test of the JSON
@@ -129,6 +130,12 @@ p95 2.0 ms, p99 5.9 ms, 0 errors, 34 MB RSS.
 like the scoring box):** 42/42, all unit/protocol/shard tests, `kill -9` ×5 with 0 acknowledged
 writes lost, and **4.5–4.6 KB of kernel + app memory per idle connection**. That puts the memory
 ceiling near 320–330k connections on a 2 GB box; 500k would need ~2.3 GB for sockets alone.
+
+Partial and pipelined request buffers share a 64 MiB budget across all rings, charged by
+allocated capacity. Connections that would exceed it are closed; existing connections also
+stop growing these buffers while the memory-pressure floor is active. Complete requests
+received in one buffer still take the allocation-free path. The stall timeout remains a
+second limit, rather than the only protection against many incomplete uploads.
 
 The VPS found two kernel-6.8 behaviours the 6.18 dev box hides, both fixed: completions on extra
 rings didn't wake a thread blocked on ring 0 (now a bounded 1 ms wait when several rings are
