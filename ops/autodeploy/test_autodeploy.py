@@ -5,6 +5,7 @@ import importlib.util
 import io
 import json
 import os
+import re
 from pathlib import Path
 import shutil
 import subprocess
@@ -131,6 +132,35 @@ class DeploymentTests(unittest.TestCase):
             # A rerun reuses a completed immutable build rather than failing or overwriting it.
             self.assertEqual(controller.build_release(SHA), result)
             self.assertEqual(execute.call_count, 1)
+
+
+class ReleaseLayoutTests(unittest.TestCase):
+    def test_packaging_preserves_service_paths_and_auth_workspace_links(self):
+        # Execute the real packaging stage without compiling or touching production paths.
+        packaging = (HERE / "build.sh").read_text().split("# Keep workspace links", 1)[1]
+        packaging = "# Keep workspace links" + packaging
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            source, work = root / "src", root / "work"
+            for path in ("framework/src", "packages/auth/src", "apps/auth", "node_modules/@optz", "portfolio/dist", "ops/backup"):
+                (source / path).mkdir(parents=True)
+            for path in ("package.json", "bun.lock", "bunfig.toml", "framework/src/cli.ts", "packages/auth/src/index.ts", "portfolio/dist/manifest.json"):
+                (source / path).write_text("fixture")
+            shutil.copyfile(HERE.parent / "backup/optz-backup.py", source / "ops/backup/optz-backup.py")
+            (source / "node_modules/@optz/auth").symlink_to("../../packages/auth", target_is_directory=True)
+            release = work / "release"
+            (release / "web").mkdir(parents=True)
+            (release / "bin").mkdir()
+            (release / "bin/twelve-iouring").write_bytes(b"\x7fELFfixture")
+            subprocess.run(["bash", "-euc", packaging], cwd=source, env={**os.environ, "work": str(work)}, check=True, capture_output=True)
+            units = list((HERE.parent / "systemd").glob("*.service")) + [HERE.parent / "backup/optz-backup.service"]
+            for unit in units:
+                for relative in re.findall(r"/opt/optz/current/([^\s]+)", unit.read_text()):
+                    self.assertTrue((release / relative).exists(), f"{unit.name}: missing {relative}")
+            self.assertEqual((release / "web/node_modules/@optz/auth").resolve(), release / "web/packages/auth")
+            self.assertTrue((release / "web/node_modules/@optz/auth/src/index.ts").is_file())
+            self.assertEqual((release / "ops/backup/optz-backup.py").stat().st_mode & 0o777, 0o644)
+            self.assertFalse((release / "ops/systemd").exists())
 
 
 class MigrationTests(unittest.TestCase):

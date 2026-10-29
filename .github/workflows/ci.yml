@@ -33,6 +33,7 @@ jobs:
         run: |
           python3 -m unittest discover -s ops/runner -p 'test_*.py'
           python3 -m unittest discover -s ops/autodeploy -p 'test_*.py'
+          python3 -m unittest discover -s ops/backup -p 'test_*.py'
           bash -n ops/autodeploy/build.sh ops/runner/install.sh ops/deploy.sh deploy/setup-vps.sh deploy/sync.sh deploy/post-deploy.sh
       - name: Dependency audit
         run: bun audit
@@ -201,3 +202,8 @@ jobs:
       - run: cargo fmt --check
       - run: cargo clippy --all-targets -- -D warnings
       - run: cargo test --release
+      - name: Incomplete upload memory budget and recovery
+        run: |
+          cargo build --release --locked
+          python3 -m unittest discover -s tests -p 'test_request_memory.py'
+          python3 tests/request_memory.py

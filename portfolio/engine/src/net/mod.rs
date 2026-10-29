@@ -43,6 +43,9 @@ const OUT_KEEP_CAPACITY: usize = 16 * 1024;
 /// Close a connection whose unprocessed (pipelined or partial) input exceeds this: a whole
 /// largest request (headers and body may each be up to MAX_REQUEST) plus one more read.
 const STASH_MAX: usize = 2 * http::MAX_REQUEST + RECV_BUF_SIZE;
+/// Shared across every shard, inside the 320 MiB non-socket reserve. Count allocated
+/// capacity, not body length: partially filled Vecs must not evade the byte budget.
+const INPUT_BUDGET: usize = 64 << 20;
 /// Give in-flight work this long to finish after SIGTERM.
 const DRAIN_SECS: u64 = 5;
 
@@ -105,6 +108,51 @@ struct Conn {
 impl Conn {
     fn busy(&self) -> bool {
         self.sending || self.waiting
+    }
+
+    fn stash(&mut self, budget: &mut InputBudget, data: &[u8]) -> bool {
+        let len = self.input.as_ref().map_or(0, |i| i.len());
+        let old_cap = self.input.as_ref().map_or(0, |i| i.capacity());
+        let needed = len + data.len();
+        if needed > STASH_MAX {
+            return false;
+        }
+        if needed > old_cap {
+            let capacity = needed.max(1024).next_power_of_two().min(STASH_MAX);
+            if budget.pressured || capacity - old_cap > budget.limit - budget.used {
+                return false;
+            }
+            let input = self.input.get_or_insert_with(|| Box::new(Vec::new()));
+            if input.try_reserve_exact(capacity - len).is_err() {
+                return false;
+            }
+            budget.used += input.capacity() - old_cap;
+            // reserve_exact may still return more capacity than requested.
+            if budget.used > budget.limit {
+                self.clear_input(budget);
+                return false;
+            }
+        }
+        self.input.as_mut().expect("stashing empty input").extend_from_slice(data);
+        true
+    }
+
+    fn clear_input(&mut self, budget: &mut InputBudget) {
+        if let Some(input) = self.input.take() {
+            budget.used -= input.capacity();
+        }
+    }
+}
+
+struct InputBudget {
+    used: usize,
+    limit: usize,
+    pressured: bool,
+}
+
+impl InputBudget {
+    fn new(limit: usize) -> Self {
+        Self { used: 0, limit, pressured: false }
     }
 }
 
@@ -215,6 +263,7 @@ struct Env {
     now_coarse: u32,
     sends_in_flight: usize,
     requests: u64,
+    input_budget: InputBudget,
 }
 
 impl Env {
@@ -294,6 +343,7 @@ impl Server {
                 now_coarse: 0,
                 sends_in_flight: 0,
                 requests: 0,
+                input_budget: InputBudget::new(INPUT_BUDGET),
             },
             cfg,
             replies,
@@ -672,6 +722,7 @@ impl Server {
         let avail = self.meminfo.available();
         let was_low = self.pressure.low;
         self.pressure.update(avail);
+        self.env.input_budget.pressured = self.pressure.low;
         if self.pressure.low && !was_low {
             eprintln!("net: MemAvailable below {} MiB: refusing new connections", limits::FLOOR >> 20);
         } else if was_low && !self.pressure.low {
@@ -713,12 +764,10 @@ fn arm_recv(sh: &mut Io, s: usize, slot: u32) {
 fn on_data(sh: &mut Io, env: &mut Env, s: usize, slot: u32, data: &[u8]) {
     let c = &mut sh.conns[slot as usize];
     if c.input.is_some() || c.busy() {
-        let stashed = c.input.as_ref().map_or(0, |i| i.len());
-        if stashed + data.len() > STASH_MAX {
+        if !c.stash(&mut env.input_budget, data) {
             start_close(sh, env, s, slot);
             return;
         }
-        c.input.get_or_insert_with(|| Box::new(Vec::with_capacity(data.len().max(1024)))).extend_from_slice(data);
         if c.stalled_since == 0 {
             c.stalled_since = env.now_coarse;
         }
@@ -730,7 +779,10 @@ fn on_data(sh: &mut Io, env: &mut Env, s: usize, slot: u32, data: &[u8]) {
     let n = process(sh, env, s, slot, data);
     let c = &mut sh.conns[slot as usize];
     if c.state == State::Open && n < data.len() {
-        c.input = Some(Box::new(data[n..].to_vec()));
+        if !c.stash(&mut env.input_budget, &data[n..]) {
+            start_close(sh, env, s, slot);
+            return;
+        }
         if c.stalled_since == 0 {
             c.stalled_since = env.now_coarse;
         }
@@ -750,6 +802,8 @@ fn drain_stash(sh: &mut Io, env: &mut Env, s: usize, slot: u32) {
         input.drain(..n);
         if !input.is_empty() && c.state == State::Open {
             c.input = Some(input);
+        } else {
+            env.input_budget.used -= input.capacity();
         }
         if n == 0 {
             return;
@@ -826,7 +880,7 @@ fn start_close(sh: &mut Io, env: &mut Env, s: usize, slot: u32) {
         return;
     }
     c.state = State::Closing;
-    c.input = None;
+    c.clear_input(&mut env.input_budget);
     if c.recv_armed {
         let e = opcode::AsyncCancel2::new(CancelBuilder::fd(Fixed(slot)).all()).build().user_data(ud(OP_CANCEL, s, slot, c.gen_));
         push(&mut sh.ring, &e);
@@ -880,6 +934,45 @@ impl RawFdCompat for IoUring {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn partial_requests_share_a_capacity_budget_across_connections() {
+        let mut budget = InputBudget::new(64 << 10);
+        let mut conns: Vec<Conn> = (0..1000).map(|_| Conn::default()).collect();
+        let chunk = [b'x'; 1024];
+        let mut admitted = 0;
+        for conn in &mut conns {
+            if conn.stash(&mut budget, &chunk) {
+                admitted += 1;
+            }
+            assert!(budget.used <= budget.limit);
+        }
+        assert_eq!(admitted, 64);
+        assert!(!conns[0].stash(&mut budget, &chunk));
+        for conn in &mut conns {
+            conn.clear_input(&mut budget);
+        }
+        assert_eq!(budget.used, 0);
+        assert!(conns[999].stash(&mut budget, &chunk));
+    }
+
+    #[test]
+    fn input_growth_counts_spare_capacity_and_stops_under_memory_pressure() {
+        let mut budget = InputBudget::new(STASH_MAX * 2);
+        let mut conn = Conn::default();
+        assert!(conn.stash(&mut budget, &[b'x'; 1025]));
+        assert_eq!(budget.used, conn.input.as_ref().unwrap().capacity());
+        assert!(budget.used > conn.input.as_ref().unwrap().len());
+        budget.pressured = true;
+        assert!(conn.stash(&mut budget, &[b'x'; 10])); // already allocated
+        assert!(!conn.stash(&mut budget, &[b'x'; 2048]));
+        budget.pressured = false;
+        assert!(conn.stash(&mut budget, &[b'x'; 2048]));
+        assert_eq!(budget.used, conn.input.as_ref().unwrap().capacity());
+        assert!(!conn.stash(&mut budget, &vec![b'x'; STASH_MAX]));
+        conn.clear_input(&mut budget);
+        assert_eq!(budget.used, 0);
+    }
 
     #[test]
     fn writes_behind_a_stalled_writer_are_bounded() {

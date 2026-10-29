@@ -20,6 +20,9 @@ bun install --frozen-lockfile
 export NODE_ENV=production
 (cd portfolio && bun ../framework/src/cli.ts check && bun ../framework/src/cli.ts build)
 # Keep workspace links inside the release. Do not ship or install repository systemd/nginx files.
-cp -a package.json bun.lock bunfig.toml framework node_modules apps "$work/release/web/"
+cp -a package.json bun.lock bunfig.toml framework packages node_modules apps "$work/release/web/"
 mkdir -p "$work/release/web/portfolio"
 tar --exclude=./engine -C portfolio -cf - . | tar --no-same-owner -xf - -C "$work/release/web/portfolio"
+# The installed backup unit resolves its helper through the current release.
+mkdir -p "$work/release/ops/backup"
+install -m 0644 ops/backup/optz-backup.py "$work/release/ops/backup/optz-backup.py"

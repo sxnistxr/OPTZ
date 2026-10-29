@@ -8,11 +8,12 @@
 // them is a map lookup. React's server renderer isn't even loaded until a dynamic page needs it.
 import { createRouteMatcher } from "./route-index";
 import { readBody } from "./body";
+import { selectEncoding } from "./encoding";
 import { BOUND_FIELD, tagModule } from "./actions-runtime";
 import { cacheControl, privateResponse, ResponseCache } from "./cache";
 import { als, clearDataCaches, inStore, newStore, trackRequest, type AppServices, type RequestStore } from "./context";
 import { apiStaticPath, htmlPath, ogPath, type Manifest, type ManifestRoute, type ManifestSlot } from "./manifest";
-import { compilePattern, fillDestination, inScope, matchRoute, matchSegments, safeDecode } from "./match";
+import { compilePattern, dataPath, fillDestination, inScope, matchRoute, matchSegments, safeDecode } from "./match";
 import { fnv, send, type StaticEntry } from "./static";
 import type { LocaleInfo } from "./runtime";
 import type { RenderInput, Rendered, SlotInput } from "./render";
@@ -157,7 +158,10 @@ export async function createApp({ manifest, config, files, platform, middleware 
   async function proxy(req: Request, url: URL, x: (typeof proxies)[number]): Promise<Response> {
     const { prefix, rule, target } = x;
     const rest = rule.strip ? url.pathname.slice(prefix.length) || "/" : url.pathname;
-    const dest = new URL(target.pathname.replace(/\/+$/, "") + rest + url.search, target.origin);
+    const dest = new URL(target);
+    // A path beginning with // must never become a new URL authority.
+    dest.pathname = target.pathname.replace(/\/+$/, "") + rest;
+    dest.search = url.search;
     const limit = rule.maxBodySize ?? config.server.maxRequestBodySize;
     const declared = Number(req.headers.get("content-length") ?? 0);
     if (declared > limit) return jsonRes({ error: "request body too large" }, 413);
@@ -380,13 +384,16 @@ export async function createApp({ manifest, config, files, platform, middleware 
   /** POST /_optz/revalidate from a peer: a signed change, applied here only. */
   async function receiveRevalidation(req: Request): Promise<Response> {
     if (req.method !== "POST" || !rvKey) return jsonRes({ error: "not found" }, 404);
-    const body = await req.text();
     const sig = req.headers.get("x-optz-signature") ?? "";
     const bytes = sig.match(/^[0-9a-f]{64}$/) ? Uint8Array.from(sig.match(/../g)!, (h) => parseInt(h, 16)) : null;
-    if (!bytes || !(await crypto.subtle.verify("HMAC", rvKey, bytes, new TextEncoder().encode(body)))) return jsonRes({ error: "bad signature" }, 403);
+    if (!bytes) return jsonRes({ error: "bad signature" }, 403);
+    let body: Uint8Array;
+    try { body = await readBody(req.body, config.server.maxRequestBodySize); }
+    catch { return jsonRes({ error: "request body too large or timed out" }, 413); }
+    if (!(await crypto.subtle.verify("HMAC", rvKey, bytes, body as BufferSource))) return jsonRes({ error: "bad signature" }, 403);
     let msg: { at?: number; change?: RevalidationChange };
     try {
-      msg = JSON.parse(body);
+      msg = JSON.parse(new TextDecoder().decode(body));
     } catch {
       return jsonRes({ error: "bad body" }, 400);
     }
@@ -432,29 +439,38 @@ export async function createApp({ manifest, config, files, platform, middleware 
     return { request: new Request(u), url: u, locals: {} as Locals };
   };
 
-  function regenerate(trigger: MiddlewareContext, r: ManifestRoute, publicPath: string, inner: string, params: Record<string, string>, locale?: string) {
+  function regenerate(trigger: MiddlewareContext, s: RequestStore, r: ManifestRoute, publicPath: string, inner: string, params: Record<string, string>, locale?: string) {
     if (regenerating.has(publicPath)) return;
     regenerating.add(publicPath);
     const started = Date.now();
     const ctx = anonymous(trigger.url, publicPath);
     // Its own request store, too: headers() and cookies() in the loader see the anonymous request.
-    als.run(appStore({ request: ctx.request, url: ctx.url, locals: ctx.locals, locale, draft: false }), () => (async () => {
+    const task = als.run(appStore({ request: ctx.request, url: ctx.url, locals: ctx.locals, locale, draft: false, env: s.env, waitUntil: s.waitUntil }), () => (async () => {
       if (r.kind === "api") {
         const mod = await load<Record<string, unknown>>(r.file);
         const res = await (mod.GET as (c: ApiContext) => Promise<Response>)({ ...ctx, params });
         if (res.status !== 200) return;
         files.set(apiStaticPath(publicPath), entryOf(new Uint8Array(await res.arrayBuffer()), res.headers.get("content-type") ?? "application/json", "no-cache"));
       } else {
-        const { renderPage } = await render();
+        const { renderPage, headTags } = await render();
         const out = await renderPage(await renderInput(r, ctx, publicPath, inner, params, locale), assets(r), config);
-        if (out.kind === "notFound") files.delete(htmlPath(publicPath));
+        if (out.kind === "notFound") {
+          files.delete(htmlPath(publicPath));
+          files.delete(dataPath(publicPath));
+        }
         if (out.kind !== "page" || out.status !== 200) return;
-        files.set(htmlPath(publicPath), { ...entryOf(new TextEncoder().encode(out.html), "text/html; charset=utf-8", htmlCache), headers: pageHeadersFor(publicPath) });
+        const payload = JSON.stringify({ ...out.payload, headHtml: headTags(out.payload.head, config, publicPath, localeInfo(locale)), lang: locale ?? config.lang });
+        const page = { ...entryOf(new TextEncoder().encode(out.html), "text/html; charset=utf-8", htmlCache), headers: pageHeadersFor(publicPath) };
+        const data = entryOf(new TextEncoder().encode(payload), "application/json", "no-cache");
+        // Publish the two representations together, with no asynchronous work between them.
+        files.set(htmlPath(publicPath), page);
+        files.set(dataPath(publicPath), data);
       }
       renderedAt.set(publicPath, started);
     })()
       .catch((e) => console.error(`optz: regenerating ${publicPath} failed (serving the previous version):`, e))
       .finally(() => regenerating.delete(publicPath)));
+    s.waitUntil?.(task);
   }
 
   // ---- rendering -------------------------------------------------------------------------------
@@ -521,12 +537,18 @@ export async function createApp({ manifest, config, files, platform, middleware 
 
   function html(body: string, req: Request, status = 200, extra?: Record<string, string>): Response {
     const h: Record<string, string> = { "Content-Type": "text/html; charset=utf-8", "Cache-Control": "no-cache", Vary: "Accept-Encoding", ...pageHeaders, ...extra };
+    // The size threshold only decides whether gzip is preferred; a client that refuses identity
+    // still gets gzip for a small body rather than a 406.
+    const accept = req.headers.get("accept-encoding");
+    const canGzip = !!(F.dynamicCompression && platform.gzip);
+    const encoding = selectEncoding(accept, false, canGzip && body.length > 1024) ?? (canGzip ? selectEncoding(accept, false, true) : null);
+    if (!encoding) return new Response("No acceptable content encoding", { status: 406, headers: { Vary: "Accept-Encoding" } });
     if (F.etag && status === 200) {
       const etag = `"${hash(body)}"`;
       h.ETag = etag;
       if (req.headers.get("if-none-match") === etag) return new Response(null, { status: 304, headers: h });
     }
-    if (F.dynamicCompression && platform.gzip && body.length > 1024 && (req.headers.get("accept-encoding") ?? "").includes("gzip")) {
+    if (encoding === "gzip" && platform.gzip) {
       h["Content-Encoding"] = "gzip";
       return new Response(platform.gzip(new TextEncoder().encode(body)) as BodyInit, { status, headers: h });
     }
@@ -583,15 +605,18 @@ export async function createApp({ manifest, config, files, platform, middleware 
   async function data(ctx: MiddlewareContext, s: RequestStore): Promise<Response> {
     const p = ctx.url.pathname;
     const draft = s.draft;
-    if (live && !draft) {
-      const f = files.get(p);
-      if (f) return send(f, ctx.request);
-    }
     const pathname = p.slice("/_optz/data".length, -".json".length);
     const target = pathname === "/index" ? "/" : pathname;
     const { locale, inner } = splitLocale(target);
     s.locale = locale;
-    const m = matchPage( inner);
+    const m = matchPage(inner);
+    if (live && !draft) {
+      const f = files.get(p);
+      if (f) {
+        if (m && isStale(target, m.route)) regenerate(ctx, s, m.route, target, inner, m.params, locale);
+        return send(f, ctx.request);
+      }
+    }
     if (!m || m.route.kind !== "page" || (live && !draft && m.route.render !== "dynamic" && !m.route.dynamicParams)) return jsonRes({ error: "not found" }, 404);
     const route = m.route;
     const input = await renderInput(route, ctx, target, inner, m.params, locale, draft);
@@ -842,7 +867,7 @@ export async function createApp({ manifest, config, files, platform, middleware 
       if (r.prerendered && (req.method === "GET" || req.method === "HEAD") && live) {
         const f = files.get(apiStaticPath(p));
         if (f) {
-          if (isStale(p, r)) regenerate(ctx, r, p, inner, m.params, locale);
+          if (isStale(p, r)) regenerate(ctx, s, r, p, inner, m.params, locale);
           return send(f, req);
         }
       }
@@ -874,7 +899,7 @@ export async function createApp({ manifest, config, files, platform, middleware 
     if (live && !draft && r.render === "static") {
       const f = files.get(htmlPath(p));
       if (f) {
-        if (isStale(p, r)) regenerate(ctx, r, p, inner, m.params, locale);
+        if (isStale(p, r)) regenerate(ctx, s, r, p, inner, m.params, locale);
         return send(f, req);
       }
       if (!r.dynamicParams) return notFound(ctx, locale);
