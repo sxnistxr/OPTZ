@@ -181,8 +181,13 @@ class MigrationTests(unittest.TestCase):
             stack.enter_context(patch.object(migration.subprocess, "run", side_effect=process))
             migration.migrate(self.args(root))
             key = (etc / "github_ed25519").read_bytes()
+            authorized_keys = etc / ".ssh/authorized_keys"
+            self.assertEqual(authorized_keys.stat().st_mode & 0o777, 0o644)
+            authorized_keys.chmod(0o600)  # Repair an installation made by the old installer.
             migration.migrate(self.args(root))
             self.assertEqual((etc / "github_ed25519").read_bytes(), key)
+            self.assertEqual((etc / "github_ed25519").stat().st_mode & 0o777, 0o600)
+            self.assertEqual(authorized_keys.stat().st_mode & 0o777, 0o644)
             self.assertEqual((etc / "github-secrets/DEPLOY_KEY").stat().st_mode & 0o777, 0o600)
             self.assertIn("[server.example]:2222", (etc / "github-secrets/DEPLOY_KNOWN_HOSTS").read_text())
             self.assertIn('restrict,command="/usr/bin/python3 -I', (etc / ".ssh/authorized_keys").read_text())
