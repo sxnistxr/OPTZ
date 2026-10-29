@@ -1,0 +1,43 @@
+{
+  "name": "@optz/auth",
+  "version": "0.1.0",
+  "description": "Optional, secure authentication for OPTZ on Bun and SQLite",
+  "type": "module",
+  "license": "MIT",
+  "exports": {
+    ".": "./src/index.ts",
+    "./client": "./src/client.ts",
+    "./sqlite": "./src/sqlite.ts",
+    "./plugins": "./src/plugins.ts",
+    "./delivery": "./src/delivery.ts"
+  },
+  "files": [
+    "src",
+    "README.md",
+    "LICENSE"
+  ],
+  "scripts": {
+    "test": "bun test",
+    "check": "tsc --noEmit"
+  },
+  "dependencies": {
+    "better-auth": "1.7.14",
+    "@better-auth/passkey": "1.7.14"
+  },
+  "devDependencies": {
+    "@types/bun": "1.4.4",
+    "typescript": "7.0.2"
+  },
+  "sideEffects": false,
+  "publishConfig": {
+    "access": "public"
+  },
+  "engines": {
+    "bun": ">=1.4.4"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/sxnistxr/OPTZ.git",
+    "directory": "packages/auth"
+  }
+}

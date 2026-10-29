@@ -41,11 +41,16 @@ jobs:
       - name: Framework tests (with coverage)
         working-directory: framework
         run: bun test --coverage
+      - name: Auth package types, security flows and isolated tarball
+        run: |
+          bunx tsc --noEmit -p packages/auth/tsconfig.json
+          bun test packages/auth/test
+          bun packages/auth/scripts/check-package.ts
       - name: Package exports and tarball
         run: bun framework/scripts/check-package.ts
       - name: Every app type-checks and builds
         run: |
-          for app in apps/example apps/features apps/social apps/spa apps/fullstack portfolio; do
+          for app in apps/example apps/features apps/social apps/spa apps/fullstack apps/auth portfolio; do
             echo "::group::$app"
             (cd "$app" && bun "$GITHUB_WORKSPACE/framework/src/cli.ts" check)
             echo "::endgroup::"
@@ -132,6 +137,24 @@ jobs:
           bun ../../framework/src/cli.ts start &
           for i in $(seq 30); do curl -sf -o /dev/null http://localhost:3007/ && break; sleep 0.5; done
           node e2e.cjs http://localhost:3007
+
+      - name: Passkeys, user verification and MFA in Chromium
+        env:
+          NODE_PATH: /tmp/pw/node_modules
+        run: node packages/auth/test/passkeys.cjs
+      - name: OPTZ auth application in Chromium
+        env:
+          NODE_PATH: /tmp/pw/node_modules
+          PUBLIC_URL: http://localhost:3008
+          AUTH_DATABASE_PATH: /tmp/optz-auth-ci.sqlite
+        working-directory: apps/auth
+        run: |
+          export AUTH_SECRET="$(bun -e 'console.log(crypto.getRandomValues(new Uint8Array(32)).toBase64({alphabet:"base64url",omitPadding:true}))')"
+          bun run migrate
+          bun ../../framework/src/cli.ts build
+          bun ../../framework/src/cli.ts start &
+          for i in $(seq 30); do curl -sf -o /dev/null http://localhost:3008/ && break; sleep 0.5; done
+          node e2e.cjs http://localhost:3008
 
   nginx:
     runs-on: ubuntu-24.04

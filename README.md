@@ -1,5 +1,9 @@
 # OPTZ
 
+Optional advanced authentication lives in [`@optz/auth`](packages/auth/README.md): OAuth/OIDC,
+passkeys, TOTP/backup codes, verified email/password, email links/codes, SMS, sessions and optional
+organization/admin extensions. Try the [auth application](apps/auth/README.md).
+
 The code behind [dihlabs.lol](https://dihlabs.lol), a dev lab by sxnistxr. Full documentation: [dihlabs.lol/docs](https://dihlabs.lol/docs) (sources in `portfolio/content/docs` and the READMEs below).
 
 | folder | what |
