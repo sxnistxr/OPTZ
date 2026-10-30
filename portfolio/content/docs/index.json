@@ -24,7 +24,7 @@
         "slug": "framework",
         "title": "Framework reference",
         "file": "framework/README.md",
-        "description": "Everything optz does, with examples: routes, render modes, islands, Server Actions, streaming, ISR, API routes, i18n, images, fonts and deploy targets."
+        "description": "Routes, rendering, islands, actions, caching, deployment and the optional application APIs introduced in OPTZ 0.4."
       },
       {
         "slug": "features-app",
@@ -35,6 +35,79 @@
         "slug": "social-demo",
         "title": "Social demo",
         "file": "apps/social/README.md"
+      }
+    ]
+  },
+  {
+    "section": "Full-stack applications",
+    "pages": [
+      {
+        "slug": "full-stack",
+        "file": "portfolio/content/docs/full-stack.md",
+        "title": "Build a full-stack app"
+      },
+      {
+        "slug": "application-apis",
+        "file": "portfolio/content/docs/application-apis.md"
+      },
+      {
+        "slug": "fullstack-starter",
+        "file": "apps/fullstack/README.md",
+        "title": "Starter configuration",
+        "description": "Endpoints, persistent state, quotas and deployment settings for the executable full-stack starter."
+      },
+      {
+        "slug": "fullstack-research",
+        "file": "docs/FULLSTACK-RESEARCH.md",
+        "title": "Design and dispatch benchmarks",
+        "description": "What ships in OPTZ 0.4, what remains an integration, and measured static dispatch costs."
+      },
+      {
+        "slug": "authentication",
+        "file": "packages/auth/README.md",
+        "title": "Authentication",
+        "description": "The optional Better Auth integration: providers, sessions, passkeys, MFA and delivery adapters."
+      }
+    ]
+  },
+  {
+    "section": "Optional modules",
+    "pages": [
+      {
+        "slug": "modules",
+        "file": "docs/MODULES.md",
+        "title": "Modules overview",
+        "description": "Add application services where you need them, with explicit provider boundaries and small browser helpers."
+      },
+      {
+        "slug": "doppler",
+        "file": "docs/DOPPLER.md",
+        "description": "Manage environment variables with typed contracts, safe CLI commands and automatic Doppler injection."
+      },
+      {
+        "slug": "uploads",
+        "file": "docs/UPLOADS.md",
+        "description": "Upload directly to S3-compatible storage with resumable parts, checksums, owner quotas and private downloads."
+      },
+      {
+        "slug": "status-pages",
+        "file": "docs/STATUS.md",
+        "description": "Publish component states and incident timelines with server-rendered views and protected administration."
+      },
+      {
+        "slug": "analytics",
+        "file": "docs/ANALYTICS.md",
+        "description": "Collect consented events, query local insights and optionally forward accepted data to PostHog."
+      },
+      {
+        "slug": "databases",
+        "file": "docs/DATABASES.md",
+        "description": "Keep native ORM clients and add small session adapters for Prisma, Drizzle, Kysely and TypeORM."
+      },
+      {
+        "slug": "cloudflare",
+        "file": "docs/CLOUDFLARE.md",
+        "description": "Compose OPTZ response caching with scoped Cloudflare purge and soft invalidation."
       }
     ]
   },

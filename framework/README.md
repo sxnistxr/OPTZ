@@ -447,11 +447,14 @@ React (for Fast Refresh), whatever `client.runtime` says.
 
 ## Measured (one core)
 
+Historical October 27, 2026 benchmark, before the later site redesign and application modules.
 Against Next.js 16 on the same app, each pinned to one core of the same VM: about 40–60× the
 requests per second (24k–29k vs 440–740 req/s on that machine; absolute numbers vary by CPU),
 37 vs 131 MB idle and 47 vs 331 MB under load, and 4 vs 142 KB of JavaScript on a blog post.
 Method, every run and its provenance: [docs/OPTZ-VS-NEXTJS.md](../docs/OPTZ-VS-NEXTJS.md),
-`bench/results.json`. Against nginx serving the same files: [docs/NATIVE.md](../docs/NATIVE.md).
+`bench/results.json`. These are static/cached response results, not current full-stack app
+performance or current website payload sizes. Newer warmed dispatch-only measurements are in
+[full-stack design notes](../docs/FULLSTACK-RESEARCH.md). Against nginx serving the same files: [docs/NATIVE.md](../docs/NATIVE.md).
 
 ## Tests
 
@@ -478,7 +481,8 @@ bun run dev
 The template includes SQLite migrations, password accounts, persistent/revocable opaque sessions,
 private notes, private uploads and an authenticated SSE endpoint. Native forms work without
 JavaScript. Set the real HTTPS `PUBLIC_URL` and persistent database/upload paths for deployment;
-see the generated README. [Research and roadmap](../docs/FULLSTACK-RESEARCH.md) compares the
+see the generated README. The website has a [full-stack walkthrough](../portfolio/content/docs/full-stack.md)
+and a detailed [application API guide](../portfolio/content/docs/application-apis.md). [Research and roadmap](../docs/FULLSTACK-RESEARCH.md) compares the
 implementation with Next.js, SvelteKit, Astro, React Router, Nuxt, Hono and TanStack Start.
 
 These are opt-in exports, adding no database/auth/storage initialization to static serving:
@@ -522,3 +526,20 @@ A transport MIME allowlist does not inspect file content. Keep the directory out
 The local fixed-window limiter refuses new keys when its bounded map is full; it does not evict
 active limits. Use short, trusted identity keys, never unverified forwarding headers. Multiple
 processes require a shared limiter implementation or an ingress limit.
+
+## Optional application modules and environment contracts
+
+The default public serving and browser entry remain independent of these modules.
+
+| Import | Purpose | Browser code |
+|---|---|---|
+| `optz/env` + `optz env` | Validated environment contracts and integrated Doppler startup/management | Explicit generated public JSON only |
+| `optz/cdn` | Existing page-cache integration, explicit Cloudflare purge and soft invalidation | None |
+| `@optz/uploads`, `/s3`, `/sqlite` | Owned direct/multipart uploads, quotas, immutable approval and private downloads | Optional `/client` helper; no AWS SDK |
+| `@optz/status`, `/sqlite`, `/view` | Components, incidents, authenticated API and public SSR view | None required |
+| `@optz/analytics`, `/sqlite`, `/posthog`, `/view` | Consent-aware ingestion, local insights and injected PostHog adapter | Optional `/client` helper |
+| `@optz/db` | Parameterized SQL and native Prisma/Drizzle session-store adapters | None |
+
+[Module guides](../docs/MODULES.md), [Doppler workflow](../docs/DOPPLER.md), and the
+[auth/modules example](../apps/auth/README.md) cover setup and operational boundaries.
+The packages are workspace source artifacts; install/publish them through your own release flow.

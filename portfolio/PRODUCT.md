@@ -22,3 +22,9 @@ Specific audience segments are inferred to be people exploring sxnistxr's develo
 ## OPTZ Direction Update
 
 The user named https://nextjs.org/ as a design reference, explicitly requesting inspiration rather than copying. The final palette supersedes blue: both sites use monochrome surfaces with yellow reserved for the animated artwork. OPTZ shares this theme, add a playful twist, and make framework speed the central idea, with a creative motion signature such as something racing across the screen. Treat faster-than-light imagery as visual metaphor, never as a performance claim. Preserve benchmark scope and methodology when showing measured results.
+
+## Documentation and Shared Identity Commitment
+
+The user pinned Next.js, Angular, Linear, shadcn and Raycast documentation as references for OPTZ docs. Preserve familiar guide discovery, readable technical content and copyable examples while retaining OPTZ's own identity. The supplied DIHLabs ring-and-slash logo is the durable lab identity. Light and dark themes apply across the website and remember the reader's explicit choice.
+
+The latest logo refinement must follow the user-requested image generation → SVG workflow. Keep the generated PNG and its prompt provenance alongside the path-only SVG; preserve the ring-and-three-slash family resemblance.

@@ -47,6 +47,14 @@ jobs:
           bunx tsc --noEmit -p packages/auth/tsconfig.json
           bun test packages/auth/test
           bun packages/auth/scripts/check-package.ts
+      - name: Optional module types and security tests
+        run: |
+          for module in status analytics uploads db; do
+            bunx tsc --noEmit -p "packages/$module/tsconfig.json"
+          done
+          bun run test:modules
+          bun packages/check-modules.ts
+          (cd portfolio && bun test test/docs.test.ts)
       - name: Package exports and tarball
         run: bun framework/scripts/check-package.ts
       - name: Every app type-checks and builds
@@ -58,6 +66,8 @@ jobs:
           done
           (cd apps/features && bun ../../framework/src/cli.ts build --target edge)
           (cd portfolio && bun ../framework/src/cli.ts build)
+          (cd apps/auth && bun ../../framework/src/cli.ts build)
+          bun bench/module-bundles.ts
       - name: Edge worker in workerd
         run: |
           mkdir -p /tmp/wd && cd /tmp/wd

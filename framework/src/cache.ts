@@ -133,9 +133,16 @@ export class ResponseCache {
         // Waiters must run their own producer: even a no-store response may set a session.
         return res;
       }
+      // Buffered HTML may already be gzip-compressed. Store its identity representation,
+      // so the first visitor's transport encoding never becomes another visitor's body.
+      // Unknown encodings pass through without entering the shared cache.
+      const encoding = res.headers.get("content-encoding")?.trim().toLowerCase();
+      if (encoding && encoding !== "identity" && encoding !== "gzip") return res;
       const configured = (rc.vary ?? []).map((v) => v.toLowerCase());
       const storeKey = key;
-      const body = new Uint8Array(await res.arrayBuffer());
+      const body = new Uint8Array(await (encoding === "gzip" && res.body
+        ? new Response(res.body.pipeThrough(new DecompressionStream("gzip"))).arrayBuffer()
+        : res.arrayBuffer()));
       const headers: [string, string][] = [];
       res.headers.forEach((v, k) => {
         if (!/^(content-encoding|content-length|etag|cache-control|age|vary)$/i.test(k)) headers.push([k, v]);

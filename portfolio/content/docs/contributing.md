@@ -21,7 +21,9 @@ step: Bun runs the TypeScript directly).
 | Framework tests | `cd framework && bun test` | routing, the cache, islands, actions, fonts, SEO files, and `apps/features` end to end in-process |
 | Framework types | `bun node_modules/typescript/bin/tsc --noEmit -p framework/tsconfig.json` | the framework's own types |
 | App types | `bun run check` in each app | generated route types + the app's code |
-| Feature browser checks | `node apps/features/e2e.cjs http://127.0.0.1:3002` | 22 checks in Chromium against a running build |
+| Feature browser checks | `node apps/features/e2e.cjs http://127.0.0.1:3002` | routing, streaming, actions, ISR, MCP and assets in Chromium |
+| Full-stack browser checks | `node apps/fullstack/e2e.cjs http://127.0.0.1:3007` | registration, notes, uploads and logout with JavaScript disabled |
+| Docs rendering checks | `cd portfolio && bun test test/docs.test.ts` | support states, syntax text/escaping and evidence-backed charts |
 | Dev server checks | `node apps/features/hmr.cjs` | Fast Refresh, CSS swap, in-place updates (needs `bun run dev`) |
 | Site browser checks | `node portfolio/e2e.cjs http://127.0.0.1:3001` | this site: navigation, docs, search, lab, strict CSP |
 | Social demo | `node apps/social/e2e.cjs` | the feed over the engine (needs the engine running) |
@@ -36,9 +38,10 @@ there's no image library).
 | script | measures |
 |---|---|
 | `bash bench/compare.sh` | optz vs the Next.js port: req/s, p99, memory, cold start, build time |
+| `bun bench/fullstack.ts --baseline /tmp/optz-base --out bench/fullstack-results.json` | warmed in-process static dispatch; see [method](/docs/fullstack-research#performance-changes-and-evidence) |
 | `bash bench/native.sh` | optz vs the single executable vs nginx (C) on the same files |
 
-Both pin the server to one core with `taskset` and run `wrk` on the others. Numbers vary by about
+The two network scripts pin the server to one core with `taskset` and run `wrk` on the others. Numbers vary by about
 5–10% between runs on a shared machine; compare within one run.
 
 ## Conventions
@@ -62,9 +65,42 @@ Both pin the server to one core with `taskset` and run `wrk` on the others. Numb
 1. Types and config in `types.ts` (documented), defaults in `resolveConfig`.
 2. Build-time work in `build.ts`, request-time work in `handler.ts` (portable).
 3. A page or API in `apps/features` that uses it, and a check in `framework/test/features.test.ts`
-   and/or `apps/features/e2e.cjs`.
+   and/or `apps/features/e2e.cjs`. Application primitives also belong in `fullstack.test.ts`;
+   two-user flows and persistence belong in `fullstack-app.test.ts`.
 4. The reference in `framework/README.md` (it's the [framework reference](/docs/framework) page).
 5. Run the checks above and `bench/compare.sh` to make sure static pages didn't get slower.
+
+## Documentation authoring
+
+The docs menu and source mapping live in `portfolio/content/docs/index.json`. Add a page there
+to include it in navigation, static paths and search. Repository-relative links are rewritten
+to documentation URLs when the destination is indexed.
+
+Comparison-table cells accept `[built-in]`, `[partial]`, `[unavailable]` and `[integration]`
+prefixes, followed by optional explanatory Markdown. The renderer supplies labeled CSS icons
+and semantic table headers; do not use checkmark emoji as data.
+
+A fenced `stats` block containing `throughput`, `resources`, `dispatch` or `matching` inserts
+a trusted chart backed by the checked-in benchmark JSON. Keep measurement dates, workload
+limits and source provenance with every figure; never relabel historical results as current.
+
+Give code fences a language (`ts`, `tsx`, `sh`, `sql`, `json`, and others). Shiki highlights them
+at build time with VS Code Light+/Dark+ themes; unknown languages remain escaped plain text.
+After a Shiki/theme upgrade, run `bun scripts/generate-syntax-css.ts` inside `portfolio/` and
+commit the generated CSS. Then run the docs renderer tests and build.
+
+## Codebase navigation
+
+Follow the root `AGENTS.md`: route terminal commands through RTK and consult Graphify before
+source searches when the graph exists. Verify graph results against source, and refresh the
+AST graph after code changes.
+
+```sh
+rtk bypass graphify query "How does this feature work?"
+rtk bypass graphify update .
+```
+
+Use the repository Git identity `sxnistxr <sxnister@aster.cx>` for authored commits.
 
 ## From commit to production
 

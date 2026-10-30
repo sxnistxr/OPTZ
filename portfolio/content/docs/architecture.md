@@ -11,7 +11,8 @@ underneath.
 | UI | React 19 (server), Preact 11 or React in the browser | React's server renderer and streaming; Preact keeps islands at ~4 KB |
 | Language | TypeScript, checked with TypeScript 7 (`tsgo`) | Typed routes, params, API responses and request bodies |
 | Styling | Tailwind CSS v4 | Compiled to one hashed stylesheet at build time |
-| Content | Markdown via `marked` | Blog posts and these docs, rendered at build time |
+| Content | Markdown via `marked`; Shiki for documentation code | Build-time HTML and VS Code Light+/Dark+ token coloring, with no browser highlighter |
+| Application data | Opt-in `optz/sqlite`, `optz/sessions` | Bun SQLite with migrations and persistent revocable sessions; no initialization for public static requests |
 | Images | sharp (libvips) | AVIF/WebP resizing behind `/_optz/image` |
 | Open Graph images | satori + resvg | JSX to SVG to PNG at build time |
 | Backend (engine) | Rust, raw io_uring, SQLite (WAL) | The $12 Server Challenge entry: one core, 2 GB, as many users as possible |
@@ -45,6 +46,23 @@ Static pages are the common case and the cheapest: the build writes HTML plus `.
 copies; the server loads them into a map at startup with precomputed ETags and headers. Serving
 one is a map lookup and building a `Response`, about 3 µs of JavaScript per request. React's
 server renderer isn't even loaded unless a page renders per request.
+
+## Application services and server boundaries
+
+OPTZ 0.4 keeps application services behind separate package exports. `optz/forms` validates
+JSON and form input; `optz/security` supplies explicit middleware; `optz/storage` handles
+private files; `optz/stream` creates pull-based SSE; `optz/observe` adds request IDs and timings.
+SQLite and local-file adapters target Bun/Node, while the session contract and web-standard
+helpers can be integrated with other server runtimes. See [Application APIs](application-apis.md).
+
+A browser dependency graph that reaches `.server.ts`, `.server.tsx`, `app/lib/server/` or
+private framework modules fails the build. The [full-stack starter](full-stack.md) authorizes
+each private data operation and initializes the database lazily.
+
+The server compiles the route manifest into exact-path lookups and ordered dynamic-prefix
+candidates. Generic dynamic patterns can still require a candidate scan. The
+[dispatch benchmark](/docs/fullstack-research#measured-dispatch-result) isolates this change;
+it does not measure full application or network throughput.
 
 ## The build
 
@@ -127,6 +145,9 @@ updates the page's HTML in place around them.
 | file | role |
 |---|---|
 | `cli.ts` | `optz dev/build/start/check/export/nginx/create` |
+| `route-index.ts` | Indexed exact routes and ordered dynamic candidates |
+| `sessions.ts`, `sqlite.ts`, `forms.ts` | Optional sessions, persistent state and input validation |
+| `security.ts`, `storage.ts`, `stream.ts`, `observe.ts` | Optional request protections, private files, events and observation |
 | `routes.ts`, `match.ts` | File-system routes, slots and intercepts; matching shared with the browser |
 | `build.ts`, `codegen.ts`, `manifest.ts` | The build, generated types, the manifest format |
 | `handler.ts` | The request handler (everything per request) |
@@ -138,3 +159,18 @@ updates the page's HTML in place around them.
 | `server-bundle.ts` | Single executable and edge worker |
 | `dev.ts`, `dev-client.ts`, `dev-vendor.ts` | Dev server updates and Fast Refresh |
 | `nginx.ts`, `create.ts`, `types.ts`, `index.ts` | nginx config, starter app, public types and API |
+
+## This website
+
+The shared layout serves both identities and a persistent light/dark theme. `public/site.js`
+applies a device preference until a reader chooses a theme. DIHLabs branding uses traced
+SVG paths; its generated source and prompt are in `portfolio/branding/`.
+
+The homepage and OPTZ page share a lazily imported Three.js scene. Flow reseeds morph the
+curve over 1.4 seconds; requests arrive over 2.4 seconds and retain ambient motion afterwards.
+Pause/resume preserves the current phase. Reduced motion and unavailable WebGL use static
+presentations, and offscreen/hidden scenes suspend rendering. Docs do not load Three.js.
+
+Documentation tables render explicit support states rather than platform emoji. Benchmark
+charts read checked-in JSON evidence; code tokens are colored at build time with Shiki and
+class-based CSS, preserving the strict style policy and readable raw text for copying.

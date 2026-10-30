@@ -1,0 +1,32 @@
+{
+  "date": "2026-10-29T23:07:24.959Z",
+  "bun": "1.4.4",
+  "method": "Standalone optional browser helper exports, minified with Bun; gzip via Bun. Default entry measured from current portfolio production build. Not a cold-browser transfer audit.",
+  "clients": [
+    {
+      "package": "@optz/analytics/client",
+      "minified_bytes": 1009,
+      "gzip_bytes": 628
+    },
+    {
+      "package": "@optz/uploads/client",
+      "minified_bytes": 2408,
+      "gzip_bytes": 1255
+    }
+  ],
+  "portfolio_entry": [
+    {
+      "file": "entry-prr9bk8p.js",
+      "bytes": 6098,
+      "sha256": "e4416d64fb17640ca41cb151cb9ca9002e349cb5ba9dae36e5242c1725988c06"
+    }
+  ],
+  "baseline_portfolio_entry": [
+    {
+      "file": "entry-prr9bk8p.js",
+      "bytes": 6098,
+      "sha256": "e4416d64fb17640ca41cb151cb9ca9002e349cb5ba9dae36e5242c1725988c06"
+    }
+  ],
+  "default_entry_identical": true
+}

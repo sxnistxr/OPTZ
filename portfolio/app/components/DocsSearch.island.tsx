@@ -44,7 +44,7 @@ export default function DocsSearch() {
   useEffect(() => {
     // "/" focuses the search box, like most docs sites.
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === "/" && !(e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement)) {
+      if (((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "k") || (e.key === "/" && !(e.target instanceof HTMLElement && (e.target.isContentEditable || e.target.closest("input, textarea, select"))))) {
         e.preventDefault();
         input.current?.focus();
       }
@@ -61,7 +61,9 @@ export default function DocsSearch() {
   };
 
   return (
-    <div className="relative" role="search">
+    <div className="docs-search relative" role="search">
+      <svg className="docs-search-icon" width="16" height="16" viewBox="0 0 20 20" fill="none" stroke="currentColor" aria-hidden="true"><circle cx="8.5" cy="8.5" r="5.5" /><path d="m13 13 4 4" /></svg>
+      <kbd className="docs-search-key" aria-hidden="true">Ctrl K</kbd>
       <label htmlFor="docs-search" className="sr-only">
         Search the docs
       </label>
@@ -70,7 +72,7 @@ export default function DocsSearch() {
         id="docs-search"
         type="search"
         value={q}
-        placeholder="Search the docs"
+        placeholder="Search docs…"
         autoComplete="off"
         onFocus={() => load().then(setDocs, () => setDocs([]))}
         onChange={(e) => {
@@ -88,7 +90,7 @@ export default function DocsSearch() {
         aria-autocomplete="list"
         aria-controls="docs-search-results"
         aria-activedescendant={q && hits.length ? `docs-hit-${active}` : undefined}
-        className="block w-full rounded-md border border-rule bg-paper px-3 py-2 text-[0.92rem] placeholder:text-muted focus:border-ink focus:outline-none"
+        className="docs-search-input block w-full rounded-md border border-rule bg-paper py-2 placeholder:text-muted focus:border-ink"
       />
       {/* Options are plain (no links inside them): click or Enter opens one. */}
       <ul
@@ -96,7 +98,7 @@ export default function DocsSearch() {
         role="listbox"
         aria-label="Search results"
         hidden={!q || hits.length === 0}
-        className="absolute inset-x-0 top-full z-10 mt-1 overflow-hidden rounded-md border border-rule bg-paper shadow-lg lg:w-[22rem]"
+        className="absolute inset-x-0 top-full z-10 mt-1 overflow-hidden rounded-md border border-rule bg-paper shadow-lg"
       >
         {q &&
           hits.map((h, i) => (
@@ -114,7 +116,7 @@ export default function DocsSearch() {
             </li>
           ))}
       </ul>
-      <p role="status" className={q && hits.length === 0 ? "absolute inset-x-0 top-full z-10 mt-1 rounded-md border border-rule bg-paper px-3 py-2 text-sm text-muted shadow-lg lg:w-[22rem]" : "sr-only"}>
+      <p role="status" className={q && hits.length === 0 ? "absolute inset-x-0 top-full z-10 mt-1 rounded-md border border-rule bg-paper px-3 py-2 text-sm text-muted shadow-lg" : "sr-only"}>
         {!q ? "" : docs === null ? "Loading the index" : hits.length === 0 ? `Nothing matches "${q}". Try fewer words.` : `${hits.length} result${hits.length === 1 ? "" : "s"}`}
       </p>
     </div>

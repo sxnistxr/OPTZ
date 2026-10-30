@@ -8,30 +8,42 @@ type S = { state: "checking" } | { state: "live"; ms: number; uptime: number; mi
 export default function Pulse() {
   const [s, setS] = useState<S>({ state: "checking" });
   useEffect(() => {
+    let disposed = false;
+    let request: AbortController | null = null;
     const check = async () => {
+      if (disposed || request || document.hidden) return;
+      request = new AbortController();
+      const timeout = setTimeout(() => request?.abort(), 8000);
       const t0 = performance.now();
       try {
-        const d = await api("/api/status", { query: { t: Date.now() } });
-        setS({ state: "live", ms: performance.now() - t0, uptime: d.uptimeSeconds, mib: d.rssMiB });
+        const d = await api("/api/status", { query: { t: Date.now() }, signal: request.signal });
+        if (!d?.ok || !Number.isFinite(d.uptimeSeconds) || !Number.isFinite(d.rssMiB)) throw new Error("Invalid status");
+        if (!disposed) setS({ state: "live", ms: performance.now() - t0, uptime: d.uptimeSeconds, mib: d.rssMiB });
       } catch {
-        setS({ state: "down" });
+        if (!disposed) setS({ state: "down" });
+      } finally {
+        clearTimeout(timeout);
+        request = null;
       }
     };
     check();
     const t = setInterval(() => document.visibilityState === "visible" && check(), 15000);
-    return () => clearInterval(t);
+    document.addEventListener("visibilitychange", check);
+    return () => { disposed = true; clearInterval(t); request?.abort(); document.removeEventListener("visibilitychange", check); };
   }, []);
 
-  const ms = s.state === "live" ? `${s.ms < 10 ? s.ms.toFixed(1) : Math.round(s.ms)} ms` : s.state === "down" ? "no time" : "…";
+  const ms = s.state === "live" ? `${s.ms < 10 ? s.ms.toFixed(1) : Math.round(s.ms)} ms` : "—";
   return (
     <section aria-label="Live server status" className="server-status">
-      <p className="server-response">
-        <span className="signal-dot" data-state={s.state === "checking" ? "idle" : s.state} />
-        <span role="status">{s.state === "live" ? <>Server online <span className="server-latency">{ms} response</span></> : s.state === "down" ? "Server status unavailable" : "Checking server status"}</span>
-      </p>
-      <p className="server-details">
-        {s.state === "live" ? <>{duration(s.uptime)} uptime <span aria-hidden="true">/</span> {s.mib} MB memory <span aria-hidden="true">/</span> One CPU core</> : "Timed from your browser"}
-      </p>
+      <div className="server-connection">
+        <p className="server-response"><span className="signal-dot" data-state={s.state === "checking" ? "idle" : s.state} aria-hidden="true" /><span role="status">{s.state === "live" ? "Server online" : s.state === "down" ? "Connection unavailable" : "Connecting to server"}</span></p>
+        <p className="server-caption">{s.state === "down" ? "Retrying every 15 seconds" : "Live check from your browser"}</p>
+      </div>
+      <dl className="server-metrics">
+        <div><dt>Round trip</dt><dd>{ms}</dd></div>
+        <div><dt>Uptime</dt><dd>{s.state === "live" ? duration(s.uptime) : "—"}</dd></div>
+        <div><dt>Memory</dt><dd>{s.state === "live" ? `${s.mib} MiB` : "—"}</dd></div>
+      </dl>
     </section>
   );
 }

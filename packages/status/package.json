@@ -1,0 +1,31 @@
+{
+  "name": "@optz/status",
+  "version": "0.1.0",
+  "type": "module",
+  "description": "Optional server-rendered status pages and authenticated incident updates for OPTZ",
+  "exports": {
+    ".": "./src/index.ts",
+    "./sqlite": "./src/sqlite.ts",
+    "./view": "./src/view.tsx"
+  },
+  "files": [
+    "src",
+    "README.md",
+    "LICENSE"
+  ],
+  "scripts": {
+    "test": "bun test",
+    "check": "tsc --noEmit"
+  },
+  "peerDependencies": {
+    "optz": "*",
+    "react": "^19"
+  },
+  "devDependencies": {
+    "@types/bun": "1.4.4",
+    "@types/react": "19.3.0",
+    "typescript": "7.0.2"
+  },
+  "sideEffects": false,
+  "license": "MIT"
+}

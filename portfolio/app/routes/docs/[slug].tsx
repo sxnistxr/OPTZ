@@ -1,6 +1,7 @@
 import { Link, notFound, type Head, type Href, type LoaderContext, type PageProps } from "optz";
 import { getDoc, listDocs, type Doc } from "$lib/docs";
 import site from "$lib/site";
+import DocsTools from "$components/DocsTools.island";
 
 // One static page per doc, rendered from Markdown at build time.
 export const paths = () => listDocs().map((d) => ({ slug: d.slug }));
@@ -20,12 +21,12 @@ export default function DocPage({ data: d }: PageProps<Doc, "/docs/[slug]">) {
     </li>
   ));
   return (
-    <div className="xl:grid xl:grid-cols-[minmax(0,48rem)_12rem] xl:gap-14">
-      <article className="min-w-0">
-        <header>
-          <p className="text-sm text-muted">{d.section}</p>
-          <h1 className="mt-2 text-4xl font-semibold leading-[1.1] tracking-[-0.025em] md:text-[2.75rem]">{d.title}</h1>
-          {d.description && <p className="mt-4 max-w-[60ch] text-lg leading-relaxed text-muted">{d.description}</p>}
+    <div className="docs-page">
+      <article className="docs-article">
+        <header className="docs-heading">
+          <nav aria-label="Breadcrumb" className="docs-breadcrumb"><Link href="/docs">Docs</Link><span aria-hidden="true">/</span><span>{d.section}</span></nav>
+          <h1>{d.title}</h1>
+          {d.description && <p>{d.description}</p>}
         </header>
         {toc.length > 2 && (
           <details className="toc mt-8 border-l border-rule text-[0.92rem] xl:hidden">
@@ -62,12 +63,13 @@ export default function DocPage({ data: d }: PageProps<Doc, "/docs/[slug]">) {
       </article>
       {toc.length > 2 && (
         <aside className="hidden xl:block">
-          <nav aria-label="On this page" className="toc sticky top-8 border-l border-rule text-[0.88rem]">
+          <nav aria-label="On this page" className="toc docs-toc">
             <p className="mb-2 pl-4 text-xs font-medium text-muted">On this page</p>
             <ul>{links}</ul>
           </nav>
         </aside>
       )}
+      <DocsTools />
     </div>
   );
 }

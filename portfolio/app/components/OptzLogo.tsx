@@ -1,0 +1,6 @@
+export default function OptzLogo() {
+  return <svg className="optz-logo" viewBox="0 0 214 40" fill="currentColor" aria-hidden="true">
+    <path d="M23 3h35L47 13H12L23 3ZM12 17h31L32 27H1l11-10ZM3 31h24L17 40H-7l10-9ZM47 17h15L36 40H21l26-23Z" transform="translate(7 0)" />
+    <path fillRule="evenodd" d="M88 9h18q6 0 6 6v14q0 6-6 6H88q-6 0-6-6V15q0-6 6-6Zm1 6v14h16V15H89Zm30-6h23q6 0 6 6v6q0 6-6 6h-16v8h-7V9Zm7 6v6h15v-6h-15Zm28-6h28v6h-10v20h-8V15h-10V9Zm34 0h26v6l-17 14h17v6h-27v-6l17-14h-16V9Z" />
+  </svg>;
+}

@@ -42,3 +42,32 @@ starter's accounts or replace the portfolio's authentication automatically.
 
 See [the package guide](../../packages/auth/README.md) for APIs, security contracts, extensions,
 supported methods, benchmarks, and the difference from a hosted identity service.
+
+## Optional module integration
+
+This app now includes public `/status`, protected `/modules`, protected `/files` and an explicit
+consent demo at `/metrics-demo`. The static homepage still initializes no modules or auth client.
+Status views/admin forms and analytics meters render without JavaScript. Only files and consent
+demos load their small islands, with no AWS/PostHog SDK in the browser.
+
+Set `MODULES_ADMIN_USER_ID` to an existing verified account ID to grant administration; no
+account is an admin by default. Set `ANALYTICS_HASH_SECRET` to enable local analytics. S3/R2/B2
+uploads require `S3_BUCKET`, a fixed HTTPS `S3_ENDPOINT`, region and provider credentials or IAM.
+`S3_SHA256=false` is an explicit compatibility choice for providers lacking that checksum mode.
+Keep the bucket private and configure exact-origin PUT/checksum CORS. The files page alone adds
+the configured storage origin to CSP. Quotas default to 1 GiB per owner and 100 MiB per upload.
+
+Copy `optz.env.example.json` to `optz.env.json` to opt into the first-class Doppler workflow,
+then select your project/config and follow the [environment guide](../../docs/DOPPLER.md).
+The example contract enables no provider accounts and contains no secrets.
+
+Full APIs, cleanup policies and integration boundaries are in the [module guides](../../docs/MODULES.md).
+The analytics privacy API derives identity from the authenticated session for local export/delete;
+clients must have deliberately identified that opaque account ID after consent for those events
+to be associated with it. Anonymous in-memory visits are retained only under the configured policy.
+
+Schedule `bun run modules:maintenance` under the same runtime environment to prune analytics
+and clean expired/cancelled upload sessions. With Doppler use
+`optz env run -- bun run modules:maintenance`. No maintenance timer starts on static requests.
+Cancelled upload reservations remain counted for the signed-URL grace period before cleanup
+can safely release them; provider lifecycle rules remain required as a backstop.

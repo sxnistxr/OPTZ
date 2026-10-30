@@ -88,6 +88,15 @@ micro-caching for proxied APIs). The deploy regenerates and reloads it when it c
 | Edge worker | `optz build --target edge` → `dist/edge/` | `npx wrangler deploy` from there (Cloudflare), or Deno Deploy / Vercel Edge |
 | Static host | `optz export` → `dist/static` | no server features |
 
+## Deploying a full-stack application
+
+The portfolio deploy script does not deploy every demo application. Run the full-stack
+starter as a separate Bun service with its own public origin and persistent database/upload
+paths outside immutable releases. Configure `PUBLIC_URL`, `DATABASE_PATH` and `UPLOAD_DIR`;
+use HTTPS for secure sessions and back up both SQLite (with its online backup API) and files.
+The [full-stack guide](full-stack.md#configure-persistent-state) covers these settings.
+Local SQLite and file storage are not edge-worker adapters.
+
 ## Operations
 
 - Logs: `journalctl -u optz -u optz-web -f`

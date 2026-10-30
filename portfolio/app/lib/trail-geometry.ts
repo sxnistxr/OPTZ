@@ -1,15 +1,36 @@
 /** Shared deterministic curves keep the no-JS fallback and WebGL scene aligned. */
-export function trailPoint(t: number, lane: number, mode: "flow" | "speed", seed = 0) {
+export function trailPoint(t: number, lane: number, mode: "flow" | "speed", seed = 0, time = 0, out = { x: 0, y: 0 }) {
   const spread = lane - .5;
-  const x = -60 + t * 1120;
+  out.x = -60 + t * 1120;
   if (mode === "speed") {
     const envelope = Math.pow(Math.max(0, 1 - t), .8);
-    const y = 205 - 100 * Math.sin(t * Math.PI * 1.35 - .3)
-      + spread * 260 * envelope
-      + Math.sin(t * 13 + lane * 5) * 45 * envelope;
-    return { x, y };
+    out.y = 205 - 95 * Math.sin(t * Math.PI * 1.35 - .3)
+      + spread * 210 * envelope
+      + Math.sin(t * 9 + lane * 2.2) * 28 * envelope
+      + Math.sin(t * 7 - time * .55) * 5 * Math.sin(t * Math.PI) * envelope;
+  } else {
+    out.y = 205 + Math.sin(t * Math.PI * 2.7 + seed) * (50 + 22 * Math.cos(lane * 4.4))
+      + Math.sin(t * Math.PI * 1.4 + lane * 2.4 + seed * .55) * 24
+      + spread * (84 + 34 * Math.sin(t * Math.PI * 2.2 + seed * .6))
+      + Math.sin(t * 6 - time * .35 + seed) * Math.sin(t * Math.PI) * 12;
   }
-  const y = 205 + Math.sin(t * Math.PI * 4.3 + seed) * (58 + 38 * Math.cos(lane * 5))
-    + Math.sin(t * 12 + lane * 5 + seed) * 40 + spread * 110;
-  return { x, y };
+  return out;
 }
+
+export const trailCurveGLSL = `
+vec2 trailPosition(float t, float lane, float mode, float seed, float time) {
+  float spread=lane-.5;
+  float y;
+  if(mode>.5) {
+    float envelope=pow(max(0.,1.-t),.8);
+    y=205.-95.*sin(t*3.14159265*1.35-.3)+spread*210.*envelope
+      +sin(t*9.+lane*2.2)*28.*envelope
+      +sin(t*7.-time*.55)*5.*sin(t*3.14159265)*envelope;
+  } else {
+    y=205.+sin(t*3.14159265*2.7+seed)*(50.+22.*cos(lane*4.4))
+      +sin(t*3.14159265*1.4+lane*2.4+seed*.55)*24.
+      +spread*(84.+34.*sin(t*3.14159265*2.2+seed*.6))
+      +sin(t*6.-time*.35+seed)*sin(t*3.14159265)*12.;
+  }
+  return vec2(-60.+t*1120.,y);
+}`;

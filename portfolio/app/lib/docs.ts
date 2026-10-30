@@ -9,6 +9,8 @@ import { Marked, type Tokens } from "marked";
 import { htmlText } from "optz/mcp";
 import sections from "$content/docs/index.json";
 import site from "./site";
+import { highlightCode } from "./docs-syntax";
+import { renderDocsChart } from "./docs-charts";
 
 const repoRoot = join(import.meta.dir, "../../..");
 
@@ -90,9 +92,11 @@ export function resolveLink(file: string, href: string): string {
 
 const esc = (s: string) => s.replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]!);
 
-function render(e: Entry, body: string): { html: string; toc: TocEntry[] } {
+export function renderDocBody(e: Entry, body: string): { html: string; toc: TocEntry[] } {
   const toc: TocEntry[] = [];
   const used = new Map<string, number>();
+  const charts: string[] = [];
+  let tableLabel = e.title ?? e.slug;
   const md = new Marked({ gfm: true });
   md.use({
     renderer: {
@@ -103,6 +107,7 @@ function render(e: Entry, body: string): { html: string; toc: TocEntry[] } {
         used.set(id, n + 1);
         if (n) id = `${id}-${n}`;
         if (t.depth <= 3) toc.push({ id, text: plain(htmlText(inner, false)), depth: t.depth });
+        tableLabel = plain(htmlText(inner, false));
         return `<h${t.depth} id="${id}"><a class="anchor" href="#${id}">${inner}</a></h${t.depth}>\n`;
       },
       link(this: { parser: { parseInline(t: Tokens.Generic[]): string } }, t: Tokens.Link) {
@@ -112,21 +117,37 @@ function render(e: Entry, body: string): { html: string; toc: TocEntry[] } {
       },
       code(t: Tokens.Code) {
         const lang = (t.lang ?? "").split(/\s/)[0];
-        return `<pre${lang ? ` data-lang="${esc(lang)}"` : ""}><code>${esc(t.text)}</code></pre>\n`;
+        if (lang === "stats") {
+          const chart = renderDocsChart(t.text.trim());
+          if (chart) { charts.push(chart); return `<div id="docs-chart-slot-${charts.length - 1}"></div>`; }
+        }
+        return `<pre${lang ? ` data-lang="${esc(lang)}"` : ""}><code>${highlightCode(t.text, lang)}</code></pre>\n`;
       },
       table(this: { parser: { parseInline(t: Tokens.Generic[]): string } }, t: Tokens.Table) {
         const cell = (c: Tokens.TableCell, tag: "th" | "td", i: number) => {
           const align = t.align[i];
-          return `<${tag}${align ? ` data-align="${align}"` : ""}>${this.parser.parseInline(c.tokens)}</${tag}>`;
+          const statuses: Record<string, string> = { "built-in": "Built in", partial: "Partial", unavailable: "Unavailable", integration: "Integration" };
+          const status = c.text.match(/^\[(built-in|partial|unavailable|integration)\]\s*/);
+          let content = this.parser.parseInline(c.tokens);
+          if (status) {
+            const details = content.slice(status[0].length);
+            content = `<span class="support-status support-${status[1]}"><span class="support-icon" aria-hidden="true"></span>${statuses[status[1]]}</span>${details ? `<span class="support-detail">${details}</span>` : ""}`;
+          }
+          const element = tag === "td" && i === 0 ? "th" : tag;
+          return `<${element}${element === "th" ? ` scope="${tag === "th" ? "col" : "row"}"` : ""}${align ? ` data-align="${align}"` : ""}>${content}</${element}>`;
         };
         const head = `<tr>${t.header.map((c, i) => cell(c, "th", i)).join("")}</tr>`;
         const rows = t.rows.map((r) => `<tr>${r.map((c, i) => cell(c, "td", i)).join("")}</tr>`).join("");
+        const comparison = t.rows.some(row => row.some(c => /^\[(built-in|partial|unavailable|integration)\]/.test(c.text)));
         // Wide tables scroll inside their own box instead of the page.
-        return `<div class="table-scroll"><table><thead>${head}</thead><tbody>${rows}</tbody></table></div>\n`;
+        return `<div class="table-scroll${comparison ? " comparison-table" : ""}" tabindex="0" role="region" aria-label="${esc(tableLabel)} table"><table><thead>${head}</thead><tbody>${rows}</tbody></table></div>\n`;
       },
     },
   });
-  return { html: safeHtml(md.parse(body, { async: false }) as string), toc };
+  // Only our data-backed chart renderer can emit SVG; arbitrary Markdown HTML remains sanitized.
+  let html = safeHtml(md.parse(body, { async: false }) as string);
+  charts.forEach((chart, i) => { html = html.replace(`<div id="docs-chart-slot-${i}"></div>`, () => chart); });
+  return { html, toc };
 }
 
 export function docSections(): { section: string; pages: DocMeta[] }[] {
@@ -147,7 +168,7 @@ export function getDoc(slug: string): Doc | undefined {
   const e = bySlug.get(slug);
   if (!e) return undefined;
   const { title, body, description } = source(e);
-  const { html, toc } = render(e, body);
+  const { html, toc } = renderDocBody(e, body);
   const all = listDocs();
   const i = all.findIndex((d) => d.slug === slug);
   return { slug, title, section: e.section, description, file: e.file, html, toc, prev: all[i - 1], next: all[i + 1] };

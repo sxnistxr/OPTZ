@@ -57,6 +57,7 @@ const check = (name, ok, detail = "") => results.push(`${ok ? "ok  " : "FAIL"} $
   await pg.waitForURL(base + "/lab");
   check("lab page via swap", docs.length === d0 && (await pg.textContent("h1")) === "Projects" && (await pg.textContent("main")).includes("The $12 Server Challenge"));
   await pg.click("nav[aria-label=Site] >> text=OPTZ");
+  await pg.locator('.product-menu a[href="/optz"]').click();
   await pg.waitForURL(base + "/optz");
   check("OPTZ has its own page and navigation", (await pg.textContent("h1")) === "Blink. It’s served." && await pg.locator('nav a[href="/docs/vs-nextjs"]').count() === 1);
   await pg.waitForSelector('.trail-speed[data-state="ready"]', { timeout: 15000 });

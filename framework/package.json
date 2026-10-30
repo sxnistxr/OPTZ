@@ -27,7 +27,8 @@
   "files": [
     "src",
     "skills",
-    "README.md"
+    "README.md",
+    "schema"
   ],
   "bin": {
     "optz": "./src/cli.ts"
@@ -56,7 +57,9 @@
     "./sqlite": "./src/sqlite.ts",
     "./stream": "./src/stream.ts",
     "./storage": "./src/storage.ts",
-    "./observe": "./src/observe.ts"
+    "./observe": "./src/observe.ts",
+    "./env": "./src/env.ts",
+    "./env.schema.json": "./schema/env.schema.json"
   },
   "scripts": {
     "test": "bun test",

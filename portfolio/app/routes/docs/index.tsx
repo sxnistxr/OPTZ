@@ -1,6 +1,7 @@
 import { Link, type Head, type Href, type PageProps } from "optz";
 import { docSections, type DocMeta } from "$lib/docs";
 import site from "$lib/site";
+import { Arrow } from "$components/Icons";
 
 export const loader = () => ({ sections: docSections() });
 export const head = (): Head => ({
@@ -10,21 +11,22 @@ export const head = (): Head => ({
 
 export default function DocsHome({ data }: PageProps<{ sections: { section: string; pages: DocMeta[] }[] }, "/docs">) {
   return (
-    <>
-      <h1 className="text-4xl font-semibold tracking-[-0.02em] md:text-5xl">Docs</h1>
-      <p className="mt-4 max-w-[40rem] text-lg leading-relaxed">
-        Everything in this repository: the optz framework this site runs on, how it's built and with what, how fast it is and why, the Rust engine, and how
-        it all deploys to a $1.50 server. Start with the{" "}
+    <div className="docs-home">
+      <div className="docs-heading"><h1>OPTZ documentation</h1>
+      <p>
+        Build with OPTZ 0.4: HTML-first pages, interactive islands, and optional APIs for accounts, persistent data and live updates. Explore the framework,
+        measured tradeoffs, and the lab behind it. Start with the{" "}
         <Link href="/docs/introduction" className="underline decoration-rule underline-offset-4 hover:decoration-ink">
           introduction
         </Link>
         .
-      </p>
-      <div className="mt-14 grid max-w-[64rem] gap-x-14 gap-y-14 md:grid-cols-2">
+      </p></div>
+      <div className="docs-start"><div><h2>Your first OPTZ app</h2><p>Install Bun, run the site, and build your first page.</p></div><Link href="/docs/getting-started" className="text-link">Getting started<Arrow /></Link></div>
+      <div className="docs-home-sections">
         {data.sections.map((s) => (
           <section key={s.section} aria-label={s.section}>
             <h2 className="mb-3 text-sm font-medium text-muted">{s.section}</h2>
-            <ul className="space-y-5">
+            <ul>
               {s.pages.map((p) => (
                 <li key={p.slug}>
                   <Link href={`/docs/${p.slug}` as Href} className="group block">
@@ -37,6 +39,6 @@ export default function DocsHome({ data }: PageProps<{ sections: { section: stri
           </section>
         ))}
       </div>
-    </>
+    </div>
   );
 }

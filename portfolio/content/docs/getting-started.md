@@ -2,7 +2,7 @@
 
 ## Requirements
 
-- **Bun 1.4.4** (the version production runs; install from [bun.sh](https://bun.sh)).
+- **Bun 1.4.4 or newer** (the framework package minimum; install from [bun.sh](https://bun.sh)).
 - **Rust**, only for the engine in `portfolio/engine` (its `build.sh` uses a pinned toolchain).
 - Linux or macOS. The engine needs Linux (io_uring).
 
@@ -37,6 +37,9 @@ The commands every optz app has:
 | Blog posts | `portfolio/content/blog/*.md` (front matter: `title`, `date`, `summary`) |
 | These docs | `portfolio/content/docs/` (new pages) and `portfolio/content/docs/index.json` (the menu) |
 | Pages and layout | `portfolio/app/routes/` |
+| Logo assets | `portfolio/public/dihlabs-*.svg`, `optz-*.svg`; generated source and prompt in `portfolio/branding/` |
+| Light/dark theme behavior | `portfolio/public/site.js`, shared layout and `ThemeToggle.tsx` |
+| Motion | `Trail.island.tsx`, `app/lib/trail-scene.ts` and `trail-geometry.ts` |
 | Colors and fonts | `portfolio/app/styles.css`, `fonts` in `portfolio/optz.config.ts` |
 
 Docs pages can also be any Markdown file in the repository: `index.json` points at
@@ -52,6 +55,24 @@ cd apps/my-app && bun install && bun run dev
 
 The starter has a static page, a page with params, a dynamic page with caching, an island, an
 API route with a typed client, middleware and `$lib` imports. `apps/features` shows the rest.
+
+## Add accounts and persistent data
+
+Use the full-stack template for SQLite, password accounts, revocable sessions, private notes,
+attachments and server-sent events:
+
+```sh
+# From the repository root
+bun framework/src/cli.ts create apps/my-app --template fullstack
+cd apps/my-app
+bun install
+cp .env.example .env
+bun run dev
+```
+
+The [full-stack guide](full-stack.md) explains the data layer and deployment boundaries.
+[Application APIs](application-apis.md) documents the optional exports. The SQLite starter
+targets Bun with persistent disk; it does not run unchanged on an edge worker.
 
 ## A first page
 

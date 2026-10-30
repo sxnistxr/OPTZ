@@ -62,6 +62,10 @@ portable; the provided SQLite store is a Bun/single-machine option. Password rec
 email, OAuth, MFA, invites and account administration are not silently approximated by the demo.
 Use a maintained identity provider when the product needs them.
 
+The separate [authentication package](../packages/auth/README.md) now supplies maintained
+Better Auth integration, verified email, recovery, OAuth/OIDC, passkeys and MFA. Its example
+is `apps/auth/`; it does not change the deliberately small `fullstack` template.
+
 ## Performance changes and evidence
 
 - Compile the immutable server manifest once. Exact static paths no longer scan unrelated routes.
@@ -99,6 +103,10 @@ The final local run used Bun 1.4.4 on AMD EPYC 9V45 96-Core Processor. Five warm
 median shown. These fixtures request the last static route in a manifest; the middleware case
 adds one response-header middleware. Small-manifest differences can be within machine noise.
 
+```stats
+dispatch
+```
+
 | Routes | Header middleware | Previous handler µs | Updated handler µs | Ratio |
 |---:|---:|---:|---:|---:|
 | 10 | 0 | 3.64 | 2.13 | 1.71× |
@@ -113,7 +121,20 @@ security policies and rendering still cost time. No new network req/s, p99 or fu
 performance claim follows from this table. All optional application modules remained off in
 these fixtures.
 
+### Route matching cost
+
+```stats
+matching
+```
+
+Matching alone excludes response construction, security policy and rendering. Its improvement
+does not imply the same speedup for a complete request. See the exact-value disclosure for
+the three measured route counts.
+
 ### Verification
+
+The following records the original routing/full-stack release checks. Current optional-module
+checks and browser-size budgets are recorded separately in [Optional modules](MODULES.md).
 
 - 111 framework tests, 617 assertions; includes persistent-session and two-user application tests.
 - Framework and all six applications type-check; all six production builds pass.
@@ -126,12 +147,16 @@ these fixtures.
 
 ## Further work worth doing, with reasons
 
-These are ranked future capabilities, not claims of code shipped in this release:
+The optional [status](STATUS.md), [analytics/PostHog](ANALYTICS.md),
+[S3-compatible uploads](UPLOADS.md), [Cloudflare cache](CLOUDFLARE.md),
+[database integrations](DATABASES.md) and [Doppler workflow](DOPPLER.md) are implemented.
+The remaining priorities are:
 
-1. **Established auth integrations.** Better Auth/Auth.js/OIDC adapters, verified email, recovery,
-   MFA and passkeys require provider policy and real secrets. Reuse maintained protocols.
-2. **A shared production state layer.** Postgres/Redis session/rate-limit adapters and object-store
-   storage for multi-node apps. The store contract and data layer are the integration boundaries.
+1. **Further identity integrations.** Enterprise SAML/SCIM and operational provider policies remain
+   separate from the existing Better Auth, OAuth/OIDC, passkey and MFA integration.
+2. **Distributed operational state.** Shared rate-limit enforcement and failover need production
+   adapters and operational checks. SQL sessions and object storage are available integration
+   boundaries; local SQLite and in-memory budgets do not become multi-machine services.
 3. **Durable work and scheduling.** Email/webhook retry and long tasks need a durable queue,
    idempotency and a separate worker. `after()`/SSE are not durable jobs.
 4. **WebSocket adapter support.** Bun upgrades, per-connection authorization, limits and shutdown
@@ -144,8 +169,8 @@ These are ranked future capabilities, not claims of code shipped in this release
    cacheable, but requires a separate authenticated fragment protocol, not just another Suspense boundary.
 8. **Lifecycle and instrumentation adapters.** OpenTelemetry export, graceful shutdown and worker
    draining should be opt-in and cover Bun/compiled/edge targets rather than global mutable hooks.
-9. **Response protocol completeness.** Shared encoding-quality negotiation, range requests and
-   streaming large assets need correctness tests before advertising file-server parity.
+9. **Response protocol completeness.** Shared encoding-quality negotiation is tested; range
+   requests and streaming large public assets still need coverage before advertising file-server parity.
 10. **Benchmarks and budgets.** Track network p95/p99, cold starts, RSS under load, protected API
     latency, build time and browser JS alongside dispatch. A routing microbenchmark alone does
     not establish that a complete app is faster than another framework.

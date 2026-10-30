@@ -1,0 +1,33 @@
+{
+  "name": "@optz/analytics",
+  "version": "0.1.0",
+  "type": "module",
+  "description": "Consent-gated optional analytics and server-rendered insights for OPTZ",
+  "exports": {
+    ".": "./src/index.ts",
+    "./client": "./src/client.ts",
+    "./sqlite": "./src/sqlite.ts",
+    "./posthog": "./src/posthog.ts",
+    "./view": "./src/view.tsx"
+  },
+  "files": [
+    "src",
+    "README.md",
+    "LICENSE"
+  ],
+  "scripts": {
+    "test": "bun test",
+    "check": "tsc --noEmit"
+  },
+  "peerDependencies": {
+    "optz": "*",
+    "react": "^19"
+  },
+  "devDependencies": {
+    "@types/bun": "1.4.4",
+    "@types/react": "19.3.0",
+    "typescript": "7.0.2"
+  },
+  "sideEffects": false,
+  "license": "MIT"
+}

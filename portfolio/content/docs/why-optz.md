@@ -17,8 +17,13 @@ Full method and raw numbers: [optz vs Next.js](/docs/vs-nextjs).
 | Cold start (median of 5) | **~90 ms** | ~720 ms |
 | Build (median of 3) | **3.0 s** | 10.3 s |
 
-The ratio (40–60× on this site's pages) is what carries over; the absolute req/s depends on the
-CPU.
+These results describe the recorded October 27, 2026 workload, not a universal speedup.
+Different pages, application work, hardware and load generators can change both the absolute
+throughput and the ratio.
+
+```stats
+resources
+```
 
 And against nginx, written in C, serving the same files: nginx is 20-30% faster on pages, optz
 sends fewer bytes (brotli), nginx uses less memory ([would C be faster?](/docs/native)).
@@ -39,7 +44,7 @@ sends fewer bytes (brotli), nginx uses less memory ([would C be faster?](/docs/n
 Streaming and async server components, Server Actions with forms that work without JavaScript,
 incremental static regeneration and on-demand revalidation, typed routes and a typed API client,
 middleware, parallel and intercepting routes, i18n, image and font optimization, Open Graph
-images, sitemaps, draft mode, and deploys to a Bun server, a single executable or an edge
+images, sitemaps, draft mode, optional sessions/SQLite/validation/private files/SSE/observation, and deploys to a Bun server, a single executable or an edge
 worker. [Feature by feature](/docs/vs-nextjs#features).
 
 ## Compared with others

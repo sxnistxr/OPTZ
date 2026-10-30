@@ -10,6 +10,8 @@ export default function Trail({ mode }: { mode: "flow" | "speed" }) {
   const controller = useRef<TrailController | null>(null);
   const [state, setState] = useState<"loading" | "ready" | "running" | "fallback">("loading");
   const [reduced, setReduced] = useState(false);
+  const paused = useRef(false);
+  const [isPaused, setPaused] = useState(false);
   useEffect(() => {
     let disposed = false;
     const preference = matchMedia("(prefers-reduced-motion: reduce)");
@@ -35,8 +37,11 @@ export default function Trail({ mode }: { mode: "flow" | "speed" }) {
         {paths.map((d,i) => <path key={i} d={d} stroke="currentColor" strokeOpacity={i % 4 === 0 ? .7 : .25} strokeWidth=".8" />)}
       </svg>
     </div>
-    <div className="trail-controls site-container"><span>{mode === "speed" ? "A little speed, just for fun." : "A small experiment in motion."}</span>
-      <Button variant="outline" disabled={state === "loading" || state === "running" || state === "fallback" || (reduced && mode === "speed")} onClick={() => controller.current?.replay()}><Replay />{state === "fallback" ? "Static preview" : state === "running" ? (mode === "speed" ? "In flight…" : "Reseeding…") : mode === "speed" ? (reduced ? "Reduced motion" : "Send a request") : "Reseed"}</Button>
+    <div className="trail-controls site-container">{mode === "flow" && <span>A small experiment in motion.</span>}
+      <div className="trail-actions">
+      {!reduced && <Button variant="ghost" size="sm" className="trail-pause" aria-label={isPaused ? "Resume animation" : "Pause animation"} disabled={state === "loading" || state === "fallback"} onClick={() => { paused.current = !paused.current; setPaused(paused.current); controller.current?.setPaused(paused.current); }}><svg viewBox="0 0 16 16" fill="currentColor" aria-hidden="true">{isPaused ? <path d="m5 3 8 5-8 5V3Z" /> : <path d="M4 3h3v10H4V3Zm5 0h3v10H9V3Z" />}</svg></Button>}
+      <Button variant="ghost" size="sm" disabled={state === "loading" || state === "running" || state === "fallback" || isPaused || (reduced && mode === "speed")} onClick={() => controller.current?.replay()}><Replay />{state === "fallback" ? "Static preview" : isPaused ? "Paused" : state === "running" ? (mode === "speed" ? "In flight…" : "Reseeding…") : mode === "speed" ? (reduced ? "Reduced motion" : "Send a request") : "Reseed"}</Button>
+      </div>
     </div>
     <span className="sr-only" role="status">{state === "fallback" ? "Animation unavailable. A static trail is shown." : state === "ready" && mode === "speed" ? "Illustrative request complete: 200 OK." : ""}</span>
   </div>;

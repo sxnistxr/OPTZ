@@ -1,10 +1,17 @@
 # Measurements
 
-Where each number came from. Everything here was measured; estimates are labelled as such.
+Historical measurements from several distinct workloads. Estimates are labelled; these figures
+are not a fresh audit of the redesigned website or the full-stack starter.
+
+## Reading the evidence
+
+- [Network benchmark](OPTZ-VS-NEXTJS.md): October 27, 2026 historical site build, raw data in `bench/results.json`.
+- [Routing/dispatch benchmark](FULLSTACK-RESEARCH.md#measured-dispatch-result): October 28, 2026 warmed in-process operations, raw data in `bench/fullstack-results.json`. This does not measure auth, SQLite, SSR or network latency.
+- The connection-memory and frontend-mode tables below are earlier experiments. Their environment and workload differ from both benchmarks above; no new measurement date or source commit is asserted for them.
 
 ## Memory per idle connection
 
-`submissions/rust-iouring-sxnistxr/tests/connmem.py`, 9,500 connections, each making one
+`portfolio/engine/tests/connmem.py`, 9,500 connections, each making one
 request and then sitting idle (like a k6 user thinking). The script compares this server with a
 plain Python accept-and-hold server, so the client sockets cancel out.
 
@@ -30,7 +37,7 @@ alone**, whatever the CPU cost per request. The admission ceiling uses 4,800 B p
 
 ## Throughput and CPU
 
-See `submissions/rust-iouring-sxnistxr/BENCHMARKS.md`. All local numbers are loopback on a
+See [Engine benchmark log](../portfolio/engine/BENCHMARKS.md). All local numbers are loopback on a
 4 vCPU box with the server pinned to one CPU. They are good for before/after comparisons, not
 for capacity.
 
@@ -39,7 +46,7 @@ for capacity.
 Chromium, cold load, scripts only (compressed as sent / decoded size to parse). Measured with
 the same seed data and API for every column.
 
-| page | SPA + React | islands + React | islands + Preact (shipped) |
+| page | SPA + React | islands + React | islands + Preact (historical) |
 |---|---:|---:|---:|
 | `/` (2 islands) | 66.6 / 207.8 KB | 64.0 / 209.9 KB | 14.5 / 18.2 KB |
 | `/blog` (no islands) | 63.6 / 214.2 KB | 3.3 / 5.5 KB | 2.9 / 5.6 KB |

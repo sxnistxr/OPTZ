@@ -1,0 +1,100 @@
+{
+  "version": 1,
+  "project": {
+    "name": "portfolio",
+    "productType": null,
+    "stack": [
+      "react",
+      "shadcn"
+    ]
+  },
+  "sources": {
+    "tokens": [
+      "app/styles.css"
+    ],
+    "components": [
+      "app/components/ui",
+      "app/components/DihLabsLogo.tsx",
+      "app/components/ThemeToggle.tsx",
+      "app/routes/_layout.tsx",
+      "app/routes/docs"
+    ],
+    "assets": [
+      "public/optz-logo.svg",
+      "public/optz-mark.svg"
+    ],
+    "instructions": [
+      "DESIGN.md",
+      "PRODUCT.md"
+    ]
+  },
+  "design": {
+    "colorMode": "mixed",
+    "colors": {},
+    "typography": {},
+    "spacing": {},
+    "radius": {},
+    "shadows": {},
+    "motion": {},
+    "density": "unknown"
+  },
+  "components": {
+    "installed": [
+      "button"
+    ],
+    "preferredPrimitives": [],
+    "patterns": []
+  },
+  "constraints": {
+    "must": [],
+    "avoid": []
+  },
+  "decisions": [
+    "Docs follow the user-pinned Next.js, Angular, Linear, shadcn and Raycast references: 76px sticky shared masthead with search, grouped sidebar, 16px prose, contents rail and copyable framed code blocks.",
+    "OPTZ uses a slanted speed mark and geometric SVG wordmark. Yellow remains exclusive to artwork.",
+    "Trails continue ambient motion after arrival, with pause, reduced motion, visibility suspension and an understated request control.",
+    "All routes support device-aware light and dark themes, with a persisted explicit choice and browser-tab synchronization.",
+    "DIHLabs uses the supplied ring-and-slash mark and wordmark in the shared header and footer.",
+    "The main-site OPTZ product dropdown links to overview, docs and benchmarks; Escape returns focus and outside click or link selection closes it.",
+    "Docs sidebar becomes a native disclosure below 1024px; contents folds below 1280px; masthead search becomes full width at 800px.",
+    {
+      "name": "Documentation evidence and code",
+      "description": "Use accessible CSS-icon support states, zero-based benchmark charts sourced from checked-in JSON with provenance and exact-value disclosures, and build-time Shiki VS Code Light+/Dark+ syntax colors. Syntax token colors are confined to code; charts remain monochrome."
+    }
+  ],
+  "evidence": [
+    {
+      "fact": "components.installed",
+      "source": "app/components/ui"
+    },
+    {
+      "fact": "project.instructions",
+      "source": "DESIGN.md"
+    },
+    {
+      "fact": "project.instructions",
+      "source": "PRODUCT.md"
+    },
+    {
+      "fact": "project.stack:react",
+      "source": "package.json"
+    },
+    {
+      "fact": "project.stack:shadcn",
+      "source": "components.json"
+    },
+    {
+      "fact": "design.colorMode",
+      "source": "app/styles.css; public/site.js"
+    },
+    {
+      "fact": "decisions:shared-chrome-docs",
+      "source": "app/routes/_layout.tsx; app/routes/docs; app/components/DocsTools.island.tsx"
+    },
+    {
+      "fact": "decisions:dihlabs-identity",
+      "source": "app/components/DihLabsLogo.tsx"
+    }
+  ],
+  "generatedAt": "2026-10-29T21:25:47.119633Z"
+}

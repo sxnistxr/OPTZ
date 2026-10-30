@@ -1,0 +1,4 @@
+{
+  "source": "../public/dihlabs-logo.svg",
+  "operation": "White-background preview rendered from the traced SVG; production SVG remains transparent and uses currentColor."
+}

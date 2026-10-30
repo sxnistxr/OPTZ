@@ -1,0 +1,28 @@
+{
+  "name": "@optz/db",
+  "version": "0.1.0",
+  "type": "module",
+  "description": "Optional parameterized SQL and ORM session adapters for OPTZ",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "files": [
+    "src",
+    "README.md",
+    "LICENSE"
+  ],
+  "scripts": {
+    "test": "bun test",
+    "check": "tsc --noEmit"
+  },
+  "peerDependencies": {
+    "optz": "*"
+  },
+  "devDependencies": {
+    "@types/bun": "1.4.4",
+    "@types/react": "19.3.0",
+    "typescript": "7.0.2"
+  },
+  "sideEffects": false,
+  "license": "MIT"
+}

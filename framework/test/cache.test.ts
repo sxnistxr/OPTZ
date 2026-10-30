@@ -25,6 +25,24 @@ test("serves fresh entries from memory, compressed, with ETag and 304", async ()
   expect(c.stats.hits).toBe(2);
 });
 
+test("a gzip-producing cache miss serves valid identity and compressed representations", async () => {
+  const c = new ResponseCache(10, 1 << 20, z);
+  const text = "<!doctype html><p>" + "cached status page ".repeat(100) + "</p>";
+  let calls = 0;
+  const produce = async () => {
+    calls++;
+    return new Response(Bun.gzipSync(text), { headers: { "Content-Type": "text/html", "Content-Encoding": "gzip" } });
+  };
+  for (const accept of ["gzip", "identity", "gzip"]) {
+    const response = await c.handle(req({ "accept-encoding": accept }), "compressed", { maxAge: 60 }, produce);
+    expect(response.headers.get("content-encoding")).toBe(accept === "gzip" ? "gzip" : null);
+    const bytes = new Uint8Array(await response.arrayBuffer());
+    expect(new TextDecoder().decode(accept === "gzip" ? Bun.gunzipSync(bytes) : bytes)).toBe(text);
+  }
+  expect(calls).toBe(1);
+  expect(c.stats.entries).toBe(1);
+});
+
 test("concurrent misses share one render", async () => {
   const c = new ResponseCache(10, 1 << 20, z);
   let calls = 0;

@@ -11,6 +11,7 @@
     "fflate": "0.7.5"
   },
   "scripts": {
-    "test": "cd framework && bun test"
+    "test": "cd framework && bun test",
+    "test:modules": "bun test packages/status/test packages/analytics/test packages/uploads/test packages/db/test"
   }
 }

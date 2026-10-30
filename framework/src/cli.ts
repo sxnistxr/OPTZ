@@ -20,8 +20,17 @@ const root = process.cwd();
 const [cmd, ...args] = process.argv.slice(2);
 // React picks its production build from NODE_ENV; `optz start` and `build` must never run the
 // development one (several times slower, and noisy).
-if (cmd !== "dev" && cmd !== "__dev-child" && cmd !== "mcp") process.env.NODE_ENV ??= "production";
+if (cmd !== "dev" && cmd !== "__dev-child" && cmd !== "mcp" && cmd !== "env") process.env.NODE_ENV ??= "production";
 else process.env.NODE_ENV ??= "development";
+
+if (cmd === "env") {
+  try { const { environmentCommand } = await import("./env-cli"); process.exit(await environmentCommand(root, args)); }
+  catch (error) { console.error(error instanceof Error ? error.message : "Environment command failed"); process.exit(1); }
+}
+if (["dev", "__dev-child", "build", "start", "export", "check"].includes(cmd) && existsSync(join(root, "optz.env.json"))) {
+  try { const { prepareEnvironment } = await import("./env-cli"); await prepareEnvironment(root, cmd, args); }
+  catch (error) { console.error(error instanceof Error ? error.message : "Environment setup failed"); process.exit(1); }
+}
 
 async function loadConfig(): Promise<ResolvedConfig> {
   for (const f of ["optz.config.ts", "optz.config.js"]) {
@@ -176,6 +185,7 @@ switch (cmd) {
   optz create <dir>   start a new app
   optz mcp            MCP server (stdio) with this project's tools, for coding agents
   optz agents         write AGENTS.md, agent skills and MCP configs for Claude Code,
-                      Codex, Cursor, VS Code and Gemini CLI (--only claude,codex,...)`);
+                      Codex, Cursor, VS Code and Gemini CLI (--only claude,codex,...)
+  optz env            environment contracts and first-class Doppler workflow (env help)`);
     if (cmd) process.exit(2);
 }
