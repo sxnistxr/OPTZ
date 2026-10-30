@@ -1,6 +1,7 @@
 // Browser checks for dihlabs.lol. Needs a built, running site:
 //   bun run build && bun run start &   then   node e2e.cjs http://127.0.0.1:3001
 const { chromium } = require("playwright");
+const docSections = require("./content/docs/index.json");
 
 const base = process.argv[2] ?? "http://127.0.0.1:3001";
 const results = [];
@@ -68,7 +69,21 @@ const check = (name, ok, detail = "") => results.push(`${ok ? "ok  " : "FAIL"} $
   check("OPTZ: live timing island hydrated", (await pg.textContent('section[aria-label="Live server status"]')).includes(" ms"));
   await pg.click("nav[aria-label=Site] >> text=Docs");
   await pg.waitForURL(base + "/docs");
-  check("docs index lists every section", docs.length === d0 && (await pg.locator("main section").count()) === 7);
+  // The URL can change before the HTML swap finishes. Wait for the actual index,
+  // and compare its sections and page links with the manifest instead of a fixed count.
+  const expectedSections = docSections.map(({ section, pages }) => ({
+    section,
+    links: pages.map(({ slug }) => `/docs/${slug}`),
+  }));
+  const indexComplete = await pg.waitForFunction((expected) => {
+    const actual = [...document.querySelectorAll("main section")].map((section) => ({
+      section: section.getAttribute("aria-label"),
+      links: [...section.querySelectorAll("a")].map((a) => a.getAttribute("href")),
+    }));
+    return JSON.stringify(actual) === JSON.stringify(expected);
+  }, expectedSections, { timeout: 5000 }).then(() => true, () => false);
+  check("docs index lists every section", docs.length === d0 && indexComplete,
+    JSON.stringify({ documents: docs, sections: await pg.locator("main section").evaluateAll((sections) => sections.map((s) => s.getAttribute("aria-label"))) }));
 
   // ---- a docs page ----
   await pg.click("main section >> text=Framework reference");
