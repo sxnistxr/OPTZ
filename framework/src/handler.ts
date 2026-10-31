@@ -14,7 +14,7 @@ import { cacheControl, privateResponse, ResponseCache } from "./cache";
 import { als, clearDataCaches, inStore, newStore, trackRequest, type AppServices, type RequestStore } from "./context";
 import { apiStaticPath, htmlPath, ogPath, type Manifest, type ManifestRoute, type ManifestSlot } from "./manifest";
 import { compilePattern, dataPath, fillDestination, inScope, matchRoute, matchSegments, safeDecode } from "./match";
-import { fnv, send, type StaticEntry } from "./static";
+import { fnv, prerenderHeaders, send, type StaticEntry } from "./static";
 import type { LocaleInfo } from "./runtime";
 import type { RenderInput, Rendered, SlotInput } from "./render";
 import { DRAFT_COOKIE } from "./server-api";
@@ -218,10 +218,10 @@ export async function createApp({ manifest, config, files, platform, middleware 
     if (!url.startsWith("/_optz/")) e.cache = htmlCache;
   }
 
-  // Prerendered API responses keep their content type.
+  // Restore the API's application headers; transport metadata is generated from its built body.
   for (const s of Object.values(manifest.apiStatic ?? {})) {
     const f = files.get(s.file);
-    if (f) files.set(s.file, { ...f, type: s.type, cache: "no-cache" });
+    if (f) files.set(s.file, { ...f, type: s.type, cache: s.headers?.["cache-control"] ?? "no-cache", headers: s.headers });
   }
 
   // ---- MCP: app/mcp tools, prompts and resources for AI clients (loaded on first request) ----
@@ -270,29 +270,20 @@ export async function createApp({ manifest, config, files, platform, middleware 
       return null;
     }
   };
-  // Signed synchronously from enable() would need a sync HMAC; instead tokens are pre-signed in
-  // the background, a few at a time.
-  const pool: string[] = [];
-  const mint = async () => {
-    const payload = `${Math.floor(Date.now() / 1000) + draftMaxAge}.${b64(crypto.getRandomValues(new Uint8Array(12)))}`;
-    pool.push(`${payload}.${b64(new Uint8Array(await crypto.subtle.sign("HMAC", key, new TextEncoder().encode(payload))))}`);
-  };
-  await Promise.all([mint(), mint(), mint(), mint()]);
-  let lastToken = pool[0];
   // With a random secret, only cookies set by this process can be valid: skip the check (a
   // header lookup on every static request) until draft mode is first turned on.
   let draftPossible = !!configured;
   let warned = false;
-  services.draftToken = () => {
+  services.draftToken = async () => {
     draftPossible = true;
     if (!configured && !dev && !warned) {
       warned = true;
       console.warn("optz: draft mode without draft.secret or OPTZ_DRAFT_SECRET: cookies only work on this server process");
     }
-    const value = pool.pop() ?? lastToken;
-    lastToken = value;
-    // Refill for the next enable(); a token minted now still expires draftMaxAge from now.
-    void mint();
+    // Sign when enabled, so an idle server never issues an already-expired pooled token.
+    // inStore() awaits the cookie without changing draftMode().enable()'s synchronous API.
+    const payload = `${Math.floor(Date.now() / 1000) + draftMaxAge}.${b64(crypto.getRandomValues(new Uint8Array(12)))}`;
+    const value = `${payload}.${b64(new Uint8Array(await crypto.subtle.sign("HMAC", key, new TextEncoder().encode(payload))))}`;
     return { value, maxAge: draftMaxAge };
   };
   const isDraft = async (req: Request): Promise<boolean> => {
@@ -450,7 +441,9 @@ export async function createApp({ manifest, config, files, platform, middleware 
         const mod = await load<Record<string, unknown>>(r.file);
         const res = await (mod.GET as (c: ApiContext) => Promise<Response>)({ ...ctx, params });
         if (res.status !== 200) return;
-        files.set(apiStaticPath(publicPath), entryOf(new Uint8Array(await res.arrayBuffer()), res.headers.get("content-type") ?? "application/json", "no-cache"));
+        if (als.getStore()!.setCookies.length) throw new Error("Prerendered API responses must not set cookies");
+        const headers = prerenderHeaders(res.headers);
+        files.set(apiStaticPath(publicPath), { ...entryOf(new Uint8Array(await res.arrayBuffer()), res.headers.get("content-type") ?? "application/json", headers["cache-control"] ?? "no-cache"), headers });
       } else {
         const { renderPage, headTags } = await render();
         const out = await renderPage(await renderInput(r, ctx, publicPath, inner, params, locale), assets(r), config);
@@ -679,6 +672,7 @@ export async function createApp({ manifest, config, files, platform, middleware 
     if (!F.actions || !def || !def.exports.includes(name)) return jsonRes({ ok: false, error: "No such action." }, 404);
     if (req.method !== "POST") return new Response(null, { status: 405, headers: { Allow: "POST" } });
     const mode = req.headers.get("x-optz-action");
+    if (mode && mode !== "json" && mode !== "form") return jsonRes({ ok: false, error: "Bad action mode." }, 400);
     // CSRF: calls from our client send a custom header (which needs CORS to send cross-site);
     // plain form posts must come from this site.
     if (!mode) {
@@ -697,13 +691,17 @@ export async function createApp({ manifest, config, files, platform, middleware 
     })();
     // The page the action was called from decides the locale.
     if (i18n) s.locale = splitLocale(ref && sameSite(req, url, ref) ? new URL(ref).pathname : "/").locale;
+    let body: Uint8Array;
+    try { body = await readBody(req.body, config.server.maxRequestBodySize); }
+    catch { return jsonRes({ ok: false, error: "Action body exceeds its limit or timed out." }, 413); }
+    const input = new Response(body as BodyInit, { headers: { "Content-Type": req.headers.get("content-type") ?? "" } });
     const fn = (await load<Record<string, unknown>>(def.file))[name] as (...a: unknown[]) => unknown;
     let args: unknown[];
     if (mode === "json") {
-      args = (await req.json().catch(() => null)) as unknown[];
+      args = (await input.json().catch(() => null)) as unknown[];
       if (!Array.isArray(args)) return jsonRes({ ok: false, error: "Bad arguments." }, 400);
     } else {
-      const fd = await req.formData().catch(() => null);
+      const fd = await input.formData().catch(() => null);
       if (!fd) return jsonRes({ ok: false, error: "Bad form data." }, 400);
       const lead: unknown[] = [];
       for (const field of ["$optz_args", BOUND_FIELD]) {
@@ -865,7 +863,7 @@ export async function createApp({ manifest, config, files, platform, middleware 
     if (r.kind === "api") {
       if (!F.api) return notFound(ctx);
       if (r.prerendered && (req.method === "GET" || req.method === "HEAD") && live) {
-        const f = files.get(apiStaticPath(p));
+        const f = files.get(apiStaticPath(p)) ?? files.get(manifest.apiStatic?.[p]?.file ?? "");
         if (f) {
           if (isStale(p, r)) regenerate(ctx, s, r, p, inner, m.params, locale);
           return send(f, req);

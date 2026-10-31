@@ -15,6 +15,7 @@ import { writeTypes } from "./codegen";
 import { outDirFor, type Manifest, type ManifestRoute } from "./manifest";
 export { outDirFor, type Manifest, type ManifestRoute };
 import { actionStubs, scanActions } from "./actions";
+import { prerenderHeaders } from "./static";
 import { createApp } from "./handler";
 import { apiStaticPath, htmlPath, ogPath, type ManifestSlot } from "./manifest";
 import { islandId, registerIslandLoader } from "./plugin";
@@ -345,7 +346,7 @@ export async function build({ root, config, dev, exportOnly }: BuildOptions): Pr
           const res = await get(path);
           if (res.status !== 200) throw new Error(`${mr.file}: GET ${path} answered ${res.status} at build time`);
           write(join(staticDir, apiStaticPath(path)), new Uint8Array(await res.arrayBuffer()));
-          manifest.apiStatic[path] = { file: apiStaticPath(path), type: res.headers.get("content-type") ?? "application/json" };
+          manifest.apiStatic[path] = { file: apiStaticPath(path), type: res.headers.get("content-type") ?? "application/json", headers: prerenderHeaders(res.headers) };
           rendered++;
         }
         continue;

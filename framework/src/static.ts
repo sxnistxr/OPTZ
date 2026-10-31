@@ -57,12 +57,27 @@ export function fnv(data: Uint8Array | string): string {
 
 const heads = new WeakMap<StaticEntry, Record<string, Record<string, string>>>();
 
+/** Keep application headers when freezing an API response, but rebuild its transport headers. */
+export function prerenderHeaders(headers: Headers): Record<string, string> {
+  if (headers.has("set-cookie") || /(?:^|[,\s])(?:private|no-store)(?:[,\s=]|$)/i.test(headers.get("cache-control") ?? "")) {
+    throw new Error("Prerendered API responses must be public and must not set cookies");
+  }
+  const connection = new Set((headers.get("connection") ?? "").toLowerCase().split(",").map(h => h.trim()));
+  const out: Record<string, string> = {};
+  headers.forEach((value, name) => {
+    if (!connection.has(name) && !/^(connection|keep-alive|proxy-authenticate|proxy-authorization|te|trailer|transfer-encoding|upgrade|content-type|content-encoding|content-length|etag|age|vary)$/i.test(name)) out[name] = value;
+  });
+  out.vary = [...new Set(["accept-encoding", ...(headers.get("vary") ?? "").toLowerCase().split(",").map(h => h.trim()).filter(Boolean)])].join(", ");
+  return out;
+}
+
 /** Headers per encoding, built once per entry (Response copies them, so sharing is safe). */
 function headsOf(e: StaticEntry) {
   let h = heads.get(e);
   if (!h) {
-    const base = { "Content-Type": e.type, "Cache-Control": e.cache, ETag: e.etag, Vary: "Accept-Encoding", ...e.headers };
-    h = { raw: base, br: { ...base, "Content-Encoding": "br" }, gzip: { ...base, "Content-Encoding": "gzip" } };
+    const base: Record<string, string> = { "content-type": e.type, "cache-control": e.cache, etag: e.etag, vary: "Accept-Encoding" };
+    for (const [name, value] of Object.entries(e.headers ?? {})) base[name.toLowerCase()] = value;
+    h = { raw: base, br: { ...base, "content-encoding": "br" }, gzip: { ...base, "content-encoding": "gzip" } };
     heads.set(e, h);
   }
   return h;
@@ -82,5 +97,5 @@ export function send(e: StaticEntry, req: Request, status = 200, extra?: Record<
     body = e.gz;
     head = h.gzip;
   }
-  return new Response(body as BodyInit, { status, headers: extra ? { ...head, ...extra } : head });
+  return new Response(req.method === "HEAD" ? null : body as BodyInit, { status, headers: extra ? { ...head, ...extra } : head });
 }

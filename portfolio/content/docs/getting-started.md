@@ -12,16 +12,11 @@ Create an OPTZ app and run it on your machine.
 ```sh
 bunx @sxnistxr/optz create my-app
 cd my-app
-bun add optz@npm:@sxnistxr/optz
+bun install
 bun run dev
 ```
 
 Open [http://127.0.0.1:3001](http://127.0.0.1:3001). Pages update in place as you save.
-
-> [!NOTE]
-> `create` links the new app to the copy of OPTZ that ran the command. `bun add` replaces that
-> link with the published package, so the app keeps working on another machine or after Bun
-> clears its cache.
 
 ## Pick a starting point
 

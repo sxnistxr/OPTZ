@@ -3,16 +3,17 @@ import { fullstackFiles } from "./fullstack-template";
 import { existsSync, mkdirSync, readdirSync, writeFileSync } from "node:fs";
 import { basename, dirname, join, relative } from "node:path";
 import { AGENT_CLIENTS, writeAgentFiles } from "./agents";
+import { name as packageName, version } from "../package.json";
 
 export function create(dir: string, template: "basic" | "fullstack" = "basic") {
   if (existsSync(dir) && readdirSync(dir).length) {
     console.error(`optz: ${dir} isn't empty`);
     process.exit(1);
   }
-  const frameworkDir = join(import.meta.dir, "..");
-  // Inside this repo's workspace (apps/*), depend on the workspace copy; elsewhere, by path.
+  // Only this repository's apps use the workspace package. Published starters must survive
+  // bunx's temporary installation being removed and work on another machine.
   const inWorkspace = basename(dirname(dir)) === "apps" && existsSync(join(dirname(dirname(dir)), "framework/package.json"));
-  const optzDep = inWorkspace ? "workspace:*" : `file:${relative(dir, frameworkDir)}`;
+  const optzDep = inWorkspace ? `workspace:${packageName}@*` : `npm:${packageName}@${version}`;
 
   const files: Record<string, string> = {
     "package.json": JSON.stringify(

@@ -15,6 +15,7 @@ Client sockets are spread over 127.0.0.0/8 source addresses so N isn't capped by
 address's ephemeral ports. Run as root with a high fd limit for the client.
 """
 import argparse, json, os, resource, socket, subprocess, sys, time
+from pathlib import Path
 from harness import Server, raw, read_response
 
 PLAIN = r'''
@@ -32,16 +33,17 @@ while True:
 
 def meminfo():
     d = {}
-    for l in open("/proc/meminfo"):
+    for l in Path("/proc/meminfo").read_text().splitlines():
         k, v = l.split(":")
         d[k] = int(v.split()[0]) * 1024
     return d
 
 
 def rss(pid):
-    for l in open(f"/proc/{pid}/status"):
+    for l in Path(f"/proc/{pid}/status").read_text().splitlines():
         if l.startswith("VmRSS:"):
             return int(l.split()[1]) * 1024
+    raise RuntimeError(f"VmRSS missing for process {pid}")
 
 
 def settle():

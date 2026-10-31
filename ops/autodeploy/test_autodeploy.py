@@ -142,9 +142,12 @@ class ReleaseLayoutTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             source, work = root / "src", root / "work"
-            for path in ("framework/src", "packages/auth/src", "apps/auth", "node_modules/@sxnistxr", "portfolio/dist", "ops/backup"):
+            manifest = json.loads((HERE.parent.parent / "portfolio/content/docs/index.json").read_text())
+            doc_sources = [page["file"] for section in manifest for page in section["pages"]]
+            for path in ("framework/src", "packages/auth/src", "apps/auth", "node_modules/@sxnistxr", "portfolio/dist", "portfolio/engine", "docs", "bench", "ops/backup"):
                 (source / path).mkdir(parents=True)
-            for path in ("package.json", "bun.lock", "bunfig.toml", "framework/src/cli.ts", "packages/auth/src/index.ts", "portfolio/dist/manifest.json"):
+            for path in ["package.json", "bun.lock", "bunfig.toml", "framework/src/cli.ts", "packages/auth/src/index.ts", "portfolio/dist/manifest.json", "bench/results.json", "bench/fullstack-results.json", *doc_sources]:
+                (source / path).parent.mkdir(parents=True, exist_ok=True)
                 (source / path).write_text("fixture")
             shutil.copyfile(HERE.parent / "backup/optz-backup.py", source / "ops/backup/optz-backup.py")
             (source / "node_modules/@sxnistxr/optz-auth").symlink_to("../../packages/auth", target_is_directory=True)
@@ -159,6 +162,8 @@ class ReleaseLayoutTests(unittest.TestCase):
                     self.assertTrue((release / relative).exists(), f"{unit.name}: missing {relative}")
             self.assertEqual((release / "web/node_modules/@sxnistxr/optz-auth").resolve(), release / "web/packages/auth")
             self.assertTrue((release / "web/node_modules/@sxnistxr/optz-auth/src/index.ts").is_file())
+            for path in ["bench/results.json", "bench/fullstack-results.json", *doc_sources]:
+                self.assertEqual((release / "web" / path).read_bytes(), (source / path).read_bytes())
             self.assertEqual((release / "ops/backup/optz-backup.py").stat().st_mode & 0o777, 0o644)
             self.assertFalse((release / "ops/systemd").exists())
 

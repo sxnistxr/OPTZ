@@ -28,13 +28,21 @@ interface Out {
   type: string;
   etag: string;
 }
+interface Source {
+  body: Uint8Array;
+  type: string;
+  tag: string;
+  expires: number;
+}
 
 // State belongs to this app's static-file map, never to another app in the process.
 interface ImageState {
   memory: Map<string, Out>;
   memoryBytes: number;
   inflight: Map<string, Promise<Out>>;
-  sources: Map<string, Promise<{ body: Uint8Array; type: string }>>;
+  sources: Map<string, Promise<Source>>;
+  remote: Map<string, Source>;
+  sourceBytes: number;
   active: number;
   waiting: Array<() => void>;
   diskWarned: boolean;
@@ -54,7 +62,7 @@ const bad = (msg: string, status = 400) => new Response(msg, { status, headers: 
 export async function handleImage(req: Request, url: URL, ctx: Ctx): Promise<Response> {
   let state = states.get(ctx.files);
   if (!state) {
-    state = { memory: new Map(), memoryBytes: 0, inflight: new Map(), sources: new Map(), active: 0, waiting: [], diskWarned: false, lastTrim: 0 };
+    state = { memory: new Map(), memoryBytes: 0, inflight: new Map(), sources: new Map(), remote: new Map(), sourceBytes: 0, active: 0, waiting: [], diskWarned: false, lastTrim: 0 };
     states.set(ctx.files, state);
   }
   // Admission happens before downloading/retaining inputs. The small queue holds requests only.
@@ -101,16 +109,39 @@ async function processImage(req: Request, url: URL, { root, config, files }: Ctx
     } catch {
       return bad("bad url");
     }
-    let source = state.sources.get(src);
-    if (!source) {
-      source = fetchRemoteImage(u, o.remoteHosts ?? []);
-      state.sources.set(src, source);
-      void source.finally(() => state.sources.delete(src)).catch(() => {});
+    // Keep recent source bytes and their digest so an optimized/conditional cache hit does
+    // not download the original again. Bound both age and memory independently of outputs.
+    for (const [key, value] of state.remote) {
+      if (value.expires > Date.now()) continue;
+      state.remote.delete(key);
+      state.sourceBytes -= value.body.length;
     }
-    const downloaded = await source;
+    let downloaded = state.remote.get(src);
+    if (downloaded) {
+      state.remote.delete(src);
+      state.remote.set(src, downloaded);
+    } else {
+      let source = state.sources.get(src);
+      if (!source) {
+        source = fetchRemoteImage(u, o.remoteHosts ?? []).then(value => {
+          const result = { ...value, tag: createHash("sha256").update(value.body).digest("hex"), expires: Date.now() + 300_000 };
+          state.remote.set(src, result);
+          state.sourceBytes += result.body.length;
+          for (const [key, old] of state.remote) {
+            if (state.remote.size <= 32 && state.sourceBytes <= 32 << 20) break;
+            state.remote.delete(key);
+            state.sourceBytes -= old.body.length;
+          }
+          return result;
+        });
+        state.sources.set(src, source);
+        void source.finally(() => state.sources.delete(src)).catch(() => {});
+      }
+      downloaded = await source;
+    }
     input = downloaded.body;
     srcType = downloaded.type;
-    srcTag = createHash("sha256").update(input).digest("hex");
+    srcTag = downloaded.tag;
   }
   // Vector and animated images are sent as they are.
   if (srcType.includes("svg") || srcType.includes("gif")) {
@@ -175,7 +206,7 @@ async function processImage(req: Request, url: URL, { root, config, files }: Ctx
     memory.delete(k);
     state.memoryBytes -= v.body.length;
   }
-  return new Response(out.body as BodyInit, { headers: headers(out) });
+  return new Response(req.headers.get("if-none-match") === out.etag ? null : out.body as BodyInit, { status: req.headers.get("if-none-match") === out.etag ? 304 : 200, headers: headers(out) });
 }
 
 type Sharp = typeof import("sharp").default;

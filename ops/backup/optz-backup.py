@@ -13,7 +13,7 @@ fails the copy is deleted and the run exits non-zero, so systemd marks the unit 
 Copies are gzip-compressed. Retention keeps the newest N hourly copies, plus the newest copy of
 each of the last M days.
 """
-import argparse, datetime, gzip, hashlib, os, shutil, sqlite3, sys
+import argparse, datetime, gzip, hashlib, os, sqlite3, sys
 
 
 def main():

@@ -29,7 +29,8 @@ def open_and_request(port, n):
             st, _, _, _ = read_response(s)
             ok += st == 200
         except (EOFError, ConnectionResetError, BrokenPipeError):
-            pass
+            # Admission control may close a newly refused socket before it answers.
+            continue
         except socket.timeout:
             raise SystemExit(f"  FAIL request timed out after {ok} answers: server stopped responding")
     return socks, ok
@@ -58,7 +59,6 @@ def main():
             s.close()
     finally:
         srv.stop()
-    log = srv.logtext()
 
     srv = Server(a.seed, 3103, ["--max-conns=1500", "--shard-slots=1000"]).start()
     try:

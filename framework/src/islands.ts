@@ -29,7 +29,17 @@ interface Boot {
 }
 
 const roots = new Map<Element, { unmount(): void }>();
-const prefetched = new Map<string, { at: number; html: Promise<string | null> }>();
+const prefetched = new Map<string, { at: number; size: number; html: Promise<string | null> }>();
+function trimPrefetch() {
+  const now = Date.now();
+  for (const [key, entry] of prefetched) if (now - entry.at >= 30_000) prefetched.delete(key);
+  let size = [...prefetched.values()].reduce((n, entry) => n + entry.size, 0);
+  for (const [key, entry] of prefetched) {
+    if (prefetched.size <= 32 && size <= 2_000_000) break;
+    prefetched.delete(key);
+    size -= entry.size;
+  }
+}
 
 function readBoot(doc: Document): Boot | null {
   const el = doc.getElementById("__optz_boot");
@@ -92,6 +102,7 @@ let registryRef: Record<string, IslandEntry> = {};
 let seq = 0;
 
 function fetchHtml(href: string, fresh = false): Promise<string | null> {
+  trimPrefetch();
   // Intercepting routes answer differently depending on where navigation starts.
   const key = `${location.pathname}|${href}`;
   const hit = fresh ? undefined : prefetched.get(key);
@@ -99,7 +110,17 @@ function fetchHtml(href: string, fresh = false): Promise<string | null> {
   const html = fetch(href, { headers: { Accept: "text/html", "X-Optz-Swap": "1", "X-Optz-From": location.pathname }, cache: fresh ? "no-store" : "default" })
     .then((r) => ((r.ok || r.status === 404) && (r.headers.get("content-type") ?? "").includes("text/html") ? r.text() : null))
     .catch(() => null);
-  if (!fresh) prefetched.set(key, { at: Date.now(), html });
+  if (!fresh) {
+    const entry = { at: Date.now(), size: 0, html };
+    prefetched.set(key, entry);
+    trimPrefetch();
+    void html.then((value) => {
+      if (prefetched.get(key) !== entry) return;
+      if (value === null) prefetched.delete(key);
+      else entry.size = value.length;
+      trimPrefetch();
+    });
+  }
   return html;
 }
 
@@ -126,7 +147,8 @@ function swap(here: HTMLElement, next: HTMLElement, keep: boolean) {
   hydrateAll(registryRef, here);
 }
 
-async function applyHtml(html: string | null, url: URL, opts: { pop?: boolean; replace?: boolean; keep?: boolean; scroll?: boolean }) {
+async function applyHtml(html: string | null, url: URL, opts: { pop?: boolean; replace?: boolean; keep?: boolean; scroll?: boolean }, id: number) {
+  if (id !== seq) return;
   const doc = html ? new DOMParser().parseFromString(html, "text/html") : null;
   const next = doc?.getElementById("__optz");
   const here = document.getElementById("__optz");
@@ -138,6 +160,8 @@ async function applyHtml(html: string | null, url: URL, opts: { pop?: boolean; r
       .filter((l) => !have.has(l.href))
       .map((l) => new Promise((r) => document.head.append(Object.assign(document.createElement("link"), { rel: "stylesheet", href: l.href, onload: r, onerror: r })))),
   );
+  // A newer navigation may finish while this page's stylesheets are loading.
+  if (id !== seq) return;
   if (!opts.pop && !opts.keep) {
     history.replaceState({ ...history.state, scroll: scrollY }, "");
     history[opts.replace ? "replaceState" : "pushState"]({ scroll: 0 }, "", url.href);
@@ -169,12 +193,13 @@ export async function navigate(href: string, opts: { pop?: boolean; replace?: bo
   document.documentElement.classList.add("optz-navigating");
   const html = await fetchHtml(url.pathname + url.search);
   if (id !== seq) return;
-  document.documentElement.classList.remove("optz-navigating");
   prefetched.delete(`${location.pathname}|${url.pathname + url.search}`);
   // A short cross-fade where the browser supports same-document view transitions.
   const vt = (document as { startViewTransition?: (cb: () => Promise<void>) => { finished: Promise<void> } }).startViewTransition;
-  if (vt && !matchMedia("(prefers-reduced-motion: reduce)").matches) await vt.call(document, () => applyHtml(html, url, opts)).finished.catch(() => {});
-  else await applyHtml(html, url, opts);
+  if (vt && !matchMedia("(prefers-reduced-motion: reduce)").matches) await vt.call(document, () => applyHtml(html, url, opts, id)).finished.catch(() => {});
+  else await applyHtml(html, url, opts, id);
+  if (id !== seq) return;
+  document.documentElement.classList.remove("optz-navigating");
   dispatchEvent(new CustomEvent("optz:navigate", { detail: { url: url.href } }));
 }
 
@@ -185,7 +210,8 @@ export async function refresh() {
   const url = new URL(location.href);
   const html = await fetchHtml(url.pathname + url.search, true);
   if (id !== seq) return;
-  await applyHtml(html, url, { keep: true, scroll: false });
+  await applyHtml(html, url, { keep: true, scroll: false }, id);
+  if (id === seq) document.documentElement.classList.remove("optz-navigating");
 }
 
 function eligible(a: HTMLAnchorElement | null): a is HTMLAnchorElement {

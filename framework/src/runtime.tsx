@@ -280,15 +280,15 @@ function Root({ routes, initial, urlParams }: { routes: ClientRoute[]; initial: 
   const cache = useRef(new Map<string, Promise<Payload | null>>());
   const seq = useRef(0);
 
-  const fetchPayload = useCallback((pathname: string, route: ClientRoute): Promise<Payload | null> => {
+  const fetchPayload = useCallback((pathname: string, search: string, route: ClientRoute): Promise<Payload | null> => {
     // Every built page has a payload (its data, if any, and its head tags); client-rendered
     // shells have neither.
     if (route.render === "client") return Promise.resolve({});
     // Dynamic pages are fetched fresh each time; static ones are cached for the session.
-    const key = pathname;
+    const key = pathname + search;
     const hit = route.render === "static" ? cache.current.get(key) : undefined;
     if (hit) return hit;
-    const p = fetch(dataPath(pathname), { headers: { Accept: "application/json" } })
+    const p = fetch(dataPath(pathname) + search, { headers: { Accept: "application/json" } })
       .then((r) => (r.ok ? (r.json() as Promise<Payload>) : null))
       .catch(() => null);
     if (route.render === "static") cache.current.set(key, p);
@@ -303,7 +303,7 @@ function Root({ routes, initial, urlParams }: { routes: ClientRoute[]; initial: 
       if (!m) return;
       m.route.load();
       m.route.layouts.forEach((l) => l());
-      if (m.route.render === "static") fetchPayload(url.pathname, m.route);
+      if (m.route.render === "static") fetchPayload(url.pathname, url.search, m.route);
     },
     [routes, fetchPayload, initial.i18n],
   );
@@ -314,14 +314,14 @@ function Root({ routes, initial, urlParams }: { routes: ClientRoute[]; initial: 
       const loc = splitLocale(url.pathname, initial.i18n);
       const m = url.origin === location.origin ? matchRoute(routes, loc.path) : null;
       if (!m) return void location.assign(url.href);
-      if (url.pathname === location.pathname && url.hash && !opts.pop) {
+      if (url.pathname === location.pathname && url.search === location.search && url.hash && !opts.pop) {
         history.pushState(null, "", url.href);
         return void focusHash(url.hash);
       }
       const id = ++seq.current;
       setNavigating(true);
       try {
-        const [payload, next] = await Promise.all([fetchPayload(url.pathname, m.route), loadState(m.route, url.pathname, m.params, undefined, loc.i18n)]);
+        const [payload, next] = await Promise.all([fetchPayload(url.pathname, url.search, m.route), loadState(m.route, url.pathname, m.params, undefined, loc.i18n)]);
         if (id !== seq.current) return;
         // No data (404, error, offline): let the server render the page properly.
         if (!payload) return void location.assign(url.href);
@@ -333,8 +333,10 @@ function Root({ routes, initial, urlParams }: { routes: ClientRoute[]; initial: 
         }
         setState(next);
         const mod = await m.route.load();
+        if (id !== seq.current) return;
         applyHead(payload.head ?? mod.head?.(undefined as never, { params: m.params }), payload.headHtml, payload.lang ?? loc.i18n?.locale);
         requestAnimationFrame(() => {
+          if (id !== seq.current) return;
           loadMarkedScripts(document);
           if (opts.scroll === false) return;
           if (opts.pop) scrollTo(0, history.state?.scroll ?? 0);
@@ -343,7 +345,7 @@ function Root({ routes, initial, urlParams }: { routes: ClientRoute[]; initial: 
           afterNavigation(opts.pop ? "" : url.hash);
         });
       } catch {
-        location.assign(url.href);
+        if (id === seq.current) location.assign(url.href);
       } finally {
         if (id === seq.current) setNavigating(false);
       }

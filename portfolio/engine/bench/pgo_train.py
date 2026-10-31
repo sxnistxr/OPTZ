@@ -8,6 +8,7 @@ instrumented server on it with a training-only secret, drives the load.js reques
 seconds over keep-alive connections, and stops it with SIGTERM so the profile is written.
 """
 import base64, hashlib, hmac, json, os, random, signal, socket, sqlite3, string, subprocess, sys, threading, time
+from pathlib import Path
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 SECRET = b"pgo-training-only"
@@ -19,7 +20,7 @@ def synth(path):
     db = sqlite3.connect(path)
     db.execute("PRAGMA journal_mode=OFF")
     db.execute("PRAGMA synchronous=OFF")
-    db.executescript(open(os.path.join(HERE, "..", "tests", "schema.sql")).read())
+    db.executescript(Path(HERE, "..", "tests", "schema.sql").read_text())
     r = random.Random(1)
     words = ["".join(r.choice(string.ascii_lowercase) for _ in range(r.randint(2, 9))) for _ in range(2000)]
     db.executemany("INSERT INTO users(id, username) VALUES (?, ?)", ((i, f"trainer_{i}") for i in range(1, USERS + 1)))

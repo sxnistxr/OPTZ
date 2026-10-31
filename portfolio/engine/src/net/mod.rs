@@ -110,6 +110,17 @@ impl Conn {
         self.sending || self.waiting
     }
 
+    fn request_consumed(&mut self, all: bool, now: u32) {
+        // Consuming a complete request does not complete its pending send or write job.
+        if self.busy() {
+            if self.stalled_since == 0 {
+                self.stalled_since = now;
+            }
+        } else if all {
+            self.stalled_since = 0;
+        }
+    }
+
     fn stash(&mut self, budget: &mut InputBudget, data: &[u8]) -> bool {
         let len = self.input.as_ref().map_or(0, |i| i.len());
         let old_cap = self.input.as_ref().map_or(0, |i| i.capacity());
@@ -842,9 +853,7 @@ fn process(sh: &mut Io, env: &mut Env, s: usize, slot: u32, data: &[u8]) -> usiz
                 }
             }
             let c = &mut sh.conns[slot as usize];
-            if n == data.len() {
-                c.stalled_since = 0;
-            }
+            c.request_consumed(n == data.len(), env.now_coarse);
             n
         }
     }
@@ -934,6 +943,23 @@ impl RawFdCompat for IoUring {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn consuming_requests_keeps_pending_send_and_writer_deadlines() {
+        let mut conn = Conn { sending: true, stalled_since: 100, ..Conn::default() };
+        conn.request_consumed(true, 110);
+        assert_eq!(conn.stalled_since, 100);
+        conn.sending = false;
+        conn.waiting = true;
+        conn.stalled_since = 0;
+        conn.request_consumed(true, 200);
+        assert_eq!(conn.stalled_since, 200);
+        conn.request_consumed(false, 210);
+        assert_eq!(conn.stalled_since, 200);
+        conn.waiting = false;
+        conn.request_consumed(true, 220);
+        assert_eq!(conn.stalled_since, 0);
+    }
 
     #[test]
     fn partial_requests_share_a_capacity_budget_across_connections() {

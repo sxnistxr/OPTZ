@@ -9,11 +9,12 @@ one with the secret from /etc/optz/env, and makes sure a users row exists for th
 site's Feed page.
 """
 import argparse, base64, hashlib, hmac, json, sqlite3, time
+from pathlib import Path
 
 
 def env():
     out = {}
-    for line in open("/etc/optz/env"):
+    for line in Path("/etc/optz/env").read_text().splitlines():
         if "=" in line:
             k, v = line.rstrip("\n").split("=", 1)
             out[k] = v

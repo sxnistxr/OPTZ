@@ -7,9 +7,9 @@ import { brotliCompressSync, brotliDecompressSync, gzipSync, gunzipSync } from "
 import { ResponseCache } from "../src/cache";
 import { createApp } from "../src/handler";
 import { compilePattern } from "../src/match";
-import type { Manifest, ManifestRoute } from "../src/manifest";
-import { env, headers } from "../src/server-api";
-import { send, type StaticEntry } from "../src/static";
+import { apiStaticPath, type Manifest, type ManifestRoute } from "../src/manifest";
+import { cookies, draftMode, env, headers } from "../src/server-api";
+import { prerenderHeaders, send, type StaticEntry } from "../src/static";
 import { localStorage } from "../src/storage";
 import { resolveConfig } from "../src/types";
 
@@ -22,6 +22,91 @@ const entry = (body: string, type: string): StaticEntry => ({ body: new TextEnco
 const pageRoute = (): ManifestRoute => ({
   pattern: "/isr", segments: compilePattern("/isr"), file: "page.tsx", kind: "page", render: "static",
   hasLoader: true, layouts: [], preload: [], revalidate: 60,
+});
+
+test("server actions bound JSON and form streams before invoking user code", async () => {
+  const m = manifest();
+  m.actions = { example: { file: "actions.ts", exports: ["save"] } };
+  let calls = 0, loads = 0;
+  const app = await createApp({ manifest: m, config: resolveConfig({ server: { maxRequestBodySize: 64 } }), files: new Map(), platform: { load: async () => { loads++; return { save: () => ++calls }; } } });
+  for (const mode of ["json", "form"]) {
+    let cancelled = false;
+    const response = await app.fetch(request("/_optz/action/example/save", { method: "POST", headers: { "X-Optz-Action": mode }, body: new ReadableStream({ pull(c) { c.enqueue(new Uint8Array(65)); }, cancel() { cancelled = true; } }, { highWaterMark: 0 }) }));
+    expect(response.status).toBe(413);
+    expect(cancelled).toBe(true);
+  }
+  expect(loads).toBe(1); // Modules are tagged once at startup, never invoked on rejected bodies.
+  expect(calls).toBe(0);
+  expect((await app.fetch(request("/_optz/action/example/save", { method: "POST", headers: { "X-Optz-Action": "json", "Content-Type": "application/json" }, body: "[]" }))).status).toBe(200);
+  expect(calls).toBe(1);
+  expect((await app.fetch(request("/_optz/action/example/save", { method: "POST", headers: { "X-Optz-Action": "form", "Content-Type": "application/x-www-form-urlencoded" }, body: "message=hello" }))).status).toBe(200);
+  expect(calls).toBe(2);
+});
+
+test("draft tokens get a full lifetime even after the server has been idle", async () => {
+  const m = manifest([{
+    pattern: "/api/draft", segments: compilePattern("/api/draft"), file: "draft.ts", kind: "api", render: "dynamic", hasLoader: false, layouts: [], preload: [],
+  }]);
+  const now = spyOn(Date, "now");
+  let time = 1_000_000;
+  now.mockImplementation(() => time);
+  try {
+    const app = await createApp({ manifest: m, config: resolveConfig({ draft: { secret: "fixture-draft-secret", maxAge: 60 } }), files: new Map(), platform: { load: async () => ({ GET: ({ url }: { url: URL }) => {
+      if (url.searchParams.has("enable")) draftMode().enable();
+      return Response.json({ enabled: draftMode().isEnabled });
+    } }) } });
+    time += 61_000;
+    const response = await app.fetch(request("/api/draft?enable"));
+    const cookie = response.headers.get("set-cookie")!.split(";")[0];
+    expect(response.headers.get("cache-control")).toContain("no-store");
+    expect(await (await app.fetch(request("/api/draft", { headers: { Cookie: cookie } }))).json()).toEqual({ enabled: true });
+    time += 59_000;
+    expect(await (await app.fetch(request("/api/draft", { headers: { Cookie: cookie } }))).json()).toEqual({ enabled: true });
+    time += 2_000;
+    expect(await (await app.fetch(request("/api/draft", { headers: { Cookie: cookie } }))).json()).toEqual({ enabled: false });
+  } finally { now.mockRestore(); }
+});
+
+test("prerendered headers preserve application semantics and rebuild transport metadata", () => {
+  expect(prerenderHeaders(new Headers({ "Access-Control-Allow-Origin": "*", "Content-Disposition": "attachment", Vary: "Origin, Accept-Encoding", "Content-Length": "999", "Content-Encoding": "gzip", ETag: "old" }))).toEqual({
+    "access-control-allow-origin": "*", "content-disposition": "attachment", vary: "accept-encoding, origin",
+  });
+  for (const headers of [new Headers({ "Set-Cookie": "private=value" }), new Headers({ "Cache-Control": "private=\"foo\"" }), new Headers({ "Cache-Control": "no-store" })]) expect(() => prerenderHeaders(headers)).toThrow("must be public");
+});
+
+test("API ISR preserves headers, migrates old file paths and refuses cookie-bearing updates", async () => {
+  const path = "/api/items";
+  const route: ManifestRoute = { pattern: path, segments: compilePattern(path), file: "items.ts", kind: "api", render: "dynamic", hasLoader: false, layouts: [], preload: [], prerendered: true, revalidate: 1 };
+  const m = manifest([route]);
+  const legacy = "/_optz/api/api/items";
+  m.apiStatic[path] = { file: legacy, type: "text/plain", headers: { "x-example": "old" } };
+  const files = new Map([[legacy, entry("old", "text/plain")]]);
+  const tasks: Promise<unknown>[] = [];
+  let privateUpdate = false, time = 100_000;
+  const clock = spyOn(Date, "now").mockImplementation(() => time);
+  const error = spyOn(console, "error").mockImplementation(() => {});
+  try {
+    const app = await createApp({ manifest: m, config: resolveConfig({}), files, platform: { load: async () => ({ GET: () => {
+      if (privateUpdate) cookies().set("session", "private");
+      return new Response(privateUpdate ? "private" : "new", { headers: { "X-Example": "new", "Access-Control-Allow-Origin": "*", Vary: "Origin" } });
+    } }) } });
+    const old = await app.fetch(request(path), { waitUntil: task => tasks.push(task) });
+    expect(await old.text()).toBe("old");
+    expect(old.headers.get("x-example")).toBe("old");
+    await Promise.all(tasks.splice(0));
+    const fresh = await app.fetch(request(path));
+    expect(await fresh.text()).toBe("new");
+    expect(fresh.headers.get("x-example")).toBe("new");
+    expect(fresh.headers.get("access-control-allow-origin")).toBe("*");
+    expect(fresh.headers.get("vary")).toBe("accept-encoding, origin");
+    expect(files.has(apiStaticPath(path))).toBe(true);
+    privateUpdate = true;
+    time += 2000;
+    await app.fetch(request(path), { waitUntil: task => tasks.push(task) });
+    await Promise.all(tasks);
+    expect(new TextDecoder().decode(files.get(apiStaticPath(path))!.body)).toBe("new");
+    expect(error).toHaveBeenCalledTimes(1);
+  } finally { clock.mockRestore(); error.mockRestore(); }
 });
 
 test("stripped proxy paths cannot replace the target origin or leak credentials", async () => {

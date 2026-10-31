@@ -107,8 +107,7 @@ export function draftMode() {
     enable() {
       const draftToken = s.services?.draftToken;
       if (!draftToken) throw new Error("optz: draft mode isn't available here");
-      const t = draftToken();
-      s.setCookies.push(serializeCookie(DRAFT_COOKIE, t.value, { secure: s.url.protocol === "https:", maxAge: t.maxAge }));
+      s.setCookies.push(draftToken().then(t => serializeCookie(DRAFT_COOKIE, t.value, { secure: s.url.protocol === "https:", maxAge: t.maxAge })));
       s.draft = true;
     },
     disable() {

@@ -21,6 +21,13 @@ export NODE_ENV=production
 (cd portfolio && bun ../framework/src/cli.ts check && bun ../framework/src/cli.ts build)
 # Keep workspace links inside the release. Do not ship or install repository systemd/nginx files.
 cp -a package.json bun.lock bunfig.toml framework packages node_modules apps "$work/release/web/"
+# Runtime docs loaders read repository Markdown and benchmark data after the build, including
+# when an unknown docs slug falls through to its dynamic API handler.
+cp -a docs "$work/release/web/"
+mkdir -p "$work/release/web/bench" "$work/release/web/portfolio/engine" "$work/release/web/ops"
+install -m 0644 bench/results.json bench/fullstack-results.json "$work/release/web/bench/"
+install -m 0644 portfolio/engine/README.md "$work/release/web/portfolio/engine/README.md"
+install -m 0644 ops/README.md ops/RESTORE.md "$work/release/web/ops/"
 mkdir -p "$work/release/web/portfolio"
 tar --exclude=./engine -C portfolio -cf - . | tar --no-same-owner -xf - -C "$work/release/web/portfolio"
 # The installed backup unit resolves its helper through the current release.

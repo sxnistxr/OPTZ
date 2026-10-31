@@ -3,14 +3,15 @@
 
   python3 bench/rate.py --seed SEED --tokens TOKENS --k6 /path/to/k6 --rates 5000,15000,25000
 """
-import argparse, json, os, re, shutil, subprocess, tempfile, time
+import argparse, json, os, shutil, subprocess, tempfile, time
+from pathlib import Path
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 TICK = os.sysconf("SC_CLK_TCK")
 
 
 def cpu(pid):
-    f = open(f"/proc/{pid}/stat").read().rsplit(")", 1)[1].split()
+    f = Path(f"/proc/{pid}/stat").read_text().rsplit(")", 1)[1].split()
     return (int(f[11]) + int(f[12])) / TICK
 
 
@@ -39,7 +40,7 @@ def main():
         c0 = cpu(srv.pid)
         subprocess.run(k6, capture_output=True)
         c1 = cpu(srv.pid)
-        s = json.load(open(os.path.join(d, "s.json")))["metrics"]
+        s = json.loads(Path(d, "s.json").read_text())["metrics"]
         reqs = s["http_reqs"]["count"]
         dur = s["http_req_duration"]
         print(json.dumps({"label": a.label, "target_rate": rate, "achieved_rps": round(s["http_reqs"]["rate"]),

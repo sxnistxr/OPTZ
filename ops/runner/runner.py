@@ -6,6 +6,7 @@ Install root-owned task definitions in /etc/optz-runner/tasks.json:
 The SSH client sends {"task":"health"}. No caller-supplied arguments are executed.
 """
 import fcntl
+from contextlib import suppress
 import json
 import os
 import resource
@@ -47,10 +48,9 @@ def execute(task, tasks, state, timeout=110):
                 code = -1
             finally:
                 # Also kill descendants of tasks that have already exited.
-                try:
+                # The group may already be gone; still reap the task below.
+                with suppress(ProcessLookupError):
                     os.killpg(p.pid, signal.SIGKILL)
-                except ProcessLookupError:
-                    pass
                 p.wait()
             output.seek(0)
             return {"exit": code, "output": output.read(MAX_OUTPUT).decode("utf-8", "replace")}

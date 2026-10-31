@@ -20,7 +20,7 @@ const previews = {
   quickstart: () => <Window bar={<span>Terminal</span>}>
       <p className="preview-command">bunx @sxnistxr/optz create my-app</p>
       <p className="preview-command">cd my-app</p>
-      <p className="preview-command">bun add optz@npm:@sxnistxr/optz</p>
+      <p className="preview-command">bun install</p>
       <p className="preview-command">bun run dev</p>
       <p className="preview-ready"><Tick /><span>Ready at 127.0.0.1:3001</span></p>
   </Window>,

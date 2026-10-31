@@ -12,6 +12,15 @@ imports), so install it under that name:
 bun add optz@npm:@sxnistxr/optz react react-dom
 ```
 
+If an older starter points `optz` at a `file:` path inside `/tmp/bunx-*`, replace it and
+reinstall. That link can give the app and server renderer different copies of React,
+causing an invalid hook call in the starter's counter:
+
+```sh
+bun add optz@npm:@sxnistxr/optz
+bun install --force
+```
+
 In this repository:
 
 ```sh

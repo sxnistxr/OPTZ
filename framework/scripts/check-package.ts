@@ -31,3 +31,4 @@ if (problems.length) {
   process.exit(1);
 }
 console.log(`package ok: ${Object.keys(pkg.exports).length} exports import cleanly`);
+await import("./check-starter");

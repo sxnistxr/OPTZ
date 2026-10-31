@@ -8,21 +8,23 @@ Prints one JSON line per trial: req/s, server CPU microseconds per request (utim
 /proc/<pid>/stat over the measured window), peak RSS, and wrk's non-2xx/socket errors.
 Every trial starts from a fresh copy of the seed. CPU pinning is test-harness only.
 """
-import argparse, json, os, re, shutil, subprocess, sys, tempfile, time
+import argparse, json, os, re, shutil, subprocess, tempfile, time
+from pathlib import Path
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 TICK = os.sysconf("SC_CLK_TCK")
 
 
 def cpu_secs(pid):
-    f = open(f"/proc/{pid}/stat").read().rsplit(")", 1)[1].split()
+    f = Path(f"/proc/{pid}/stat").read_text().rsplit(")", 1)[1].split()
     return (int(f[11]) + int(f[12])) / TICK
 
 
 def rss_peak_kb(pid):
-    for l in open(f"/proc/{pid}/status"):
+    for l in Path(f"/proc/{pid}/status").read_text().splitlines():
         if l.startswith("VmHWM:"):
             return int(l.split()[1])
+    raise RuntimeError(f"VmHWM missing for process {pid}")
 
 
 def trial(a, workload):
@@ -30,7 +32,8 @@ def trial(a, workload):
     db = os.path.join(d, "feed.db")
     shutil.copy(a.seed, db)
     env = dict(os.environ, SQLITE_PATH=db, JWT_SECRET="twelve-dollar-challenge", HOST="127.0.0.1", PORT=str(a.port))
-    srv = subprocess.Popen(["taskset", "-c", a.server_cpu, a.binary], env=env, stdout=subprocess.DEVNULL, stderr=open(os.path.join(d, "log"), "w"))
+    with open(os.path.join(d, "log"), "w") as log:
+        srv = subprocess.Popen(["taskset", "-c", a.server_cpu, a.binary], env=env, stdout=subprocess.DEVNULL, stderr=log)
     try:
         for _ in range(100):
             if subprocess.run(["curl", "-sf", "--noproxy", "*", f"http://127.0.0.1:{a.port}/health"], capture_output=True).returncode == 0:

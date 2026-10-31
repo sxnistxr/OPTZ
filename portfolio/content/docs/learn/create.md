@@ -12,16 +12,11 @@ adds one working feature and explains the idea behind it. You need
 ```sh
 bunx @sxnistxr/optz create my-app
 cd my-app
-bun add optz@npm:@sxnistxr/optz
+bun install
 ```
 
-`create` writes a starter app into `my-app`. The `bun add` line pins the published `optz` package
-and installs everything else.
-
-> [!NOTE]
-> `create` links the new app to the copy of OPTZ that ran the command. `bun add` replaces that
-> link with the package from npm, so the app keeps working on another machine or after Bun clears
-> its cache.
+`create` writes a starter app into `my-app` with a versioned dependency on the published OPTZ
+package. `bun install` installs its dependencies.
 
 ## Start the dev server
 

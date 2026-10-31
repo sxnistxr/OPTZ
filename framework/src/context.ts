@@ -12,7 +12,7 @@ export interface RequestStore {
   locale?: string;
   draft: boolean;
   /** Set-Cookie values to add to the response. */
-  setCookies: string[];
+  setCookies: Array<string | Promise<string>>;
   /** Work to run after the response is sent. */
   after: Array<() => unknown>;
   /** Did this request call revalidatePath/revalidateTag? (Actions tell the browser to refresh.) */
@@ -62,7 +62,7 @@ export interface Revalidator {
 }
 export interface AppServices {
   revalidator?: Revalidator;
-  draftToken?: () => { value: string; maxAge: number };
+  draftToken?: () => Promise<{ value: string; maxAge: number }>;
   dataCaches?: Set<DataCache>;
 }
 export const getRevalidator = () => als.getStore()?.services?.revalidator;
@@ -78,12 +78,13 @@ export async function inStore(s: RequestStore, fn: (s: RequestStore) => Promise<
   const res = await als.run(s, () => fn(s));
   let out = res;
   if (s.setCookies.length) {
+    const cookies = await Promise.all(s.setCookies);
     // Responses from fetch() or Response.redirect() can have immutable headers.
     try {
-      for (const c of s.setCookies) res.headers.append("Set-Cookie", c);
+      for (const c of cookies) res.headers.append("Set-Cookie", c);
     } catch {
       out = new Response(res.body, res);
-      for (const c of s.setCookies) out.headers.append("Set-Cookie", c);
+      for (const c of cookies) out.headers.append("Set-Cookie", c);
     }
     out.headers.set("Cache-Control", "private, no-store");
   }

@@ -19,7 +19,16 @@ interface Hit {
 }
 
 let index: Promise<Entry[]> | null = null;
-const load = () => (index ??= fetch("/api/docs").then((r) => r.json() as Promise<{ docs: Entry[] }>).then((d) => d.docs));
+const load = () => (index ??= fetch("/api/docs").then((r) => {
+  if (!r.ok) throw new Error("Search index unavailable");
+  return r.json() as Promise<{ docs: Entry[] }>;
+}).then((d) => {
+  if (!Array.isArray(d.docs)) throw new Error("Invalid search index");
+  return d.docs;
+}).catch((error) => {
+  index = null;
+  throw error;
+}));
 
 function search(docs: Entry[], q: string): Hit[] {
   const words = q.toLowerCase().split(/\s+/).filter(Boolean);
@@ -37,9 +46,17 @@ function search(docs: Entry[], q: string): Hit[] {
 export default function DocsSearch() {
   const [q, setQ] = useState("");
   const [docs, setDocs] = useState<Entry[] | null>(null);
+  const [failed, setFailed] = useState(false);
+  const loading = useRef(false);
   const [active, setActive] = useState(0);
   const input = useRef<HTMLInputElement>(null);
   const hits = useMemo(() => (docs ? search(docs, q) : []), [docs, q]);
+  const ensureIndex = () => {
+    if (docs || loading.current) return;
+    loading.current = true;
+    setFailed(false);
+    void load().then(setDocs, () => setFailed(true)).finally(() => { loading.current = false; });
+  };
 
   useEffect(() => {
     // "/" focuses the search box, like most docs sites.
@@ -74,13 +91,14 @@ export default function DocsSearch() {
         value={q}
         placeholder="Search docs…"
         autoComplete="off"
-        onFocus={() => load().then(setDocs, () => setDocs([]))}
+        onFocus={ensureIndex}
         onChange={(e) => {
           setQ(e.currentTarget.value);
           setActive(0);
+          if (!failed) ensureIndex();
         }}
         onKeyDown={(e) => {
-          if (e.key === "ArrowDown") (e.preventDefault(), setActive((a) => Math.min(a + 1, hits.length - 1)));
+          if (e.key === "ArrowDown") (e.preventDefault(), setActive((a) => Math.max(0, Math.min(a + 1, hits.length - 1))));
           else if (e.key === "ArrowUp") (e.preventDefault(), setActive((a) => Math.max(a - 1, 0)));
           else if (e.key === "Enter" && hits[active]) (e.preventDefault(), go(hits[active].href));
           else if (e.key === "Escape") setQ("");
@@ -117,7 +135,7 @@ export default function DocsSearch() {
           ))}
       </ul>
       <p role="status" className={q && hits.length === 0 ? "absolute inset-x-0 top-full z-10 mt-1 rounded-md border border-rule bg-paper px-3 py-2 text-sm text-muted shadow-lg" : "sr-only"}>
-        {!q ? "" : docs === null ? "Loading the index" : hits.length === 0 ? `Nothing matches "${q}". Try fewer words.` : `${hits.length} result${hits.length === 1 ? "" : "s"}`}
+        {!q ? "" : failed ? <>Search is unavailable. <button type="button" onClick={ensureIndex} className="underline">Retry</button></> : docs === null ? "Loading the index" : hits.length === 0 ? `Nothing matches "${q}". Try fewer words.` : `${hits.length} result${hits.length === 1 ? "" : "s"}`}
       </p>
     </div>
   );

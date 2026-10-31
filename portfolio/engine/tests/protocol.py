@@ -5,7 +5,7 @@
 
 --long adds the 66-second idle keep-alive check (the spec asks for >= 65 s).
 """
-import argparse, json, socket, sys, threading, time
+import argparse, json, sys, threading, time
 from harness import Server, connect, raw, read_response, request, token
 
 failures = []

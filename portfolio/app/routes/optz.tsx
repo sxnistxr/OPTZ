@@ -32,8 +32,8 @@ const foundation = [
 const clone = [`git clone ${site.repo}`, "cd OPTZ", "bun install"];
 /** Every way in, with the commands that start it. The two templates are `optz create`'s; the rest are repository apps. */
 const startOptions: StartOption[] = ([
-  { title: "New app", text: "A static page, a page with params, an island, a typed API route and middleware.", commands: ["bunx @sxnistxr/optz create my-app", "cd my-app", "bun add optz@npm:@sxnistxr/optz", "bun run dev"], guide: "Learn OPTZ step by step", href: "/docs/learn-create" },
-  { title: "Full-stack app", text: "Accounts, revocable SQLite sessions, private notes and live updates.", commands: ["bunx @sxnistxr/optz create my-app --template fullstack", "cd my-app", "bun add optz@npm:@sxnistxr/optz", "cp .env.example .env", "bun run dev"], guide: "Read the full-stack guide", href: "/docs/full-stack" },
+  { title: "New app", text: "A static page, a page with params, an island, a typed API route and middleware.", commands: ["bunx @sxnistxr/optz create my-app", "cd my-app", "bun install", "bun run dev"], guide: "Learn OPTZ step by step", href: "/docs/learn-create" },
+  { title: "Full-stack app", text: "Accounts, revocable SQLite sessions, private notes and live updates.", commands: ["bunx @sxnistxr/optz create my-app --template fullstack", "cd my-app", "bun install", "cp .env.example .env", "bun run dev"], guide: "Read the full-stack guide", href: "/docs/full-stack" },
   { title: "Every feature", text: "Streaming, Server Actions, ISR and draft mode together in one small app.", commands: [...clone, "cd apps/features", "bun run dev"], guide: "Tour the features app", href: "/docs/features-app" },
   { title: "Authentication", text: "Providers, sessions and passkeys through the optional Better Auth integration.", commands: [...clone, "cd apps/auth", "cp .env.example .env", "bun run dev"], guide: "Read the authentication guide", href: "/docs/authentication" },
   { title: "Existing project", text: "Add OPTZ to a Bun project you already have.", commands: ["bun add optz@npm:@sxnistxr/optz react react-dom"], guide: "Read the framework reference", href: "/docs/framework" },

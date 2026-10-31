@@ -1,6 +1,7 @@
 """Shared helpers for the integration tests: start the server on a fresh seed copy, sign JWTs,
 and speak raw HTTP/1.1 over sockets (so pipelining and partial writes can be tested)."""
 import base64, hashlib, hmac, json, os, shutil, signal, socket, subprocess, tempfile, time
+from pathlib import Path
 
 SECRET = b"twelve-dollar-challenge"
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -30,8 +31,8 @@ class Server:
 
     def start(self):
         env = dict(os.environ, SQLITE_PATH=self.db, JWT_SECRET=SECRET.decode(), HOST="127.0.0.1", PORT=str(self.port))
-        self.log = open(os.path.join(self.dir, "server.log"), "ab")
-        self.proc = subprocess.Popen([*self.wrap, BINARY, *self.args], env=env, stdout=self.log, stderr=self.log)
+        with open(os.path.join(self.dir, "server.log"), "ab") as self.log:
+            self.proc = subprocess.Popen([*self.wrap, BINARY, *self.args], env=env, stdout=self.log, stderr=self.log)
         for _ in range(200):
             try:
                 s, b = request(self.port, "GET", "/health")
@@ -52,7 +53,7 @@ class Server:
         return self.proc.returncode
 
     def logtext(self):
-        return open(os.path.join(self.dir, "server.log"), "rb").read().decode(errors="replace")
+        return Path(self.dir, "server.log").read_bytes().decode(errors="replace")
 
 
 def raw(method, path, auth=None, body=None, extra=""):

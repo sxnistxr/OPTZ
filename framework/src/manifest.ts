@@ -54,8 +54,8 @@ export interface Manifest {
   actions: Record<string, ActionModule>;
   /** Font files to preload on every page. */
   fonts: string[];
-  /** Prerendered API responses: URL path -> static file and content type. */
-  apiStatic: Record<string, { file: string; type: string }>;
+  /** Prerendered API responses: URL path -> static file, content type and application headers. */
+  apiStatic: Record<string, { file: string; type: string; headers?: Record<string, string> }>;
   /** MCP tools, prompts and resources: files in app/mcp. */
   mcp?: string[];
 }
@@ -76,4 +76,6 @@ export const htmlPath = (pathname: string) => (pathname === "/" ? "/index.html" 
 /** Where a page's Open Graph image is served. */
 export const ogPath = (pathname: string) => `/_optz/og${pathname === "/" ? "/index" : pathname}.png`;
 /** Where a prerendered API response lives in dist/static. */
-export const apiStaticPath = (pathname: string) => `/_optz/api${pathname}`;
+// '$response' is reserved for bodies; encodeURIComponent escapes '$' in actual URL segments,
+// so even a route literally named '$response' cannot collide with its parent's body file.
+export const apiStaticPath = (pathname: string) => `/_optz/api${pathname.split("/").map(encodeURIComponent).join("/")}/$response`;

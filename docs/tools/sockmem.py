@@ -1,20 +1,21 @@
 # Measure kernel memory per idle established TCP socket on loopback.
 # Usage: python3 sockmem.py <pairs> [rcv/sndbuf bytes]. Counts both ends of each loopback pair.
 import socket, resource, time, sys
+from pathlib import Path
 def mem():
     d={}
-    for l in open('/proc/meminfo'):
+    for l in Path('/proc/meminfo').read_text().splitlines():
         k,v=l.split(':'); d[k]=int(v.split()[0])
     return d
 def sockstat():
-    return open('/proc/net/sockstat').read().strip()
+    return Path('/proc/net/sockstat').read_text().strip()
 N=int(sys.argv[1]); rcv=int(sys.argv[2]) if len(sys.argv)>2 else 0
 resource.setrlimit(resource.RLIMIT_NOFILE,(resource.getrlimit(resource.RLIMIT_NOFILE)[1],)*2)
 ls=socket.socket(); ls.setsockopt(socket.SOL_SOCKET,socket.SO_REUSEADDR,1); ls.bind(('127.0.0.1',0)); ls.listen(4096)
 addr=ls.getsockname()
 time.sleep(0.5); m0=mem()
 cs=[];ss=[]
-for i in range(N):
+for _ in range(N):
     c=socket.socket()
     c.connect(addr); s,_=ls.accept()
     if rcv:
