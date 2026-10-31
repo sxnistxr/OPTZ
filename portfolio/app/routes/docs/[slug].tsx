@@ -14,7 +14,7 @@ export const loader = ({ params }: LoaderContext<{ slug: string }>) => {
   return { ...doc, modules };
 };
 export const head = (d: Doc): Head => ({
-  title: `${d.title} | ${site.title} docs`,
+  title: `${d.title} | OPTZ docs`,
   description: d.description,
   canonical: `/docs/${d.slug}`,
   openGraph: { type: "article" },

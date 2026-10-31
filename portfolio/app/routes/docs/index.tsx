@@ -21,8 +21,8 @@ const modules: Card[] = ["doppler", "uploads", "status-pages", "analytics", "dat
 
 type Sections = ReturnType<typeof docSections>;
 export const loader = () => ({ sections: docSections() });
-export const head = (): Head => ({
-  title: `Docs | ${site.title}`,
+export const head = (): Head => ({ canonical: "/docs",
+  title: "OPTZ documentation | DihLabs",
   description: "Learn OPTZ, a React framework for Bun: a guided first app, the framework reference, full-stack guides, optional modules and deployment.",
 });
 

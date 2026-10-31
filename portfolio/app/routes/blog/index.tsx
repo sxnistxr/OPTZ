@@ -4,7 +4,7 @@ import { listPosts, type PostMeta } from "$lib/posts";
 import site from "$lib/site";
 
 export const loader = () => ({ posts: listPosts() });
-export const head = (): Head => ({ title: `Writing | ${site.title}`, description: `Writing by ${site.name}.` });
+export const head = (): Head => ({ canonical: "/blog", title: `Writing | ${site.name}`, description: "Development notes by sxnistxr on software, SQLite, systems, and building fast things on small machines." });
 
 export default function Blog({ data }: PageProps<{ posts: PostMeta[] }, "/blog">) {
   return (

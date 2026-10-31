@@ -7,10 +7,10 @@ import site from "$lib/site";
 export const paths = () => listPosts().map((p) => ({ slug: p.slug }));
 export const loader = ({ params }: LoaderContext<{ slug: string }>) => getPost(params.slug) ?? notFound();
 export const head = (post: Post): Head => ({
-  title: `${post.title} | ${site.title}`,
+  title: `${post.title} | ${site.name}`,
   description: post.summary ?? post.title,
   canonical: `/blog/${post.slug}`,
-  openGraph: { type: "article", publishedTime: post.date, authors: [site.name], siteName: site.title },
+  openGraph: { type: "article", publishedTime: post.date, authors: ["https://github.com/sxnistxr"] },
 });
 
 export default function BlogPost({ data: post }: PageProps<Post, "/blog/[slug]">) {
