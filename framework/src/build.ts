@@ -49,15 +49,18 @@ function stripServerExports(routesDir: string): BunPlugin {
   const transpiler = new Bun.Transpiler({
     loader: "tsx",
     exports: { eliminate: ["loader", "paths", "cache", "head", "config", "revalidate", "tags", "dynamicParams"] },
-    trimUnusedImports: true,
+    // Keep the import bindings while eliminating exports. Trimming in this pass can
+    // turn an import used only by a removed export into a side-effect-only import.
+    trimUnusedImports: false,
     tsconfig: JSON.stringify({ compilerOptions: { jsx: "react-jsx", jsxImportSource: "react" } }),
   });
+  const trimImports = new Bun.Transpiler({ loader: "js", trimUnusedImports: true, treeShaking: true });
   return {
     name: "optz-strip-server-exports",
     setup(build) {
       build.onLoad({ filter: /\.(tsx|jsx)$/ }, async (args) => {
         if (!args.path.startsWith(routesDir)) return undefined;
-        let js = transpiler.transformSync(await Bun.file(args.path).text());
+        let js = trimImports.transformSync(transpiler.transformSync(await Bun.file(args.path).text()));
         // transformSync emits calls to renamed JSX runtime helpers (jsx_ab12cd34, ...) without
         // the import that defines them; add it for exactly the helpers used.
         const helpers = [...new Set(js.match(/\b(?:jsxs?|Fragment)_[a-z0-9]{8}\b/g) ?? [])];
