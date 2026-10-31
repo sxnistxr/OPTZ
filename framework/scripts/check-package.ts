@@ -24,7 +24,7 @@ if (pack.exitCode !== 0) problems.push("Package dry-run failed");
 const listing = pack.stdout.toString() + pack.stderr.toString();
 for (const line of listing.split("\n")) {
   const m = line.match(/^packed\s+\S+\s+(\S+)$/);
-  if (m && !/^(src\/|skills\/|schema\/|README\.md$|package\.json$)/.test(m[1])) problems.push(`unexpected file in the tarball: ${m[1]}`);
+  if (m && !/^(src\/|skills\/|schema\/|README\.md$|LICENSE$|THIRD-PARTY\.md$|package\.json$)/.test(m[1])) problems.push(`unexpected file in the tarball: ${m[1]}`);
 }
 if (problems.length) {
   console.error(`package check failed:\n${problems.map((p) => `  ${p}`).join("\n")}`);

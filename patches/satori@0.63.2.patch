@@ -1,0 +1,13 @@
+diff --git a/package.json b/package.json
+index daa8838cf8d05778e97b3516a7aee1ae69d39cdc..4e19bcfec81ce525a3949fe234bd4c126879c8e1 100644
+--- a/package.json
++++ b/package.json
+@@ -146,7 +146,7 @@
+     "css-to-react-native": "^3.0.0",
+     "emoji-regex-xs": "^2.0.1",
+     "escape-html": "^1.0.3",
+-    "fflate": "0.7.3",
++    "fflate": "0.7.5",
+     "harfbuzzjs": "0.10.0",
+     "linebreak": "^1.1.0",
+     "parse-css-color": "^0.2.1",

@@ -38,3 +38,8 @@ Publish the framework first when a module needs a newer framework version. Every
 `publishConfig.access` to `public`. Add `--otp=<code>` when your npm account uses two-factor
 authentication, and `--dry-run` to see what would be uploaded. A published version cannot be
 replaced, so bump the version for each release.
+
+The framework bundles Satori's dependency tree with patched fflate. Install with Bun first
+so the Satori manifest patch is applied. Its prepack guard and isolated tarball check must
+pass; a clean workspace audit alone does not verify consumer dependencies. See
+[the Socket review](SOCKET-REVIEW.md) for the finding and remaining inventory warnings.

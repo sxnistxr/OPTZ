@@ -13,5 +13,8 @@
   "scripts": {
     "test": "cd framework && bun test",
     "test:modules": "bun test packages/status/test packages/analytics/test packages/uploads/test packages/db/test"
+  },
+  "patchedDependencies": {
+    "satori@0.63.2": "patches/satori@0.63.2.patch"
   }
 }

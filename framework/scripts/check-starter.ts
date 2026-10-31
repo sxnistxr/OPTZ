@@ -19,6 +19,29 @@ try {
   mkdirSync(creator);
   writeFileSync(join(creator, "package.json"), JSON.stringify({ private: true, dependencies: { [name]: `file:${tarball}` } }));
   command([process.execPath, "install", "--ignore-scripts"], creator);
+  // This install has no workspace override. Test the actual bundled resolution, including
+  // nested dependencies, rather than only auditing the repository's safe lockfile.
+  const installed = join(creator, "node_modules", name);
+  if (!readFileSync(join(installed, "LICENSE"), "utf8").includes("MIT License")) throw new Error("Published license missing");
+  for (const file of readdirSync(join(creator, "node_modules"), { recursive: true })) {
+    if (typeof file === "string" && /(^|\/)fflate\/package\.json$/.test(file)) {
+      const dependency = JSON.parse(readFileSync(join(creator, "node_modules", file), "utf8"));
+      if (dependency.version !== "0.7.5") throw new Error(`Unpatched installed copy: ${file} (${dependency.version})`);
+    }
+  }
+  writeFileSync(join(installed, "check-og.ts"), `
+import { dirname } from "node:path";
+const satoriPath = Bun.resolveSync("satori", import.meta.dir);
+const opentypePath = Bun.resolveSync("@shuding/opentype.js", dirname(satoriPath));
+for (const importer of [satoriPath, opentypePath]) {
+  const pkg = await Bun.file(Bun.resolveSync("fflate/package.json", dirname(importer))).json();
+  if (pkg.version !== "0.7.5") throw new Error("Published OG tree contains vulnerable fflate " + pkg.version);
+}
+const { default: satori } = await import(satoriPath);
+const svg = await satori({ type: "div", props: { style: { display: "flex", backgroundColor: "red", width: 20, height: 20 } } }, { width: 20, height: 20, fonts: [] });
+if (!svg.includes("<svg")) throw new Error("Published Satori failed to render");
+`);
+  command([process.execPath, join(installed, "check-og.ts")], creator);
   command([process.execPath, join(creator, "node_modules", name, "src/cli.ts"), "create", app], temp);
 
   const pkgFile = join(app, "package.json"), pkg = JSON.parse(readFileSync(pkgFile, "utf8"));
