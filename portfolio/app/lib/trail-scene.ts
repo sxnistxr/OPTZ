@@ -1,6 +1,6 @@
 import {
   WebGLRenderer, Scene, OrthographicCamera, BufferGeometry, Float32BufferAttribute,
-  ShaderMaterial, LineSegments, Points, Color, Vector2, Vector3, LinearSRGBColorSpace,
+  ShaderMaterial, LineSegments, Points, Color, Vector2, Vector3, SRGBColorSpace,
 } from "three";
 import { trailCurveGLSL } from "./trail-geometry";
 
@@ -63,7 +63,10 @@ export function createTrail(host: HTMLElement, reduced: boolean,
         float ink=.14+.28*pow(sin(vLane*93.)*.5+.5,5.);
         float edge=smoothstep(0.,.06,vProgress)*(1.-smoothstep(.94,1.,vProgress));
         float lane=.45+.55*sin(vLane*3.14159);
-        gl_FragColor=vec4(uInk,min(1.,(ink+pulse*.28)*edge*lane*uGain));}` }));
+        gl_FragColor=vec4(uInk,min(1.,(ink+pulse*.28)*edge*lane*uGain));
+        #include <tonemapping_fragment>
+        #include <colorspace_fragment>
+      }` }));
   const ribbons = new LineSegments(geometry, lines);
   ribbons.frustumCulled = false;
   scene.add(ribbons);
@@ -89,17 +92,23 @@ export function createTrail(host: HTMLElement, reduced: boolean,
         vAlpha=(.15+lane*.45)*smoothstep(0.,.08,t)*(1.-smoothstep(.9,1.,t));}`,
     fragmentShader: `uniform vec3 uSpark; uniform float uGain; varying float vAlpha;void main(){
       float alpha=1.-smoothstep(.12,.5,length(gl_PointCoord-vec2(.5)));
-      gl_FragColor=vec4(uSpark,min(1.,vAlpha*alpha*uGain));}` }));
+      gl_FragColor=vec4(uSpark,min(1.,vAlpha*alpha*uGain));
+      #include <tonemapping_fragment>
+      #include <colorspace_fragment>
+    }` }));
   const points = new Points(particles, sparks);
   points.frustumCulled = false;
   scene.add(points);
 
   // Ink follows the theme through the viewport's CSS color: no filter on the canvas, which would cost a composite.
+  const hsl = { h: 0, s: 0, l: 0 };
   const theme = () => {
-    // Raw shader output is written as-is, so keep the CSS color's sRGB numbers instead of converting to linear.
-    ink.setStyle(getComputedStyle(host).color, LinearSRGBColorSpace);
+    // Colors stay linear in the shader and are encoded on output by <colorspace_fragment>.
+    ink.setStyle(getComputedStyle(host).color);
     const light = document.documentElement.dataset.theme === "light";
-    spark.copy(ink).offsetHSL(0, 0, light ? -.04 : .06);
+    // Sparks sit a step lighter (dark theme) or darker (light theme) than the ink, measured in sRGB.
+    ink.getHSL(hsl, SRGBColorSpace);
+    spark.setHSL(hsl.h, hsl.s, hsl.l + (light ? -.04 : .06), SRGBColorSpace);
     uniforms.uGain.value = light ? 1.6 : 1;
     render();
   };
@@ -118,7 +127,7 @@ export function createTrail(host: HTMLElement, reduced: boolean,
   const leave = () => { aim.x = aim.y = 0; aim.on = 0; };
   if (fine) { zone.addEventListener("pointermove", move as EventListener); zone.addEventListener("pointerleave", leave); }
 
-  let frame = 0, active = false, paused = false, visible = true, disposed = false, lost = false;
+  let running = false, active = false, paused = false, visible = true, disposed = false, lost = false;
   let elapsed = 0, clock = 0, particlePhase = 0, last = 0, seed = 0, seedFrom = 0, seedTo = 0;
   const duration = 1400;
   const ease = (t: number) => t * t * t * (t * (t * 6 - 15) + 10);
@@ -129,10 +138,10 @@ export function createTrail(host: HTMLElement, reduced: boolean,
     uniforms.uTime.value = clock; uniforms.uPhase.value = particlePhase;
     renderer.render(scene, camera);
   };
+  // Frames come from renderer.setAnimationLoop, as three.js advises over a hand-rolled requestAnimationFrame.
   function tick(now: number) {
-    frame = 0;
-    if (disposed || lost || !visible || document.hidden || reduced || paused) return;
-    const delta = Math.min(now - last, 50) / 1000; last = now;
+    if (disposed || lost || !visible || document.hidden || reduced || paused) { stop(); return; }
+    const delta = Math.min(Math.max(now - last, 0), 50) / 1000; last = now;
     clock += delta;
     if (active) elapsed += delta * 1000;
     particlePhase = (particlePhase + delta * .045) % 1;
@@ -143,14 +152,13 @@ export function createTrail(host: HTMLElement, reduced: boolean,
     pointer.x += (aim.px - pointer.x) * k * 1.6; pointer.y += (aim.py - pointer.y) * k * 1.6;
     pointer.z += (aim.on - pointer.z) * k;
     render();
-    frame = requestAnimationFrame(tick);
   }
   function resume() {
-    if (!disposed && !reduced && !paused && visible && !document.hidden && !lost && !frame) {
-      last = performance.now(); frame = requestAnimationFrame(tick);
+    if (!disposed && !reduced && !paused && visible && !document.hidden && !lost && !running) {
+      last = performance.now(); running = true; renderer.setAnimationLoop(tick);
     }
   }
-  function stop() { cancelAnimationFrame(frame); frame = 0; }
+  function stop() { running = false; renderer.setAnimationLoop(null); }
   function replay() {
     if (disposed || lost || paused) return;
     elapsed = 0;

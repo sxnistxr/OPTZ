@@ -133,6 +133,7 @@ export function createSpeed(host: HTMLElement, reduced: boolean,
         float a=clamp(light*vAlpha*uGain,0.,1.);
         if(a<.002) discard;
         gl_FragColor=vec4(c,a);
+        #include <tonemapping_fragment>
         #include <colorspace_fragment>
       }` });
   const field = new Mesh(geometry, material);
@@ -162,7 +163,7 @@ export function createSpeed(host: HTMLElement, reduced: boolean,
   const leave = () => { aim.x = aim.y = 0; };
   if (fine) { zone.addEventListener("pointermove", move as EventListener); zone.addEventListener("pointerleave", leave); }
 
-  let frame = 0, active = false, paused = false, visible = true, disposed = false, lost = false, last = 0;
+  let running = false, active = false, paused = false, visible = true, disposed = false, lost = false, last = 0;
   const duration = 3.55;
   // Speed targets over a request: a burst as it arrives, cruising while the mark holds, a push as it leaves.
   const boostTarget = (t: number) => !active ? 1 : t < .5 ? 5.5 : t >= 2.55 && t < 3.25 ? 3.2 : 1;
@@ -171,10 +172,10 @@ export function createSpeed(host: HTMLElement, reduced: boolean,
     camera.position.set(tilt.x * 7, -tilt.y * 4, camZ); camera.lookAt(0, 0, 0);
     renderer.render(scene, camera);
   };
+  // Frames come from renderer.setAnimationLoop, as three.js advises over a hand-rolled requestAnimationFrame.
   function tick(now: number) {
-    frame = 0;
-    if (disposed || lost || !visible || document.hidden || reduced || paused) return;
-    const delta = Math.min(now - last, 50) / 1000; last = now;
+    if (disposed || lost || !visible || document.hidden || reduced || paused) { stop(); return; }
+    const delta = Math.min(Math.max(now - last, 0), 50) / 1000; last = now;
     if (active) { uniforms.uT.value += delta; if (uniforms.uT.value >= duration) { active = false; uniforms.uT.value = 99; onRunning(false); } }
     // Frame-rate independent easing toward each target, as in the Codrops light-trails demo.
     uniforms.uBoost.value += (boostTarget(uniforms.uT.value) - uniforms.uBoost.value) * (1 - Math.exp(-delta * 7));
@@ -184,14 +185,13 @@ export function createSpeed(host: HTMLElement, reduced: boolean,
     const k = 1 - Math.exp(-delta * 4);
     tilt.x += (aim.x - tilt.x) * k; tilt.y += (aim.y - tilt.y) * k;
     render();
-    frame = requestAnimationFrame(tick);
   }
   function resume() {
-    if (!disposed && !reduced && !paused && visible && !document.hidden && !lost && !frame) {
-      last = performance.now(); frame = requestAnimationFrame(tick);
+    if (!disposed && !reduced && !paused && visible && !document.hidden && !lost && !running) {
+      last = performance.now(); running = true; renderer.setAnimationLoop(tick);
     }
   }
-  function stop() { cancelAnimationFrame(frame); frame = 0; }
+  function stop() { running = false; renderer.setAnimationLoop(null); }
   // Reduced motion: a still frame of the landed mark in its stream.
   function still() {
     uniforms.uTravel.value = 3; uniforms.uBoost.value = 1; uniforms.uWarp.value = 0; uniforms.uT.value = 2.2; render();
