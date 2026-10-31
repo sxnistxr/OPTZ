@@ -169,7 +169,21 @@ fn b64url_decode_vec(s: &[u8], out: &mut Vec<u8>) -> Option<()> {
 pub mod tests {
     use super::*;
 
-    const SECRET: &[u8] = b"twelve-dollar-challenge";
+    use std::io::Read;
+    use std::sync::OnceLock;
+
+    fn random_key() -> [u8; 32] {
+        let mut key = Vec::new();
+        std::fs::File::open("/dev/urandom")
+            .and_then(|file| file.take(32).read_to_end(&mut key))
+            .expect("OS randomness is required for JWT tests");
+        key.try_into().expect("OS randomness must supply exactly 32 key bytes")
+    }
+
+    fn secret() -> &'static [u8; 32] {
+        static SECRET: OnceLock<[u8; 32]> = OnceLock::new();
+        SECRET.get_or_init(random_key)
+    }
 
     pub fn b64(data: &[u8]) -> String {
         const A: &[u8] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_";
@@ -191,18 +205,18 @@ pub mod tests {
     }
 
     pub fn sign(payload: &str) -> String {
-        sign_with(r#"{"alg":"HS256","typ":"JWT"}"#, payload, SECRET)
+        sign_with(r#"{"alg":"HS256","typ":"JWT"}"#, payload, secret())
     }
 
     fn check(token: &str) -> Result<(i64, Vec<u8>), JwtError> {
-        Verifier::new(SECRET).verify(token.as_bytes(), 1_000).map(|c| (c.user_id, c.username.into_owned()))
+        Verifier::new(secret()).verify(token.as_bytes(), 1_000).map(|c| (c.user_id, c.username.into_owned()))
     }
 
     #[test]
     fn accepts_valid() {
         assert_eq!(check(&sign(r#"{"sub":"7","username":"ann","iat":1,"exp":2000}"#)), Ok((7, b"ann".to_vec())));
         assert_eq!(check(&sign(r#"{"sub":"7","username":"a\"n","exp":1000.5}"#)), Ok((7, b"a\"n".to_vec())));
-        let reordered = sign_with(r#"{"typ":"JWT","alg":"HS256"}"#, r#"{"exp":2000,"username":"x","sub":"1"}"#, SECRET);
+        let reordered = sign_with(r#"{"typ":"JWT","alg":"HS256"}"#, r#"{"exp":2000,"username":"x","sub":"1"}"#, secret());
         assert_eq!(check(&reordered), Ok((1, b"x".to_vec())));
     }
 
@@ -222,9 +236,9 @@ pub mod tests {
             // exp that parses to infinity, or is absurdly far away, never counts.
             sign(r#"{"sub":"7","username":"ann","exp":1e400}"#),
             sign(r#"{"sub":"7","username":"ann","exp":1e300}"#),
-            sign_with(r#"{"alg":"HS512"}"#, r#"{"sub":"7","username":"ann","exp":2000}"#, SECRET),
-            sign_with(r#"{"alg":"HS256"}"#, r#"{"sub":"7","username":"ann","exp":2000}"#, b"other"),
-            sign_with("not json", r#"{"sub":"7","username":"ann","exp":2000}"#, SECRET),
+            sign_with(r#"{"alg":"HS512"}"#, r#"{"sub":"7","username":"ann","exp":2000}"#, secret()),
+            sign_with(r#"{"alg":"HS256"}"#, r#"{"sub":"7","username":"ann","exp":2000}"#, &random_key()),
+            sign_with("not json", r#"{"sub":"7","username":"ann","exp":2000}"#, secret()),
             sign(r#"[1,2]"#),
             sign("{bad"),
             format!("{good}.x"),

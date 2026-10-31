@@ -165,3 +165,39 @@ The HTTPS branch enables SNI and sets the server name, but never enables `proxy_
 - Full framework test output: `/workspace/scratch/optz-audit-tests.log`.
 - Rust code was reviewed statically; Rust tests, cargo advisory checks, runtime memory-safety analysis, browser E2E, actual nginx TLS handshakes, live origin TLS/firewall settings, and VPS service state were not verified. No claim of a clean bill of health for those areas.
 - Graphify artifacts are in `graphify-out/` (ignored by this repository). Report and local proof scripts contain no production secrets. Fixes are recommended, not applied.
+
+
+## Code scanning review — 2026-10-31
+
+Reviewed GitHub alerts 38–41, 43–44, 58 and 60 against their reported source flows.
+
+- **43, 44, 64 — JWT test keys:** replaced the fixed signing and wrong-key fixtures in
+  `portfolio/engine/src/jwt.rs` with 32 bytes from the OS random source. A process-local
+  `OnceLock` shares the signing key across concurrent tests; the wrong-key case generates
+  an independent key. Alert 64 traced the zero-initialized buffer despite its complete
+  overwrite by `read_exact`; the helper now reads up to 32 random bytes into an empty
+  vector and requires exactly 32 bytes before converting to a key. Read failures and
+  short reads fail the test rather than returning a key. Production continues to require
+  `JWT_SECRET` from the environment.
+- **38 — file data in outbound requests:** false positive. Cached font stylesheets are
+  intentionally parsed for font URLs (`fonts.ts`, `og.ts`). The request contains the URL
+  and explicitly supplied headers; cached file contents are not uploaded as a request body.
+  Initial URLs come from trusted project font configuration, not incoming HTTP input.
+- **39, 40, 41, 58 — network data written to disk:** false positives for intentional
+  font asset downloads. The cache filename hashes the URL and headers; downloaded bytes
+  cannot choose its path. Build output contains the downloaded WOFF2 and generated CSS.
+  The font filename sanitizes the family, restricts the subset to word characters/hyphens,
+  and hashes the bytes. Atomic cache publication replaces destination symlinks without
+  following them. These operations store font resources and do not execute downloaded code.
+  See [CodeQL's rule guidance](https://codeql.github.com/codeql-query-help/javascript/js-http-to-file-access/),
+  which requires reviewing whether the download is intended.
+- **60 — deployment file permissions:** false positive. The atomic writer defaults to
+  `0600`; private keys, tokens, configuration and GitHub secret files retain that mode.
+  The explicit `0755` callers install public executable helpers; `0644` publishes the
+  forced-command SSH public key so sshd can read it as the deployment user. The sudoers
+  rule uses `0440`. None grants group/other write access. Deployment regression tests
+  assert all these modes, including after a repeated migration.
+
+Dismissals apply to these individual reviewed alerts; the CodeQL rules remain enabled.
+The JWT code changes require a new analysis of the committed revision before GitHub can
+mark alerts 43, 44 and 64 fixed.
