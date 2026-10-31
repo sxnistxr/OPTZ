@@ -4,7 +4,7 @@
 /* Scan everything under app/ for class names. */
 @source ".";
 
-/* A monochrome interface; yellow belongs to the generative artwork only. */
+/* A monochrome interface; yellow belongs to the generative artwork and its echoes (streaks, the served chip, the OPTZ bar). */
 @theme {
   --font-sans: "Schibsted Grotesk", "Schibsted Grotesk Fallback", ui-sans-serif, system-ui, sans-serif;
   --font-serif: "Newsreader", "Newsreader Fallback", ui-serif, Georgia, serif;
@@ -384,7 +384,11 @@
   .optz-intro h1 { font-size: clamp(3rem, 7.4vw, 6rem); font-weight: 600; letter-spacing: -.04em; line-height: 1.07; }
   .optz-intro p { margin: 1.4rem auto 1.9rem; font-size: clamp(1rem,1.7vw,1.35rem); line-height: 1.65; }
   .hero-actions { display: flex; justify-content: center; flex-wrap: wrap; gap: .85rem; }
-  .optz-hero { padding-bottom: 2rem; }
+  /* One composition: the scene fills the hero behind the copy, and the mark lands in the room below it. */
+  .optz-hero { --mark-room: clamp(270px, 31vw, 420px); position: relative; isolation: isolate; overflow: clip; padding-bottom: 1rem; }
+  .optz-hero .trail-scene { position: static; }
+  .optz-hero .trail-viewport { position: absolute; inset: 0; z-index: -1; height: auto; }
+  .optz-hero .trail-speed { margin-top: 0; padding-top: var(--mark-room); }
   .trail-scene { position: relative; }
   /* The canvas reads this color for its ink, so the artwork follows the theme without a filter. */
   .trail-viewport { position: relative; height: clamp(240px, 31vw, 430px); overflow: hidden; color: var(--trail-ink); }
@@ -394,8 +398,7 @@
   .webgl-ready canvas { opacity: 1; }
   .webgl-ready .trail-fallback { opacity: 0; }
   .trail-flow { margin-block: .5rem 1.5rem; }
-  .trail-speed { margin-top: -.25rem; }
-  .trail-speed .trail-fallback { mask-image: linear-gradient(transparent, #000 20%, #000 82%, transparent); }
+  .trail-speed .trail-fallback { inset: auto 0 3.5rem; height: var(--mark-room); mask-image: linear-gradient(transparent, #000 15%, #000 85%, transparent); }
   .trail-controls { display: flex; align-items: center; justify-content: space-between; gap: 1rem; min-height: 44px; font-size: .75rem; color: var(--color-muted); }
   .trail-speed .trail-controls { justify-content: flex-end; }
   .trail-actions { display: flex; align-items: center; gap: .25rem; }
@@ -446,8 +449,10 @@
   .benchmark-row { display: grid; grid-template-columns: 8rem 1fr 6rem; align-items: center; gap: 1.5rem; margin-bottom: 1.25rem; }
   .benchmark-row strong { font-size: 1rem; }
   .benchmark-row > span { font-family: var(--font-mono); font-variant-numeric: tabular-nums; text-align: right; }
-  .benchmark-bar { background: var(--color-ink); height: 30px; border-radius: 3px; }
-  .next-bar { width: calc(438 / 26366 * 100%); min-width: 2px; background: #777; }
+  /* The bars end with the mark's lean; OPTZ's is a streak from the hero, Next.js's stays neutral. */
+  .benchmark-bar { height: 30px; border-radius: 3px 0 0 3px; clip-path: polygon(0 0, 100% 0, calc(100% - 12px) 100%, 0 100%); }
+  .optz-bar { background: var(--trail-ink); }
+  .next-bar { width: calc(438 / 26366 * 100%); min-width: 22px; background: var(--color-muted); }
   /* One reveal on this page: the bars grow to scale as they scroll in. Without support they are simply drawn. */
   @supports (animation-timeline: view()) {
     .benchmark-bar { transform-origin: left; animation: bar-grow linear both; animation-timeline: view(); animation-range: entry 20% cover 40%; }
@@ -513,7 +518,7 @@
     .optz-intro p { font-size: .95rem; }
     .optz-intro p br { display: none; }
     .hero-actions .button-large { padding-inline: 1rem; min-height: 48px; }
-    .trail-speed { margin-top: 1.5rem; }
+    .optz-hero { --mark-room: 250px; }
     .home-intro-bottom p { font-size: 1rem; }
     .section-top { display: block; margin-bottom: 2rem; }
     .section-top .text-link { margin-top: 1rem; }
