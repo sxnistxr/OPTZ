@@ -158,6 +158,7 @@ test.each([
 ])("SPA builds still reject server-only imports retained by the page: %s",async(source)=>{
   const { build }=await import("../src/build");
   const { resolveConfig }=await import("../src/types");
+  mkdirSync(join(import.meta.dir,"../.tmp"),{recursive:true});
   const root=mkdtempSync(join(import.meta.dir,"../.tmp/server-boundary-retained-"));
   mkdirSync(join(root,"app/routes"),{recursive:true});mkdirSync(join(root,"app/lib"),{recursive:true});
   writeFileSync(join(root,"app/lib/data.server.ts"),'export const label=()=>"SERVER_ONLY_SENTINEL";');
