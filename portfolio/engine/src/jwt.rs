@@ -173,11 +173,11 @@ pub mod tests {
     use std::sync::OnceLock;
 
     fn random_key() -> [u8; 32] {
-        let mut key = [0; 32];
+        let mut key = Vec::new();
         std::fs::File::open("/dev/urandom")
-            .and_then(|mut file| file.read_exact(&mut key))
+            .and_then(|file| file.take(32).read_to_end(&mut key))
             .expect("OS randomness is required for JWT tests");
-        key
+        key.try_into().expect("OS randomness must supply exactly 32 key bytes")
     }
 
     fn secret() -> &'static [u8; 32] {

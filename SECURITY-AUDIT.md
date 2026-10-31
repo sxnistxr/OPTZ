@@ -171,10 +171,14 @@ The HTTPS branch enables SNI and sets the server name, but never enables `proxy_
 
 Reviewed GitHub alerts 38–41, 43–44, 58 and 60 against their reported source flows.
 
-- **43, 44 — JWT test keys:** replaced the fixed signing and wrong-key fixtures in
+- **43, 44, 64 — JWT test keys:** replaced the fixed signing and wrong-key fixtures in
   `portfolio/engine/src/jwt.rs` with 32 bytes from the OS random source. A process-local
   `OnceLock` shares the signing key across concurrent tests; the wrong-key case generates
-  an independent key. Production continues to require `JWT_SECRET` from the environment.
+  an independent key. Alert 64 traced the zero-initialized buffer despite its complete
+  overwrite by `read_exact`; the helper now reads up to 32 random bytes into an empty
+  vector and requires exactly 32 bytes before converting to a key. Read failures and
+  short reads fail the test rather than returning a key. Production continues to require
+  `JWT_SECRET` from the environment.
 - **38 — file data in outbound requests:** false positive. Cached font stylesheets are
   intentionally parsed for font URLs (`fonts.ts`, `og.ts`). The request contains the URL
   and explicitly supplied headers; cached file contents are not uploaded as a request body.
@@ -196,4 +200,4 @@ Reviewed GitHub alerts 38–41, 43–44, 58 and 60 against their reported source
 
 Dismissals apply to these individual reviewed alerts; the CodeQL rules remain enabled.
 The JWT code changes require a new analysis of the committed revision before GitHub can
-mark alerts 43 and 44 fixed.
+mark alerts 43, 44 and 64 fixed.
