@@ -396,7 +396,8 @@
   .trail-viewport canvas { opacity: 0; transition: opacity .6s ease-out; }
   .trail-fallback { transition: opacity .6s ease-out; }
   .webgl-ready canvas { opacity: 1; }
-  .webgl-ready .trail-fallback { opacity: 0; }
+  /* The static picture leaves quickly, so its mark never shows before the live one has landed. */
+  .webgl-ready .trail-fallback { opacity: 0; transition-duration: .15s; }
   .trail-flow { margin-block: .5rem 1.5rem; }
   .trail-speed .trail-fallback { inset: auto 0 3.5rem; height: var(--mark-room); mask-image: linear-gradient(transparent, #000 15%, #000 85%, transparent); }
   .trail-controls { display: flex; align-items: center; justify-content: space-between; gap: 1rem; min-height: 44px; font-size: .75rem; color: var(--color-muted); }
