@@ -14,6 +14,36 @@ One `node_modules` at the root (`bunfig.toml` sets the hoisted linker), so every
 framework's dependencies and the framework itself (`optz` is `framework/src/index.ts`, no build
 step: Bun runs the TypeScript directly).
 
+Run this site with `cd portfolio && bun run dev` (http://127.0.0.1:3001, updates as you save).
+
+## Edit this site
+
+| to change | edit |
+|---|---|
+| Name, intro, links | `portfolio/content/site.json` |
+| Lab experiments | `portfolio/content/lab.json` |
+| Blog posts | `portfolio/content/blog/*.md` (front matter: `title`, `date`, `summary`) |
+| These docs | `portfolio/content/docs/` (new pages) and `portfolio/content/docs/index.json` (the menu) |
+| Pages and layout | `portfolio/app/routes/` |
+| Logo assets | `portfolio/public/dihlabs-*.svg`, `optz-*.svg`; generated source and prompt in `portfolio/branding/` |
+| Light/dark theme behavior | `portfolio/public/site.js`, shared layout and `ThemeToggle.tsx` |
+| Motion | `Trail.island.tsx`, `app/lib/trail-scene.ts` and `trail-geometry.ts` |
+| Colors and fonts | `portfolio/app/styles.css`, `fonts` in `portfolio/optz.config.ts` |
+
+Docs pages can also be any Markdown file in the repository: `index.json` points at
+`framework/README.md`, `docs/NATIVE.md` and others, and links between them are rewritten to
+`/docs/...` (or to GitHub, for files that aren't docs pages).
+
+## Make an app inside the repository
+
+```sh
+bun framework/src/cli.ts create apps/my-app                       # or: --template fullstack
+cd apps/my-app && bun install && bun run dev
+```
+
+Apps under `apps/` depend on the workspace copy of the framework, so framework changes show up
+without publishing.
+
 ## Checks before a commit
 
 | check | command | covers |

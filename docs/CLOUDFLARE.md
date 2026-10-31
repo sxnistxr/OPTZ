@@ -4,6 +4,19 @@ OPTZ already has static files in memory, ISR, tagged server-function caching and
 response cache. The CDN integration extends those primitives; it does not add a second page
 cache or a new browser runtime.
 
+## From a mutation to fresh content
+
+```flow
+title: Revalidation coordinates the origin cache and an optional CDN purge hook.
+Mutation | Save the change | Then call `revalidatePath` or `revalidateTag`
+OPTZ* | Revalidate locally | Invalidate the matching origin cache entries
+Cloudflare | Run the purge hook | Target the configured paths or tags
+```
+
+Configure both the hook and your zone's cache rules. A CDN failure does not undo the application
+mutation; use a durable retry job if invalidation must be delivered. Personalized responses bypass
+shared caching before this flow applies.
+
 ## Existing cache policy
 
 Use a route's `cache` policy for intentional public dynamic/API responses, `revalidate` for

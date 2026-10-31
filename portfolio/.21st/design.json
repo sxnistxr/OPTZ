@@ -17,15 +17,28 @@
       "app/components/DihLabsLogo.tsx",
       "app/components/ThemeToggle.tsx",
       "app/routes/_layout.tsx",
-      "app/routes/docs"
+      "app/routes/docs",
+      "app/components/DocPreviews.tsx",
+      "app/components/CopyPage.island.tsx",
+      "app/components/DocsTools.island.tsx",
+      "app/components/OptzFeatures.tsx",
+      "app/components/HtmlSpotlight.tsx",
+      "app/components/HtmlSpotlight.island.tsx",
+      "app/routes/optz.tsx",
+      "app/components/OptzIllustrations.tsx"
     ],
     "assets": [
       "public/optz-logo.svg",
-      "public/optz-mark.svg"
+      "public/optz-mark.svg",
+      "public/images/optz",
+      "branding/previews",
+      "branding/illustrations"
     ],
     "instructions": [
       "DESIGN.md",
-      "PRODUCT.md"
+      "PRODUCT.md",
+      ".impeccable/surfaces/app-routes-optz-tsx.md",
+      "branding/optz-bento/README.md"
     ]
   },
   "design": {
@@ -43,13 +56,21 @@
       "button"
     ],
     "preferredPrimitives": [],
-    "patterns": []
+    "patterns": [
+      "OPTZ overview: four asymmetric panels with original inline SVG diagrams, selectable route code/output, and a labeled notes capture; six open capability entries and the live native-disclosure HTML spotlight follow."
+    ]
   },
   "constraints": {
-    "must": [],
+    "must": [
+      "Keep the OPTZ overview extension scoped: 18px supporting prose, 36–56px/500 section titles, 24px feature titles (22px at tablet widths), 20px bento corners, 24px gaps, 28–40px responsive side insets, and --optz-panel #f4f4f5 light/#18181b dark. Shared documentation prose remains 16px."
+    ],
     "avoid": []
   },
   "decisions": [
+    {
+      "name": "Documentation discovery and learning",
+      "description": "Use illustrated start-here, build-more and module cards, a seven-chapter reading-list tutorial and the complete docs directory. Previews are theme-aware HTML examples with fully visible text. Articles retain 16px prose, add chapter progress, filename code toolbars, callouts, responsive semantic diagrams, nested contents tracking, update dates and Markdown copying. Prerender Markdown at /api/docs-markdown/<slug>, separately from the /api/docs search index."
+    },
     "Docs follow the user-pinned Next.js, Angular, Linear, shadcn and Raycast references: 76px sticky shared masthead with search, grouped sidebar, 16px prose, contents rail and copyable framed code blocks.",
     "OPTZ uses a slanted speed mark and geometric SVG wordmark. Yellow remains exclusive to artwork.",
     "Trails continue ambient motion after arrival, with pause, reduced motion, visibility suspension and an understated request control.",
@@ -60,6 +81,14 @@
     {
       "name": "Documentation evidence and code",
       "description": "Use accessible CSS-icon support states, zero-based benchmark charts sourced from checked-in JSON with provenance and exact-value disclosures, and build-time Shiki VS Code Light+/Dark+ syntax colors. Syntax token colors are confined to code; charts remain monochrome."
+    },
+    {
+      "name": "OPTZ overview and HTML spotlight",
+      "description": "Existing-world, code-led revision from supplied references #1, #9, #10, #12, and #5. Preserve the speed hero and shared white/charcoal identity. Four 20px-radius panels use 7/5 then 5/7 spans, 24px gaps, 40px copy insets; at 960px or below use equal columns/32px insets, at 720px or below stack with 28px side insets. Six open capabilities use three/two/one columns. Overview-only section spacing is clamp(5rem,9vw,8.5rem), fixed to 5rem at 600px or below. The facts strip becomes three reading rows at 600px or below. Render the article fragment, source, and UTF-8 bytes from one string. Visible island hydration adds a 220px-diameter pointer reveal with a softened 24px yellow byte ring, one input-coalesced frame, and no idle loop. Preserve the native keyboard/no-JavaScript source disclosure and scrollable source. Use a 480px viewport, 400px at 600px or below; article prose is 18px Newsreader, 17px on phones, and source is 13px. Payload and benchmark scope remain distinct and read checked-in JSON."
+    },
+    {
+      "name": "OPTZ artwork plates and HTML examples",
+      "description": "The user rejected the dimensional imagegen replacements and clarified that the old illustrations must be the base. Restore the actual PrebuiltIllustration and IslandsIllustration in app/components/OptzIllustrations.tsx as authoritative inline SVG: preserve flat line style, technical geometry, file/browser labels, semantic theme classes, and yellow details. Only view-box framing changes (84 26 360 270 and 56 30 368 260); standalone exports retain 480x320. Generated illustration project copies, shipping WebPs, and prompt files were removed. The only raster plates are the fictional notes workspace captures, captioned Example notes workspace: two theme-paired WebPs total 91936 bytes with 1100x760 intrinsic dimensions/lazy loading. Sample HTML/CSS and JPGs remain in branding/previews; branding/optz-bento/README.md records current visual sources. Route code/output and meaningful controls remain HTML; no bento JavaScript is added. Fresh review is pending; user approval of the correction is not recorded."
     }
   ],
   "evidence": [
@@ -94,7 +123,11 @@
     {
       "fact": "decisions:dihlabs-identity",
       "source": "app/components/DihLabsLogo.tsx"
+    },
+    {
+      "fact": "decisions:optz-spacious-overview",
+      "source": "app/components/OptzFeatures.tsx; app/components/OptzIllustrations.tsx; app/routes/optz.tsx; app/styles.css; .impeccable/surfaces/app-routes-optz-tsx.md; branding/optz-bento/README.md; branding/previews/README.md; .impeccable/review/original-art-restored/"
     }
   ],
-  "generatedAt": "2026-10-29T21:25:47.119633Z"
+  "generatedAt": "2026-10-31T15:45:30.065266Z"
 }

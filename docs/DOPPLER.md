@@ -4,6 +4,18 @@ OPTZ treats Doppler as a startup environment source. Your app declares the varia
 normal `optz dev`, `build`, `start`, `check` and `export` load and validate them before importing
 the application config. No secrets SDK, polling or environment fetch runs on the request path.
 
+## What happens at startup
+
+```flow
+title: Resolve and validate the environment once, before application code runs.
+Provider | `doppler run` | Inject the selected configuration
+Contract* | Validate the manifest | Required names, types, enums and defaults
+Application | Import the config | Start with the validated environment
+```
+
+Private values stay in the server process. Only names with both a `PUBLIC_` prefix and
+`"public": true` enter the generated browser snapshot, which is fixed when you build.
+
 ## Start with a contract
 
 Install the [official Doppler CLI](https://docs.doppler.com/docs/cli) on the machine where you

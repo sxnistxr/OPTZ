@@ -3,6 +3,18 @@
 `@sxnistxr/optz-status` provides component states, incident timelines and an authenticated update API.
 Its public view is plain server-renderable React: no polling, status SDK or island is required.
 
+## From an update to a public page
+
+```flow
+title: Publish explicit service states through a protected write path and a public read path.
+Admin | Submit an update | Check the origin and administrator role
+Store* | Record the change | Components and incident history in one snapshot
+Visitor | Read server HTML | A dynamic loader supplies the latest snapshot
+```
+
+The view does not probe services or refresh itself. Update states through the protected API, and
+let readers reload the page to see a new snapshot. Use a separate monitoring source for measured uptime.
+
 ## Store and render
 
 ```tsx

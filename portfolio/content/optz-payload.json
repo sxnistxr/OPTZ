@@ -1,0 +1,8 @@
+{
+  "path": "/blog/sqlite-was-reparsing-my-query",
+  "measuredAt": "2026-10-31",
+  "htmlBytes": 18622,
+  "htmlGzipBytes": 5506,
+  "javascriptGzipBytes": 3555,
+  "scope": "Production blog page. Gzip; HTML and external scripts only. Excludes CSS, fonts, the OPTZ hero, and the spotlight demo."
+}

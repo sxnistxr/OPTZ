@@ -11,6 +11,7 @@ import sections from "$content/docs/index.json";
 import site from "./site";
 import { highlightCode } from "./docs-syntax";
 import { renderDocsChart } from "./docs-charts";
+import { diagrams } from "./docs-diagrams";
 
 const repoRoot = join(import.meta.dir, "../../..");
 
@@ -21,6 +22,10 @@ export interface DocMeta {
   description: string;
   /** Path in the repository, e.g. "framework/README.md". */
   file: string;
+  /** A short label beside the title in navigation, e.g. "New". */
+  badge?: string;
+  /** Pages in a tutorial section: which chapter this is. */
+  chapter?: { number: number; of: number };
 }
 export interface TocEntry {
   id: string;
@@ -30,6 +35,8 @@ export interface TocEntry {
 export interface Doc extends DocMeta {
   html: string;
   toc: TocEntry[];
+  /** When the source file last changed, from git (ISO date), if the history is available. */
+  updated?: string;
   prev?: DocMeta;
   next?: DocMeta;
 }
@@ -40,9 +47,17 @@ interface Entry {
   title?: string;
   /** Overrides the first paragraph as the page's description. */
   description?: string;
+  badge?: string;
+}
+interface Section {
+  section: string;
+  /** "tutorial": the pages are chapters, read in order. */
+  kind?: "tutorial";
+  pages: Entry[];
 }
 
-const entries = (sections as { section: string; pages: Entry[] }[]).flatMap((s) => s.pages.map((p) => ({ ...p, section: s.section })));
+const sectionList = sections as Section[];
+const entries = sectionList.flatMap((s) => s.pages.map((p, i) => ({ ...p, section: s.section, chapter: s.kind === "tutorial" ? { number: i + 1, of: s.pages.length } : undefined })));
 const bySlug = new Map(entries.map((e) => [e.slug, e]));
 const byFile = new Map(entries.map((e) => [e.file, e]));
 
@@ -116,12 +131,21 @@ export function renderDocBody(e: Entry, body: string): { html: string; toc: TocE
         return `<a href="${esc(href)}"${t.title ? ` title="${esc(t.title)}"` : ""}${external ? ' rel="noopener"' : ""}>${this.parser.parseInline(t.tokens)}</a>`;
       },
       code(t: Tokens.Code) {
-        const lang = (t.lang ?? "").split(/\s/)[0];
-        if (lang === "stats") {
-          const chart = renderDocsChart(t.text.trim());
-          if (chart) { charts.push(chart); return `<div id="docs-chart-slot-${charts.length - 1}"></div>`; }
-        }
-        return `<pre${lang ? ` data-lang="${esc(lang)}"` : ""}><code>${highlightCode(t.text, lang)}</code></pre>\n`;
+        const info = t.lang ?? "";
+        const lang = info.split(/\s/)[0];
+        const figure = lang === "stats" ? renderDocsChart(t.text.trim()) : diagrams[lang]?.(t.text);
+        if (figure) { charts.push(figure); return `<div id="docs-chart-slot-${charts.length - 1}"></div>`; }
+        // ```tsx title="app/routes/index.tsx": the file name heads the block instead of the language.
+        const title = info.match(/\btitle="([^"]+)"/)?.[1];
+        return `<pre${lang ? ` data-lang="${esc(lang)}"` : ""}${title ? ` data-title="${esc(title)}"` : ""}><code>${highlightCode(t.text, lang)}</code></pre>\n`;
+      },
+      // GitHub's alert syntax, > [!NOTE] … , becomes a callout; other quotes stay quotes.
+      blockquote(this: { parser: { parse(t: Tokens.Generic[]): string } }, t: Tokens.Blockquote) {
+        const alert = t.text.match(/^\[!(NOTE|TIP|IMPORTANT|WARNING|CAUTION)\][ \t]*\n?/i);
+        if (!alert) return `<blockquote>${this.parser.parse(t.tokens)}</blockquote>\n`;
+        const kind = alert[1].toLowerCase();
+        const inner = md.parse(t.text.slice(alert[0].length), { async: false }) as string;
+        return `<div class="callout callout-${kind}" role="note"><p class="callout-title">${kind[0].toUpperCase()}${kind.slice(1)}</p>${inner}</div>\n`;
       },
       table(this: { parser: { parseInline(t: Tokens.Generic[]): string } }, t: Tokens.Table) {
         const cell = (c: Tokens.TableCell, tag: "th" | "td", i: number) => {
@@ -144,22 +168,46 @@ export function renderDocBody(e: Entry, body: string): { html: string; toc: TocE
       },
     },
   });
-  // Only our data-backed chart renderer can emit SVG; arbitrary Markdown HTML remains sanitized.
+  // Only our chart and diagram renderers can emit markup that skips sanitizing; they escape all text.
   let html = safeHtml(md.parse(body, { async: false }) as string);
   charts.forEach((chart, i) => { html = html.replace(`<div id="docs-chart-slot-${i}"></div>`, () => chart); });
   return { html, toc };
 }
 
-export function docSections(): { section: string; pages: DocMeta[] }[] {
-  return (sections as { section: string; pages: Entry[] }[]).map((s) => ({
+export function docSections(): { section: string; kind?: "tutorial"; pages: DocMeta[] }[] {
+  return sectionList.map((s) => ({
     section: s.section,
-    pages: s.pages.map((p) => meta({ ...p, section: s.section })),
+    kind: s.kind,
+    pages: s.pages.map((p) => meta(bySlug.get(p.slug)!)),
   }));
 }
 
-function meta(e: Entry & { section: string }): DocMeta {
+type IndexedEntry = (typeof entries)[number];
+
+function meta(e: IndexedEntry): DocMeta {
   const { title, description } = source(e);
-  return { slug: e.slug, title, section: e.section, description, file: e.file };
+  return { slug: e.slug, title, section: e.section, description, file: e.file, ...(e.badge ? { badge: e.badge } : {}), ...(e.chapter ? { chapter: e.chapter } : {}) };
+}
+
+const updatedDates = new Map<string, string | undefined>();
+/** The last commit that touched `file`, read once per build. Builds without git history skip it. */
+function lastUpdated(file: string): string | undefined {
+  if (!updatedDates.has(file)) {
+    try {
+      const run = Bun.spawnSync(["git", "log", "-1", "--format=%cs", "--", file], { cwd: repoRoot, stderr: "ignore" });
+      const date = run.success ? run.stdout.toString().trim() : "";
+      updatedDates.set(file, /^\d{4}-\d{2}-\d{2}$/.test(date) ? date : undefined);
+    } catch {
+      updatedDates.set(file, undefined);
+    }
+  }
+  return updatedDates.get(file);
+}
+
+/** The page's Markdown source, as written, for "Copy page" and language models. */
+export function docMarkdown(slug: string): string | undefined {
+  const e = bySlug.get(slug);
+  return e ? readFileSync(join(repoRoot, e.file), "utf8") : undefined;
 }
 
 export const listDocs = (): DocMeta[] => entries.map(meta);
@@ -171,7 +219,8 @@ export function getDoc(slug: string): Doc | undefined {
   const { html, toc } = renderDocBody(e, body);
   const all = listDocs();
   const i = all.findIndex((d) => d.slug === slug);
-  return { slug, title, section: e.section, description, file: e.file, html, toc, prev: all[i - 1], next: all[i + 1] };
+  const updated = lastUpdated(e.file);
+  return { ...meta(e), title, description, html, toc, ...(updated ? { updated } : {}), prev: all[i - 1], next: all[i + 1] };
 }
 
 /** What the search box searches: titles, sections, descriptions and headings. */

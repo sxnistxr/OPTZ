@@ -4,6 +4,18 @@ OPTZ does not wrap your application's query language or own its connection pool.
 Drizzle, Kysely, TypeORM or native clients in server-only modules. `@sxnistxr/optz-db` adds small session
 store adapters where serialization, expiry units and parameter binding have real value.
 
+## Where the adapter fits
+
+```flow
+title: The session adapter bridges OPTZ sessions and the database client you already use.
+Sessions | `createSessions` | Cookies, rotation and expiry checks
+Adapter* | `SessionStore` | Hashed keys and serialized session rows
+Database | Your ORM or driver | Connections, queries and migrations
+```
+
+Use your ORM directly for application data such as posts or orders. Choose a session adapter only
+when connecting `createSessions` to that database; Better Auth uses its own database adapter.
+
 ## Shared rules
 
 - Keep clients in `.server.ts` / `app/lib/server/`, reuse one pool per process, and close it in

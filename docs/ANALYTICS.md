@@ -4,6 +4,18 @@
 cohorts. It adds no tracking code by default. The optional browser helper sends nothing until
 explicit consent and uses an in-memory identity, without cookies or local/session storage.
 
+## How an event is accepted
+
+```flow
+title: Browser analytics starts with consent and ends with a validated local event.
+Consent* | Opt in | DNT and GPC still take precedence
+Ingestion | Validate the event | Same origin, consent, identity and declared schema
+Storage | Save locally | Hash the subject and apply retention
+```
+
+An optional PostHog adapter receives accepted events after local capture. Its delivery is separate
+from the local write; configure the injected client's flushing and failure handling for your runtime.
+
 ## Declare the allowed events
 
 ```ts

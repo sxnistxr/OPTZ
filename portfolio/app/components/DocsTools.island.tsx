@@ -13,6 +13,11 @@ export default function DocsTools() {
       const language = document.createElement("span");
       const lang = pre.dataset.lang || "text";
       language.textContent = ({ sh: "Shell", bash: "Shell", ts: "TypeScript", tsx: "TSX", js: "JavaScript", json: "JSON", sql: "SQL", rust: "Rust", yaml: "YAML", toml: "TOML", html: "HTML", css: "CSS", text: "Plain text" } as Record<string, string>)[lang] || lang;
+      // A block with a file name shows the name; the language is obvious from it.
+      if (pre.dataset.title) {
+        language.textContent = pre.dataset.title;
+        language.className = "code-toolbar-title";
+      }
       toolbar.append(language);
       const button = document.createElement("button");
       button.type = "button";
@@ -37,7 +42,7 @@ export default function DocsTools() {
       pre.prepend(toolbar);
       cleanups.push(() => { button.removeEventListener("click", copy); toolbar.remove(); });
     }
-    const headings = Array.from(document.querySelectorAll<HTMLElement>(".prose-docs h2[id]"));
+    const headings = Array.from(document.querySelectorAll<HTMLElement>(".prose-docs :is(h2, h3)[id]"));
     const links = Array.from(document.querySelectorAll<HTMLAnchorElement>(".toc a"));
     let frame = 0;
     const update = () => {

@@ -44,7 +44,9 @@ function Menu({ pathname }: { pathname: string }) {
                     aria-current={here ? "page" : undefined}
                     className="docs-nav-link"
                   >
-                    {p.title}
+                    {p.chapter && <span className="docs-nav-number" aria-hidden="true">{p.chapter.number}</span>}
+                    <span>{p.title}</span>
+                    {p.badge && <span className="docs-nav-badge">{p.badge}</span>}
                   </Link>
                 </li>
               );

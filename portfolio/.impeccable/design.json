@@ -1,6 +1,6 @@
 {
   "schemaVersion": 2,
-  "generatedAt": "2026-10-29T21:25:47.119633Z",
+  "generatedAt": "2026-10-31T15:45:30.065266Z",
   "title": "Design System: DihLabs / OPTZ",
   "extensions": {
     "colorMeta": {
@@ -311,6 +311,36 @@
           "oklch(84% 0.0000 0.00)",
           "oklch(95% 0.0000 0.00)"
         ]
+      },
+      "optz-panel": {
+        "role": "neutral",
+        "displayName": "OPTZ Panel",
+        "canonical": "#f4f4f5",
+        "tonalRamp": [
+          "oklch(15% 0.0000 0.00)",
+          "oklch(25% 0.0000 0.00)",
+          "oklch(36% 0.0000 0.00)",
+          "oklch(48% 0.0000 0.00)",
+          "oklch(60% 0.0000 0.00)",
+          "oklch(72% 0.0000 0.00)",
+          "oklch(84% 0.0000 0.00)",
+          "oklch(95% 0.0000 0.00)"
+        ]
+      },
+      "dark-optz-panel": {
+        "role": "neutral",
+        "displayName": "Dark OPTZ Panel",
+        "canonical": "#18181b",
+        "tonalRamp": [
+          "oklch(15% 0.0000 0.00)",
+          "oklch(25% 0.0000 0.00)",
+          "oklch(36% 0.0000 0.00)",
+          "oklch(48% 0.0000 0.00)",
+          "oklch(60% 0.0000 0.00)",
+          "oklch(72% 0.0000 0.00)",
+          "oklch(84% 0.0000 0.00)",
+          "oklch(95% 0.0000 0.00)"
+        ]
       }
     },
     "typographyMeta": {
@@ -320,11 +350,11 @@
       },
       "display-optz": {
         "displayName": "Display Optz",
-        "purpose": "OPTZ hero; 3.2rem below 600px."
+        "purpose": "OPTZ hero; shared display size/weight with -0.04em overview tracking."
       },
       "headline": {
         "displayName": "Headline",
-        "purpose": "Section and closing headings."
+        "purpose": "Shared section and closing headings; the OPTZ overview uses optz-headline."
       },
       "page-title": {
         "displayName": "Page Title",
@@ -352,11 +382,35 @@
       },
       "docs-title": {
         "displayName": "Documentation title",
-        "purpose": "40px docs page heading; 32px at 800px and below."
+        "purpose": "Fluid 36–44px documentation page heading at weight 500."
       },
       "docs-navigation": {
         "displayName": "Documentation navigation",
         "purpose": "Compact 13px site links and grouped documentation navigation."
+      },
+      "optz-headline": {
+        "displayName": "OPTZ section heading",
+        "purpose": "Overview section/closing headings, 36–56px, weight 500, balanced lines."
+      },
+      "optz-feature-title": {
+        "displayName": "OPTZ feature title",
+        "purpose": "Four large bento titles: 24px desktop and at 720px or below, 22px from 721–960px."
+      },
+      "optz-intro": {
+        "displayName": "OPTZ introduction",
+        "purpose": "Feature-section introduction, 20px at 1.65; 18px at 960px or below. The hero independently scales 18–20px."
+      },
+      "optz-reading": {
+        "displayName": "OPTZ supporting prose",
+        "purpose": "Overview supporting copy only: 18px at 1.65 in bento cards, 1.7 in open capability/foundation entries, 1.75 in reading sections; 35–47ch measures. Documentation remains 16px."
+      },
+      "spotlight-body": {
+        "displayName": "Source-demo article",
+        "purpose": "Newsreader article preview: 18px at 1.75, 17px at 600px or below."
+      },
+      "spotlight-code": {
+        "displayName": "Source-demo HTML",
+        "purpose": "Actual article source: 13px at 1.8. Typed-route code also uses 13px with its own 1.9 line-height."
       }
     },
     "shadows": [
@@ -410,7 +464,12 @@
       {
         "name": "theme-artwork",
         "value": "light: brightness(.62) saturate(1.3); dark: none",
-        "purpose": "Keep yellow artwork legible against the active global theme."
+        "purpose": "Keep Three.js yellow artwork legible against the active theme. Original inline OPTZ diagrams use semantic theme classes directly; only the notes capture uses separate light/dark raster editions."
+      },
+      {
+        "name": "spotlight-reveal",
+        "value": "--spot-radius 250ms ease-out",
+        "purpose": "Input-driven source reveal only; no idle loop. Reduced motion removes the radius transition and freezes the byte-grid offset."
       }
     ],
     "breakpoints": [
@@ -441,6 +500,14 @@
       {
         "name": "header-actions-max",
         "value": "1100px"
+      },
+      {
+        "name": "optz-bento-equal-max",
+        "value": "960px"
+      },
+      {
+        "name": "optz-bento-stack-max",
+        "value": "720px"
       }
     ]
   },
@@ -490,7 +557,7 @@
       "kind": "card",
       "refersTo": "request-path",
       "description": "Quiet architecture container with distinct build-time and request stages.",
-      "html": "<div class=\"ds-path\"><div class=\"ds-stage\"><span class=\"ds-stage-label\">At build time</span><p>React pages</p><p>Render \u00b7 compress \u00b7 hash</p></div><div class=\"ds-stage\"><span class=\"ds-stage-label\">On request</span><p><code>GET /</code><svg width=\"18\" height=\"18\" viewBox=\"0 0 20 20\" fill=\"none\" stroke=\"currentColor\" aria-hidden=\"true\"><path d=\"M4 10h12M11 5l5 5-5 5\"/></svg><span>Memory lookup</span><svg width=\"18\" height=\"18\" viewBox=\"0 0 20 20\" fill=\"none\" stroke=\"currentColor\" aria-hidden=\"true\"><path d=\"M4 10h12M11 5l5 5-5 5\"/></svg><code>200 OK</code></p></div><span class=\"ds-path-caption\">Prepared once. Ready when it matters.</span></div>",
+      "html": "<div class=\"ds-path\"><div class=\"ds-stage\"><span class=\"ds-stage-label\">At build time</span><p>React pages</p><p>Render \u00b7 compress · hash</p></div><div class=\"ds-stage\"><span class=\"ds-stage-label\">On request</span><p><code>GET /</code><svg width=\"18\" height=\"18\" viewBox=\"0 0 20 20\" fill=\"none\" stroke=\"currentColor\" aria-hidden=\"true\"><path d=\"M4 10h12M11 5l5 5-5 5\"/></svg><span>Memory lookup</span><svg width=\"18\" height=\"18\" viewBox=\"0 0 20 20\" fill=\"none\" stroke=\"currentColor\" aria-hidden=\"true\"><path d=\"M4 10h12M11 5l5 5-5 5\"/></svg><code>200 OK</code></p></div><span class=\"ds-path-caption\">Prepared once. Ready when it matters.</span></div>",
       "css": ".ds-path{padding:1.5rem 2rem;background:var(--color-panel,#f4f4f5);border-radius:12px;font-family:var(--font-sans, \"Schibsted Grotesk\", ui-sans-serif, system-ui, sans-serif);}.ds-stage-label,.ds-path-caption{font-size:.75rem;color:var(--color-muted,#68686f)}.ds-stage p{display:flex;align-items:center;flex-wrap:wrap;gap:.75rem;margin:.8rem 0 0;color:var(--color-ink,#18181b);font-size:.9rem;line-height:1.5}.ds-stage code{font-family:var(--font-mono,ui-monospace,monospace)}.ds-stage+.ds-stage{margin-top:1.5rem;padding-top:1rem;border-top:1px solid var(--color-rule,#e5e5e8)}.ds-path-caption{display:block;margin-top:1.5rem}@media(max-width:600px){.ds-path{padding:1.25rem}.ds-stage p{font-size:.75rem;gap:.5rem}}"
     },
     {
@@ -522,25 +589,44 @@
       "description": "Global destination-theme icon button. Production follows the device until an explicit choice is stored and synchronizes browser tabs.",
       "html": "<button class=\"ds-theme\" type=\"button\" aria-label=\"Switch to dark mode\"><svg viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.5\" aria-hidden=\"true\"><path d=\"M20.5 14A8.7 8.7 0 0 1 10 3.5 8.7 8.7 0 1 0 20.5 14Z\"/></svg></button>",
       "css": ".ds-theme{display:inline-flex;align-items:center;justify-content:center;width:36px;height:36px;border:0;border-radius:6px;background:transparent;color:var(--color-muted,#68686f);cursor:pointer}.ds-theme svg{width:18px;height:18px}.ds-theme:hover{background:var(--color-panel,#f4f4f5);color:var(--color-ink,#18181b)}.ds-theme:focus-visible{outline:2px solid var(--color-focus,#71717a);outline-offset:3px}"
+    },
+    {
+      "name": "OPTZ typed-route panel",
+      "kind": "card",
+      "refersTo": "optz-product-card",
+      "description": "The HTML/code member of the spacious OPTZ bento. Every panel previews in an inset HTML window: build output, a page with one island, this route, and a labeled notes capture. All meaningful copy and actions remain HTML.",
+      "html": "<article class=\"ds-optz-card\"><div class=\"ds-optz-copy\"><h3>From a file to a working page.</h3><p>Routes, layouts, and APIs follow your files. Types connect the pieces as you build.</p><a href=\"/docs/framework#pages-approutes\">Find your way around <svg viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.5\" aria-hidden=\"true\"><path d=\"M5 12h14m-6-6 6 6-6 6\"/></svg></a></div><div class=\"ds-optz-route\"><div class=\"ds-optz-tabs\"><span>app / routes</span><span>hello.tsx</span></div><pre><code>export default function Hello() {\n  return (\n    &lt;h1&gt;Hello, your next idea.&lt;/h1&gt;\n  );\n}</code></pre><div class=\"ds-optz-output\"><span>/hello</span><strong>Hello, your next idea.</strong><small>Types checked. Ready to serve.</small></div></div></article>",
+      "css": ".ds-optz-card{min-width:0;min-height:580px;overflow:hidden;background:var(--optz-panel,light-dark(#f4f4f5,#18181b));color:var(--color-ink,#18181b);border:1px solid var(--color-rule,#e5e5e8);border-radius:20px;display:flex;flex-direction:column;font-family:var(--font-sans,\"Schibsted Grotesk\",ui-sans-serif,system-ui,sans-serif)}.ds-optz-copy{padding:2.5rem 2.5rem 0}.ds-optz-copy h3{margin:0;font-size:1.5rem;font-weight:500;line-height:1.25;letter-spacing:-.025em;text-wrap:balance}.ds-optz-copy p{max-width:47ch;margin:.9rem 0 0;color:var(--color-muted,#68686f);font-size:1.125rem;line-height:1.65}.ds-optz-copy a{display:inline-flex;align-items:center;gap:.6rem;min-height:44px;margin-top:.9rem;color:inherit;font-size:.9375rem;text-decoration:none}.ds-optz-copy a svg{width:16px;height:16px}.ds-optz-copy a:hover{text-decoration:underline;text-underline-offset:4px}.ds-optz-copy a:focus-visible{outline:2px solid var(--color-focus,#71717a);outline-offset:3px;border-radius:2px}.ds-optz-route{margin:2rem 0 0 2.5rem;overflow:hidden;min-height:300px;background:var(--color-paper,#fff);border:1px solid var(--color-rule,#e5e5e8);border-right:0;border-bottom:0;border-radius:12px 0 0 0}.ds-optz-tabs{display:flex;gap:1.5rem;padding:1rem 1.25rem;border-bottom:1px solid var(--color-rule,#e5e5e8);font:.75rem var(--font-mono,ui-monospace,monospace);color:var(--color-muted,#68686f)}.ds-optz-tabs span:last-child{color:var(--color-ink,#18181b)}.ds-optz-route pre{margin:0;overflow:auto;padding:1.5rem 1.25rem;color:var(--color-code-ink,#27272a);font:.8125rem/1.9 var(--font-mono,ui-monospace,monospace)}.ds-optz-output{display:flex;flex-direction:column;gap:1rem;padding:1.25rem;border-top:1px solid var(--color-rule,#e5e5e8)}.ds-optz-output>span,.ds-optz-output small{font-size:.75rem;color:var(--color-muted,#68686f)}.ds-optz-output strong{font-size:1.3rem;font-weight:500;letter-spacing:-.025em}@media(max-width:960px){.ds-optz-card{min-height:610px}.ds-optz-copy{padding:2rem 2rem 0}.ds-optz-copy h3{font-size:1.375rem}.ds-optz-route{margin-left:2rem}}@media(max-width:720px){.ds-optz-card{min-height:580px}.ds-optz-copy{padding:2rem 1.75rem 0}.ds-optz-copy h3{font-size:1.5rem}.ds-optz-route{margin-left:1.75rem}}"
     }
   ],
   "narrative": {
     "northStar": "Curiosity, in progress.",
-    "overview": "DihLabs presents a developer's work with an immersive introduction, open space, and direct editorial lists. OPTZ shares the same monochrome world, adding a playful request character and a sense of speed. The approved composition is confident and clear; Next.js informs hierarchy without supplying the identity. Documentation draws on the user-pinned Next.js, Angular, Linear, shadcn and Raycast references for a familiar reading interface.\n\nGenerative yellow geometry is the expressive element. Interface controls, navigation, status, and technical evidence remain monochrome. DihLabs leads with development work and writing; AI, SDXL, and language-model showcases are outside its approved identity.",
+    "overview": "DihLabs presents a developer's work with an immersive introduction, open space, and direct editorial lists. OPTZ shares the same monochrome world, adding a playful request character and a sense of speed. The approved composition is confident and clear; Next.js informs hierarchy without supplying the identity. Documentation draws on the user-pinned Next.js, Angular, Linear, shadcn and Raycast references for a familiar reading interface.\n\nGenerative yellow geometry is the expressive element. The OPTZ overview uses its original flat, technical SVG line drawings and a labeled browser capture of an original example workspace. Interface controls, navigation, status, and benchmark evidence remain monochrome; the source spotlight uses a yellow byte ring as an inspection effect. DihLabs leads with development work and writing; AI, SDXL, and language-model showcases are outside its approved identity.",
     "keyCharacteristics": [
       "Large, closely tracked sans-serif headings and generous reading space.",
       "Device-aware light and dark themes across introductions, editorial content, and documentation, with restrained rules.",
-      "Yellow Three.js artwork with an arrival animation, continuous ambient motion, and deliberate replay."
+      "Yellow Three.js artwork with an arrival animation, continuous ambient motion, and deliberate replay.",
+      "On the OPTZ overview, spacious asymmetric panels, each with an inset HTML window: build output, a page with one island, a typed route, and a labeled app capture."
     ],
     "rules": [
       {
         "name": "Artwork Only",
-        "body": "Reserve yellow for the generated trails and request character. Controls, focus, status, and benchmark bars stay monochrome.",
+        "body": "Reserve yellow for the generated trails, request character, OPTZ illustration details, and the source spotlight’s byte ring. Controls, focus, status, and benchmark bars stay monochrome.",
         "section": "colors"
+      },
+      {
+        "name": "Scoped Reading",
+        "body": "Use the larger OPTZ reading and heading roles inside the overview; retain the shared reading scale on other routes.",
+        "section": "typography"
       },
       {
         "name": "Flat by Default",
         "body": "Use surface tone and thin rules to separate content. Reserve interface shadows for floating search results and the product menu.",
+        "section": "elevation"
+      },
+      {
+        "name": "Inset Window",
+        "body": "Every OPTZ bento preview is one window set into its panel's lower right corner and cropped by the panel edges: 12px upper-left radius, Paper ground, Rule top/left border, and selectable HTML content. The original line drawings stay available as standalone exports.",
         "section": "elevation"
       }
     ],
@@ -548,19 +634,44 @@
       "Do use the shared shadcn Button variants and the active surface tokens.",
       "Do preserve the visible keyboard focus, wrapped mobile navigation, and readable text measures.",
       "Do provide a pause control, respect reduced motion, and retain the deterministic SVG fallback.",
-      "Do present benchmark scope and methodology beside measured results."
+      "Do present benchmark scope and methodology beside measured results.",
+      "Do present every OPTZ bento preview as an inset HTML window; keep the original line drawings for standalone exports.",
+      "Do keep app captures theme-paired, preserve capture provenance, and label fictional workspaces as examples.",
+      "Do keep code/output selectable and use the scoped OPTZ reading, spacing, and bento roles for overview extensions."
     ],
     "donts": [
       "Don't copy Next.js branding or page composition.",
       "Don't use yellow for interface controls, status indicators, or focus rings.",
       "Don't replace developer content with an AI or SDXL showcase.",
-      "Don't turn illustrative speed into a universal performance claim or remove the motion pause control."
+      "Don't turn illustrative speed into a universal performance claim or remove the motion pause control.",
+      "Don't turn a captured example interface into a substitute for live controls or the actual HTML spotlight.",
+      "Don't replace the bento windows with dimensional or sculptural artwork."
     ]
   },
   "decisions": [
     {
+      "name": "Documentation discovery and learning",
+      "description": "Illustrated start-here, build-more and module cards use theme-aware HTML previews with complete labels. A seven-chapter reading-list tutorial adds one working feature per chapter; chapter descriptions wrap and article progress/pagers show the sequence. Articles keep 16px prose and add filename code toolbars, callouts, semantic flow/sequence/file diagrams, nested contents tracking, Git update dates and Markdown copying. Markdown uses /api/docs-markdown/<slug>, separately from the /api/docs search index."
+    },
+    {
       "name": "Documentation evidence and code",
       "description": "Use accessible CSS-icon support states, zero-based benchmark charts sourced from checked-in JSON with provenance and exact-value disclosures, and build-time Shiki VS Code Light+/Dark+ syntax colors. Syntax token colors are confined to code; charts remain monochrome."
+    },
+    {
+      "name": "OPTZ spacious overview revision",
+      "description": "Existing-world, code-led revision from supplied references #1, #9, #10, #12, and #5. Preserve the speed hero and shared white/charcoal identity. Four 20px-radius panels use 7/5 then 5/7 spans, 24px gaps, 40px copy insets; at 960px or below use equal columns/32px insets, at 720px or below stack with 28px side insets. Six open capabilities use three/two/one columns. Overview-only section spacing is clamp(5rem,9vw,8.5rem), fixed to 5rem at 600px or below. The facts strip becomes three reading rows at 600px or below."
+    },
+    {
+      "name": "OPTZ artwork plates and HTML examples",
+      "description": "The user rejected the dimensional imagegen replacements and clarified that the old illustrations must be the base. Restore the actual PrebuiltIllustration and IslandsIllustration in app/components/OptzIllustrations.tsx as authoritative inline SVG: preserve flat line style, technical geometry, file/browser labels, semantic theme classes, and yellow details. Only view-box framing changes (84 26 360 270 and 56 30 368 260); standalone exports retain 480x320. Generated illustration project copies, shipping WebPs, and prompt files were removed. The only raster plates are the fictional notes workspace captures, captioned Example notes workspace: two theme-paired WebPs total 91936 bytes with 1100x760 intrinsic dimensions/lazy loading. Sample HTML/CSS and JPGs remain in branding/previews; branding/optz-bento/README.md records current visual sources. Route code/output and meaningful controls remain HTML; no bento JavaScript is added. Fresh review is pending; user approval of the correction is not recorded."
+    },
+    {
+      "name": "HTML spotlight",
+      "description": "Render the article fragment, source, and UTF-8 bytes from one string. Visible island hydration adds a 220px-diameter pointer reveal with a softened 24px yellow byte ring, one input-coalesced frame, and no idle loop. Preserve the native keyboard/no-JavaScript source disclosure and scrollable source. Use a 480px viewport, 400px at 600px or below; article prose is 18px Newsreader, 17px on phones, and source is 13px. Payload and benchmark scope remain distinct and read checked-in JSON."
+    },
+    {
+      "name": "OPTZ bento inset windows",
+      "description": "On 2026-10-31 the user asked for the prepared-pages and islands previews to match the routing and full-stack panels. Both now use the shared inset window (.product-workspace) with HTML content: a dist/static explorer, prerendered source, and GET /hello response; and a browser page with one outlined Counter.island.tsx region. Subjects and the yellow island dot and speed streak carry over from the original drawings, which remain for standalone exports. Follow-up the same day: both are now live islands. BuildFiles switches between the HTML source and hex dumps of the real build-time .br/.gz bytes (tabs, arrow keys, fixed-height panel, editor tabs below a 32rem window); Counter counts on Add one. No raster assets added."
     }
   ]
 }

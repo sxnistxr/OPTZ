@@ -4,6 +4,24 @@
 go directly from the browser to storage; OPTZ reserves quota, signs short-lived requests and
 approves a separate immutable copy. Existing small local uploads remain `optz/storage`.
 
+## How a file reaches storage
+
+```sequence
+title: OPTZ authorizes the upload; file bytes travel directly to storage.
+Browser -> OPTZ: Initiate and reserve owner quota
+OPTZ -> Browser: Upload ID and plan
+Browser -> OPTZ: Sign a part and its checksum
+OPTZ -> Browser: Short-lived upload URL
+Browser -> Storage: PUT file bytes
+Browser -> OPTZ: Complete the upload
+OPTZ -> Storage: Verify parts and promote an immutable copy
+OPTZ -> Browser: Approved private object
+```
+
+Repeat signing and uploading for each multipart part. Approval happens only after the provider's
+metadata and sizes pass validation, along with checksums when enabled. Downloading is a separate,
+authenticated action that returns a short-lived URL.
+
 ## Compose the server
 
 The package is part of this workspace; add `"@sxnistxr/optz-uploads": "workspace:*"` to an app's

@@ -9,11 +9,47 @@
       {
         "slug": "getting-started",
         "file": "portfolio/content/docs/getting-started.md",
-        "description": "Install Bun, run this site, edit its content, and start a new optz app."
+        "description": "Create an OPTZ app, run it locally, and find your way around its files and commands.",
+        "title": "Quickstart"
       },
       {
         "slug": "why-optz",
         "file": "portfolio/content/docs/why-optz.md"
+      }
+    ]
+  },
+  {
+    "section": "Learn",
+    "kind": "tutorial",
+    "pages": [
+      {
+        "slug": "learn-create",
+        "file": "portfolio/content/docs/learn/create.md",
+        "badge": "New"
+      },
+      {
+        "slug": "learn-pages",
+        "file": "portfolio/content/docs/learn/pages.md"
+      },
+      {
+        "slug": "learn-data",
+        "file": "portfolio/content/docs/learn/data.md"
+      },
+      {
+        "slug": "learn-islands",
+        "file": "portfolio/content/docs/learn/islands.md"
+      },
+      {
+        "slug": "learn-actions",
+        "file": "portfolio/content/docs/learn/actions.md"
+      },
+      {
+        "slug": "learn-api",
+        "file": "portfolio/content/docs/learn/api.md"
+      },
+      {
+        "slug": "learn-deploy",
+        "file": "portfolio/content/docs/learn/deploy.md"
       }
     ]
   },
@@ -123,6 +159,10 @@
   {
     "section": "How it's made",
     "pages": [
+      {
+        "slug": "html-spotlight",
+        "file": "portfolio/content/docs/html-spotlight.md"
+      },
       {
         "slug": "architecture",
         "file": "portfolio/content/docs/architecture.md"

@@ -18,7 +18,7 @@ export function safeHtml(html: string): string {
       if (!tags.has(tag)) return;
       const attributes: string[] = [];
       for (const [name, value] of Object.entries(attrs)) {
-        const plain = ["id", "class", "title", "role", "aria-label", "aria-hidden"].includes(name) || (tag === "div" && name === "tabindex" && value === "0") || (tag === "img" && ["alt", "width", "height", "loading"].includes(name)) || (["th", "td"].includes(tag) && ["colspan", "rowspan", "data-align", "scope"].includes(name)) || (tag === "pre" && name === "data-lang");
+        const plain = ["id", "class", "title", "role", "aria-label", "aria-hidden"].includes(name) || (tag === "div" && name === "tabindex" && value === "0") || (tag === "img" && ["alt", "width", "height", "loading"].includes(name)) || (["th", "td"].includes(tag) && ["colspan", "rowspan", "data-align", "scope"].includes(name)) || (tag === "pre" && (name === "data-lang" || name === "data-title"));
         const url = (tag === "a" && name === "href") || (tag === "img" && name === "src");
         if (plain || (url && safeUrl(value, tag === "img"))) attributes.push(` ${name}="${esc(value)}"`);
       }

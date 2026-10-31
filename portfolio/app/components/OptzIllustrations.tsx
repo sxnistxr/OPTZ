@@ -3,16 +3,40 @@
  * light and dark mode, and decorative: the heading beside each one says what it shows.
  */
 
+type IllustrationProps = { viewBox?: string; depth?: boolean };
+
+/** A shallow interface bevel; the original diagram geometry remains the source. */
+function DepthDefinitions({ id }: { id: string }) {
+  return <>
+    <linearGradient id={`${id}-face`} x1="0" y1="0" x2=".8" y2="1">
+      <stop stopColor="var(--ill-face-top)" /><stop offset="1" stopColor="var(--ill-face-bottom)" />
+    </linearGradient>
+    <linearGradient id={`${id}-edge`} x1="0" y1="0" x2=".35" y2="1">
+      <stop stopColor="var(--ill-edge-top)" /><stop offset=".45" stopColor="var(--ill-edge-middle)" /><stop offset="1" stopColor="var(--ill-edge-bottom)" />
+    </linearGradient>
+    <filter id={`${id}-shadow`} x="-30%" y="-30%" width="160%" height="175%" colorInterpolationFilters="sRGB">
+      <feDropShadow dx="0" dy="6" stdDeviation="6" floodColor="var(--ill-shadow)" floodOpacity="var(--ill-shadow-opacity)" />
+    </filter>
+  </>;
+}
+
 /** Pages are rendered once, then kept as ready responses: the HTML and its compressed copies. */
-export function PrebuiltIllustration() {
+export function PrebuiltIllustration({ viewBox = "0 0 480 320", depth = false }: IllustrationProps = {}) {
   const cards = [
     { x: 236, y: 38, label: "page.html.gz" },
     { x: 168, y: 94, label: "page.html.br" },
     { x: 100, y: 150, label: "page.html", front: true },
   ];
-  return <svg className="illustration" viewBox="0 0 480 320" aria-hidden="true">
+  return <svg className={`illustration${depth ? " illustration-depth" : ""}`} viewBox={viewBox} aria-hidden="true">
+    {depth && <>
+      <defs><DepthDefinitions id="ill-responses" /></defs>
+      <g className="ill-trace"><path d="M331 6v20q0 12-12 12h-56" /><path d="M164 280v12q0 12 12 12h172q12 0 12 12" /></g>
+    </>}
     {cards.map((c) => <g key={c.label}>
-      <rect className={c.front ? "ill-card ill-card-front" : "ill-card"} x={c.x} y={c.y} width="190" height="130" rx="5" />
+      <g filter={depth ? "url(#ill-responses-shadow)" : undefined}>
+        <rect className={`ill-card${c.front ? " ill-card-front" : ""}${depth ? " ill-response-face" : ""}`} x={c.x} y={c.y} width="190" height="130" rx={depth ? 9 : 5} />
+        {depth && <rect className="ill-face-highlight" x={c.x + 1.5} y={c.y + 1.5} width="187" height="127" rx="7.5" />}
+      </g>
       <text className={c.front ? "ill-label ill-label-ink" : "ill-label"} x={c.x + 176} y={c.y + 20} textAnchor="end">{c.label}</text>
       <rect className={c.front ? "ill-ink" : "ill-soft"} x={c.x + 16} y={c.y + 36} width="72" height="8" rx="2" />
       {c.front && [150, 128, 142].map((w, i) => <rect key={i} className="ill-soft" x={c.x + 16} y={c.y + 58 + i * 14} width={w} height="5" rx="2" />)}
@@ -25,23 +49,31 @@ export function PrebuiltIllustration() {
 }
 
 /** HTML by default: the page is static, and only the component marked as an island ships JavaScript. */
-export function IslandsIllustration() {
+export function IslandsIllustration({ viewBox = "0 0 480 320", depth = false }: IllustrationProps = {}) {
   const blocks = [[172, 106, 108, 70], [288, 106, 108, 70], [172, 184, 108, 76]];
-  return <svg className="illustration" viewBox="0 0 480 320" aria-hidden="true">
+  return <svg className={`illustration${depth ? " illustration-depth" : ""}`} viewBox={viewBox} aria-hidden="true">
     <defs>
+      {depth && <DepthDefinitions id="ill-browser" />}
       <pattern id="ill-grid" width="24" height="24" patternUnits="userSpaceOnUse"><path d="M24 0H0v24" className="ill-gridline" /></pattern>
       <radialGradient id="ill-grid-fade"><stop offset=".35" stopColor="#fff" /><stop offset="1" stopColor="#fff" stopOpacity="0" /></radialGradient>
       <mask id="ill-grid-mask"><rect width="480" height="320" fill="url(#ill-grid-fade)" /></mask>
     </defs>
     <rect width="480" height="320" fill="url(#ill-grid)" mask="url(#ill-grid-mask)" />
-    <rect className="ill-card" x="70" y="44" width="340" height="232" rx="7" />
+    <g filter={depth ? "url(#ill-browser-shadow)" : undefined}>
+      <rect className={`ill-card${depth ? " ill-browser-face" : ""}`} x="70" y="44" width="340" height="232" rx={depth ? 10 : 7} />
+      {depth && <rect className="ill-face-highlight" x="71.5" y="45.5" width="337" height="229" rx="8.5" />}
+    </g>
     <path className="ill-rule" d="M70 68h340" />
     {[86, 96, 106].map((x) => <circle key={x} className="ill-soft" cx={x} cy="56" r="2.6" />)}
     <rect className="ill-soft" x="86" y="84" width="70" height="176" rx="3" />
     {[100, 116, 132].map((y) => <rect key={y} className="ill-card" x="96" y={y} width="44" height="5" rx="2" />)}
     <rect className="ill-soft" x="172" y="84" width="224" height="10" rx="2" />
     {blocks.map(([x, y, w, h]) => <rect key={`${x}${y}`} className="ill-soft" x={x} y={y} width={w} height={h} rx="3" />)}
-    <rect className="ill-island" x="288" y="184" width="108" height="76" rx="4" />
+    {depth && <g className="ill-trace"><path d="M280 141h-12q-8 0-8 8v45q0 8 8 8h20" /><circle cx="280" cy="141" r="2" /><path d="M342 176v8" /></g>}
+    <g filter={depth ? "url(#ill-browser-shadow)" : undefined}>
+      <rect className={`ill-island${depth ? " ill-browser-face" : ""}`} x="288" y="184" width="108" height="76" rx={depth ? 7 : 4} />
+      {depth && <rect className="ill-face-highlight ill-island-highlight" x="289.5" y="185.5" width="105" height="73" rx="5.5" />}
+    </g>
     <circle className="ill-accent" cx="302" cy="198" r="3.5" />
     <text className="ill-label ill-label-ink" x="312" y="202">island</text>
     <rect className="ill-ink" x="300" y="234" width="46" height="14" rx="3" />
