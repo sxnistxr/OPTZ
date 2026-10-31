@@ -16,19 +16,15 @@ export const head = (post: Post): Head => ({
 export default function BlogPost({ data: post }: PageProps<Post, "/blog/[slug]">) {
   return (
     <article>
-      <header className="max-w-[38rem]">
-        <time dateTime={post.date} className="text-sm text-muted">
-          {formatDate(post.date)}
-        </time>
-        <h1 className="mt-2 text-4xl font-semibold leading-[1.08] tracking-[-0.02em] md:text-5xl">{post.title}</h1>
+      <header className="post-header">
+        <time dateTime={post.date}>{formatDate(post.date)}</time>
+        <h1>{post.title}</h1>
       </header>
       {/* Markdown you wrote, rendered at build time. */}
-      <div className="prose-post mt-10" dangerouslySetInnerHTML={{ __html: post.html }} />
-      <p className="mt-14">
-        <Link href="/blog" className="text-muted hover:text-ink">
-          All writing
-        </Link>
-      </p>
+      <div className="prose-post mt-12" dangerouslySetInnerHTML={{ __html: post.html }} />
+      <footer className="post-footer">
+        <Link href="/blog" className="text-link">All writing</Link>
+      </footer>
     </article>
   );
 }

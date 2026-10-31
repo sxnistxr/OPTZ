@@ -1,7 +1,6 @@
 import { Link, useRouter, type Head, type Href } from "optz";
 import type { ReactNode } from "react";
 import { cn } from "cn";
-import { Arrow } from "$components/Icons";
 import OptzLogo from "$components/OptzLogo";
 import DihLabsLogo from "$components/DihLabsLogo";
 import ThemeToggle from "$components/ThemeToggle";
@@ -37,8 +36,11 @@ export default function Layout({ children }: { children: ReactNode }) {
       <main id="main" tabIndex={-1} className={landing ? "landing-main" : cn("site-container", docs ? "docs-main" : "site-main")}>{children}</main>
       <footer className="site-footer site-container">
         <Link href="/" className="footer-brand" aria-label="DihLabs home"><DihLabsLogo /></Link>
-        <span>Built with curiosity. By {site.author}.</span>
-        <a href={optz ? site.repo : "https://github.com/sxnistxr"}>{optz ? "View framework source" : "Find me on GitHub"}<Arrow /></a>
+        <nav aria-label="Footer" className="footer-links">
+          {nav.map(([href, label]) => <Link key={href} href={href}>{label}</Link>)}
+          {optz ? <Link href="/">DihLabs</Link> : <Link href="/optz">OPTZ</Link>}
+          <a href={optz ? site.repo : "https://github.com/sxnistxr"}>{optz ? "Source" : "GitHub"}<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" aria-hidden="true"><path d="M4 12 12 4M5 4h7v7" /></svg></a>
+        </nav>
       </footer>
     </div>
   );

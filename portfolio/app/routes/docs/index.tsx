@@ -25,13 +25,13 @@ export default function DocsHome({ data }: PageProps<{ sections: { section: stri
       <div className="docs-home-sections">
         {data.sections.map((s) => (
           <section key={s.section} aria-label={s.section}>
-            <h2 className="mb-3 text-sm font-medium text-muted">{s.section}</h2>
+            <h2>{s.section}</h2>
             <ul>
               {s.pages.map((p) => (
                 <li key={p.slug}>
-                  <Link href={`/docs/${p.slug}` as Href} className="group block">
-                    <span className="font-semibold tracking-tight group-hover:underline group-hover:decoration-rule group-hover:underline-offset-4">{p.title}</span>
-                    <span className="mt-1 block text-[0.95rem] leading-relaxed text-muted line-clamp-2">{p.description}</span>
+                  <Link href={`/docs/${p.slug}` as Href}>
+                    <span>{p.title}</span>
+                    <span>{p.description}</span>
                   </Link>
                 </li>
               ))}

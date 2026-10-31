@@ -29,42 +29,38 @@ export default function DocPage({ data: d }: PageProps<Doc, "/docs/[slug]">) {
           {d.description && <p>{d.description}</p>}
         </header>
         {toc.length > 2 && (
-          <details className="toc mt-8 border-l border-rule text-[0.92rem] xl:hidden">
+          <details className="toc mt-8 border-l border-rule text-sm xl:hidden">
             <summary className="cursor-pointer pl-4 text-muted">On this page</summary>
             <ul className="mt-2">{links}</ul>
           </details>
         )}
         <div className="prose-docs mt-10" dangerouslySetInnerHTML={{ __html: d.html }} />
         <footer className="mt-20 border-t border-rule pt-6">
-          <nav aria-label="More docs" className="grid gap-4 sm:grid-cols-2">
+          <nav aria-label="More docs" className="docs-pager">
             {d.prev ? (
-              <Link href={`/docs/${d.prev.slug}` as Href} className="group rounded-md border border-rule px-4 py-3 hover:border-ink">
-                <span className="block text-sm text-muted">Previous</span>
-                <span className="font-medium text-ink">{d.prev.title}</span>
+              <Link href={`/docs/${d.prev.slug}` as Href}>
+                <span>Previous</span>
+                <strong>{d.prev.title}</strong>
               </Link>
             ) : (
               <span />
             )}
             {d.next && (
-              <Link href={`/docs/${d.next.slug}` as Href} className="group rounded-md border border-rule px-4 py-3 text-right hover:border-ink">
-                <span className="block text-sm text-muted">Next</span>
-                <span className="font-medium text-ink">{d.next.title}</span>
+              <Link href={`/docs/${d.next.slug}` as Href} className="docs-pager-next">
+                <span>Next</span>
+                <strong>{d.next.title}</strong>
               </Link>
             )}
           </nav>
-          <p className="mt-6 text-sm text-muted">
-            Edit{" "}
-            <a href={`${site.repo}/blob/${site.branch}/${d.file}`} className="underline decoration-rule underline-offset-4 hover:text-ink">
-              {d.file}
-            </a>{" "}
-            on GitHub.
+          <p className="docs-edit">
+            <a href={`${site.repo}/blob/${site.branch}/${d.file}`}>Edit this page on GitHub</a>
           </p>
         </footer>
       </article>
       {toc.length > 2 && (
         <aside className="hidden xl:block">
           <nav aria-label="On this page" className="toc docs-toc">
-            <p className="mb-2 pl-4 text-xs font-medium text-muted">On this page</p>
+            <p>On this page</p>
             <ul>{links}</ul>
           </nav>
         </aside>
