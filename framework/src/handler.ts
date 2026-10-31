@@ -137,6 +137,29 @@ export async function createApp({ manifest, config, files, platform, middleware 
     if (!m) modules.set(f, (m = platform.load(f)));
     return m as Promise<T>;
   };
+  /**
+   * Bound optional metadata loading to 100 ms without cancelling a shared import.
+   * Evict only the rejected promise observed here so later requests can retry;
+   * a timed-out import stays cached and may supply dimensions once it settles.
+   */
+  async function loadOptionalProducer(file: string): Promise<OgModule | undefined> {
+    let timer: number | ReturnType<typeof setTimeout> | undefined;
+    try {
+      const pending = load<OgModule>(file);
+      const optional = pending.catch(() => {
+        if (modules.get(file) === pending) modules.delete(file);
+        return undefined;
+      });
+      return await Promise.race([
+        optional,
+        new Promise<undefined>((resolve) => { timer = setTimeout(resolve, 100); }),
+      ]);
+    } catch {
+      return undefined;
+    } finally {
+      if (timer !== undefined) clearTimeout(timer);
+    }
+  }
   // Loaded on first use: a fully static site never pays for React's server renderer.
   let renderMod: Promise<typeof import("./render")> | undefined;
   const render = () => (renderMod ??= import("./render"));
@@ -511,7 +534,7 @@ export async function createApp({ manifest, config, files, platform, middleware 
     draft = false,
     slotOverride?: Parameters<typeof slotInputs>[2],
   ): Promise<RenderInput> {
-    const producer = r.og ? Promise.resolve().then(() => load(r.og!)).catch(() => undefined) : Promise.resolve(undefined);
+    const producer = r.og ? loadOptionalProducer(r.og) : Promise.resolve(undefined);
     const head: Promise<unknown>[] = [load(r.file), Promise.all(r.layouts.map((l) => load(l))), r.error ? load(r.error) : Promise.resolve(undefined), r.loading ? load(r.loading) : Promise.resolve(undefined), producer];
     const [page, layouts, error, loading, og] = await Promise.all(head);
     const input: RenderInput = {

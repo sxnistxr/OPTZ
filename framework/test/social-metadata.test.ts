@@ -115,3 +115,65 @@ test.each(["reject", "throw"])("producer load failures are optional for pages, b
     expect(renderedImages).toBe(0);
   } finally { log.mockRestore(); }
 });
+
+/** Build an uncached dynamic route so every request exercises producer metadata loading. */
+async function appWithProducer(loadProducer: () => Promise<unknown>) {
+  const manifest: Manifest = {
+    version: 3, builtAt: 0, mode: "islands", entry: "/entry.js", css: [],
+    routes: [{ pattern: "/post", segments: compilePattern("/post"), file: "post.tsx", og: "post.og.tsx", kind: "page", render: "dynamic", hasLoader: false, layouts: [], preload: [] }],
+    islands: {}, rootLayouts: [], redirects: {}, slots: [], intercepts: [], actions: {}, fonts: [], apiStatic: {},
+  };
+  return createApp({
+    manifest, config: resolveConfig({ site: { url: "https://example.com" }, features: { streaming: false, cache: false } }), files: new Map(),
+    platform: {
+      load: (file) => file === "post.og.tsx" ? loadProducer() : Promise.resolve({ default: () => React.createElement("main", null, "Post"), head: () => ({ title: "Post" }) }),
+      og: async () => new Uint8Array(),
+    },
+  });
+}
+
+test("stalled producers do not block HTML or data and remain shared for later requests", async () => {
+  let loads = 0;
+  let release!: (value: unknown) => void;
+  const pending = new Promise(resolve => { release = resolve; });
+  const app = await appWithProducer(() => { loads++; return pending; });
+  try {
+    const [page, data] = await Promise.all([
+      app.fetch(new Request("https://example.com/post")),
+      app.fetch(new Request("https://example.com/_optz/data/post.json")),
+    ]);
+    expect(page.status).toBe(200);
+    expect(await page.text()).toContain("<main>Post</main>");
+    expect(data.status).toBe(200);
+    expect((await data.json()).head.openGraph.images[0]).toMatchObject({ width: 1200, height: 630 });
+    release({ size: { width: 800, height: 800 }, default: () => null });
+    await pending;
+    const next = await app.fetch(new Request("https://example.com/_optz/data/post.json"));
+    expect((await next.json()).head.openGraph.images[0]).toMatchObject({ width: 800, height: 800 });
+    expect(loads).toBe(1);
+  } finally { release({}); }
+}, 2000);
+
+test.each(["immediate", "after timeout"])("failed optional producers can be retried (%s)", async (failure) => {
+  let loads = 0;
+  let reject!: (error: Error) => void;
+  const pending = new Promise((_, fail) => { reject = fail; });
+  const app = await appWithProducer(() => {
+    loads++;
+    return loads === 1 ? pending : Promise.resolve({ size: { width: 800, height: 800 }, default: () => null });
+  });
+  const first = app.fetch(new Request("https://example.com/_optz/data/post.json"));
+  if (failure === "immediate") reject(new Error("Transient import failure"));
+  try {
+    expect((await first).status).toBe(200);
+    if (failure === "after timeout") reject(new Error("Late import failure"));
+    await pending.catch(() => undefined);
+    const image = await app.fetch(new Request("https://example.com/_optz/og/post.png"));
+    expect(image.status).toBe(200);
+    expect(image.headers.get("content-type")).toBe("image/png");
+    const next = await app.fetch(new Request("https://example.com/_optz/data/post.json"));
+    expect(next.status).toBe(200);
+    expect((await next.json()).head.openGraph.images[0]).toMatchObject({ width: 800, height: 800 });
+    expect(loads).toBe(2);
+  } finally { reject(new Error("Test cleanup")); }
+}, 2000);
