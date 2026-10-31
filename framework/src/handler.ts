@@ -497,7 +497,10 @@ export async function createApp({ manifest, config, files, platform, middleware 
     );
   }
 
-  /** Load a route's render modules and its image producer's declared dimensions. */
+  /**
+   * Load render modules and optional image dimensions. An unavailable image producer
+   * must not prevent the page from rendering; image requests still report its failure.
+   */
   async function renderInput(
     r: ManifestRoute,
     ctx: MiddlewareContext,
@@ -508,7 +511,8 @@ export async function createApp({ manifest, config, files, platform, middleware 
     draft = false,
     slotOverride?: Parameters<typeof slotInputs>[2],
   ): Promise<RenderInput> {
-    const head: Promise<unknown>[] = [load(r.file), Promise.all(r.layouts.map((l) => load(l))), r.error ? load(r.error) : Promise.resolve(undefined), r.loading ? load(r.loading) : Promise.resolve(undefined), r.og ? load(r.og) : Promise.resolve(undefined)];
+    const producer = r.og ? Promise.resolve().then(() => load(r.og!)).catch(() => undefined) : Promise.resolve(undefined);
+    const head: Promise<unknown>[] = [load(r.file), Promise.all(r.layouts.map((l) => load(l))), r.error ? load(r.error) : Promise.resolve(undefined), r.loading ? load(r.loading) : Promise.resolve(undefined), producer];
     const [page, layouts, error, loading, og] = await Promise.all(head);
     const input: RenderInput = {
       page: page as PageModule,

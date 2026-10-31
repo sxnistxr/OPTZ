@@ -1,4 +1,4 @@
-import { describe, expect, test } from "bun:test";
+import { describe, expect, spyOn, test } from "bun:test";
 import React from "react";
 import { createApp } from "../src/handler";
 import { compilePattern } from "../src/match";
@@ -80,4 +80,38 @@ test.each([
   const tags = headTags({ openGraph: { images: [{ url: "/shared.png", alt: "Open Graph diagram" }] }, twitter: { images: image ? [image] : undefined, imageAlt } }, config, "/post");
   if (expected) expect(tags).toContain(`name="twitter:image:alt" content="${expected}"`);
   else expect(tags).not.toContain('name="twitter:image:alt"');
+});
+
+test.each(["reject", "throw"])("producer load failures are optional for pages, but not image requests (%s)", async (failure) => {
+  const manifest: Manifest = {
+    version: 3, builtAt: 0, mode: "islands", entry: "/entry.js", css: [],
+    routes: [{ pattern: "/post", segments: compilePattern("/post"), file: "post.tsx", og: "post.og.tsx", kind: "page", render: "dynamic", hasLoader: false, layouts: [], preload: [] }],
+    islands: {}, rootLayouts: [], redirects: {}, slots: [], intercepts: [], actions: {}, fonts: [], apiStatic: {},
+  };
+  let renderedImages = 0;
+  const app = await createApp({
+    manifest, config: resolveConfig({ site: { url: "https://example.com" }, features: { streaming: false } }), files: new Map(),
+    platform: {
+      load(file) {
+        if (file === "post.og.tsx") {
+          const error = new Error("Producer unavailable");
+          if (failure === "throw") throw error;
+          return Promise.reject(error);
+        }
+        return Promise.resolve({ default: () => React.createElement("main", null, "Post"), head: () => ({ title: "Post" }) });
+      },
+      og: async () => { renderedImages++; return new Uint8Array(); },
+    },
+  });
+  const log = spyOn(console, "error").mockImplementation(() => {});
+  try {
+    const response = await app.fetch(new Request("https://example.com/post"));
+    expect(response.status).toBe(200);
+    expect(await response.text()).toContain("<main>Post</main>");
+    const data = await app.fetch(new Request("https://example.com/_optz/data/post.json"));
+    expect(data.status).toBe(200);
+    expect((await data.json()).head.openGraph.images[0]).toMatchObject({ width: 1200, height: 630, type: "image/png" });
+    expect((await app.fetch(new Request("https://example.com/_optz/og/post.png"))).status).toBe(500);
+    expect(renderedImages).toBe(0);
+  } finally { log.mockRestore(); }
 });
