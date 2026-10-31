@@ -1,4 +1,4 @@
-# @optz/auth
+# @sxnistxr/optz-auth
 
 Optional authentication for OPTZ applications on **Bun + SQLite**, based on pinned Better Auth
 1.7.14 and its maintained WebAuthn implementation. The framework itself never imports this package.
@@ -18,7 +18,7 @@ example is in [`apps/auth`](../../apps/auth/README.md).
 | Recovery / backup codes | Ten encrypted, single-use codes; regeneration through the upstream authenticated API |
 | Sessions / devices | HttpOnly host-only cookies, database revocation/expiry, session listing/revocation; opt-in trusted-device cookies expire after seven days |
 | Linked identities / usernames | Explicit provider linking, same-email restrictions, ASCII usernames; no implicit linking merely because email strings match |
-| Organizations / access control | Optional organization membership, invitations, roles and teams via `@optz/auth/plugins` |
+| Organizations / access control | Optional organization membership, invitations, roles and teams via `@sxnistxr/optz-auth/plugins` |
 | Administration / multiple accounts | Optional admin and multi-session extensions, never enabled implicitly |
 | Delivery | Dependency-free Resend/Twilio adapters or your own typed callbacks |
 
@@ -30,15 +30,20 @@ the fallback to a passkey.
 
 ## Setup
 
-While this change is a workspace release, use the checked-out monorepo. It has not been published
-to the npm registry. `bun install` links `@optz/auth`; add `"@optz/auth": "workspace:*"` to an app.
+Install it next to the framework. The framework is imported as `optz`, so install it under that name:
+
+```sh
+bun add optz@npm:@sxnistxr/optz @sxnistxr/optz-auth
+```
+
+Inside this repository, `bun install` links `@sxnistxr/optz-auth`; add `"@sxnistxr/optz-auth": "workspace:*"` to an app.
 The package exports TypeScript for Bun and bundlers, just like OPTZ.
 
 ```ts
 // app/lib/auth.server.ts
-import { createAuth } from "@optz/auth";
-import { openAuthDatabase, sqliteBudget, migrateAuth } from "@optz/auth/sqlite";
-import { resend } from "@optz/auth/delivery";
+import { createAuth } from "@sxnistxr/optz-auth";
+import { openAuthDatabase, sqliteBudget, migrateAuth } from "@sxnistxr/optz-auth/sqlite";
+import { resend } from "@sxnistxr/optz-auth/delivery";
 
 const db = openAuthDatabase(process.env.AUTH_DATABASE_PATH!);
 export const auth = createAuth({
@@ -66,7 +71,7 @@ Remote HTTP origins, weak/missing secrets and unsafe callback paths are refused.
 HTTP needs `allowInsecureLocalhost: true`. Set `baseURL` from trusted configuration, never from
 incoming Host or forwarding headers. All application callbacks must use this exact origin.
 Provider secrets and the auth secret stay in `.server.ts` modules. OPTZ rejects the root,
-SQLite, delivery and plugin imports in browser builds; browser code uses `@optz/auth/client`.
+SQLite, delivery and plugin imports in browser builds; browser code uses `@sxnistxr/optz-auth/client`.
 
 ## Mount once, authenticate at the data boundary
 
@@ -108,7 +113,7 @@ Keep authenticated page/API responses private and no-store, including app-author
 ## Browser client
 
 ```ts
-import { createAuthClient, passkeyClient, twoFactorClient } from "@optz/auth/client";
+import { createAuthClient, passkeyClient, twoFactorClient } from "@sxnistxr/optz-auth/client";
 export const client = createAuthClient({ plugins: [passkeyClient(), twoFactorClient()] });
 await client.signIn.social({ provider: "google", callbackURL: "/account" });
 await client.passkey.addPasskey({ name: "My security key" });
@@ -133,7 +138,7 @@ sent to this server. The Chromium suite covers real WebAuthn ceremonies with a v
 ## Extensions
 
 ```ts
-import { organization, admin, genericOAuth, multiSession } from "@optz/auth/plugins";
+import { organization, admin, genericOAuth, multiSession } from "@sxnistxr/optz-auth/plugins";
 // Pass as createAuth({ ..., plugins: [...] }), then migrate the expanded schema.
 organization({ requireEmailVerificationOnInvitation: true, membershipLimit: 100 });
 admin({ defaultRole: "user", adminUserIds: ["a-user-id-selected-by-your-trusted-admin-process"] });

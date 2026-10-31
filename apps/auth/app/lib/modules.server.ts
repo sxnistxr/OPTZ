@@ -1,10 +1,10 @@
 import { openDatabase } from "optz/sqlite";
-import { createStatusHandler } from "@optz/status";
-import { sqliteStatusStore } from "@optz/status/sqlite";
-import { createAnalytics } from "@optz/analytics";
-import { sqliteAnalyticsStore } from "@optz/analytics/sqlite";
-import { createUploads, createUploadHandler } from "@optz/uploads";
-import { sqliteUploadStore } from "@optz/uploads/sqlite";
+import { createStatusHandler } from "@sxnistxr/optz-status";
+import { sqliteStatusStore } from "@sxnistxr/optz-status/sqlite";
+import { createAnalytics } from "@sxnistxr/optz-analytics";
+import { sqliteAnalyticsStore } from "@sxnistxr/optz-analytics/sqlite";
+import { createUploads, createUploadHandler } from "@sxnistxr/optz-uploads";
+import { sqliteUploadStore } from "@sxnistxr/optz-uploads/sqlite";
 import { getAuth } from "./auth.server";
 
 export const origin = () => process.env.PUBLIC_URL ?? "http://localhost:3008";
@@ -27,7 +27,7 @@ export const analytics = () => {
 let uploadInstance: ReturnType<typeof initializeUploads> | undefined;
 async function initializeUploads() {
   if (!process.env.S3_BUCKET || !process.env.S3_ENDPOINT) throw new Response("Object storage is not configured", { status: 503 });
-  const { createS3Provider } = await import("@optz/uploads/s3");
+  const { createS3Provider } = await import("@sxnistxr/optz-uploads/s3");
   const uploads = createUploads({
     store: sqliteUploadStore(database(), { bytesPerOwner: 1024 ** 3, pendingPerOwner: 3 }),
     provider: createS3Provider({ bucket: process.env.S3_BUCKET, checksums: process.env.S3_SHA256 !== "false", client: { endpoint: process.env.S3_ENDPOINT, region: process.env.S3_REGION ?? "us-east-1", forcePathStyle: true } }),

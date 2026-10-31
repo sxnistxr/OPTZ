@@ -1,6 +1,6 @@
 # OPTZ
 
-Optional advanced authentication lives in [`@optz/auth`](packages/auth/README.md): OAuth/OIDC,
+Optional advanced authentication lives in [`@sxnistxr/optz-auth`](packages/auth/README.md): OAuth/OIDC,
 passkeys, TOTP/backup codes, verified email/password, email links/codes, SMS, sessions and optional
 organization/admin extensions. Try the [auth application](apps/auth/README.md).
 

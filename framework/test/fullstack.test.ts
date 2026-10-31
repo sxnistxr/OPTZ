@@ -123,7 +123,7 @@ test("browser build rejects direct and transitive server-only modules",async()=>
     const result = await Bun.build({entrypoints:[join(root,"client.ts")],target:"browser",plugins:[serverBoundaries()]}).catch(error => error);
     expect(result.success === false || result instanceof Error).toBe(true);
     expect((result.logs ?? result.errors ?? []).map((log: {message:string}) => log.message).join(" ")).toContain("Server-only");
-    for (const name of ["@optz/auth", "@optz/auth/sqlite", "@optz/auth/delivery", "@optz/auth/plugins", "optz/env", "optz/cdn", "@optz/uploads", "@optz/uploads/s3", "@optz/uploads/sqlite", "@optz/status", "@optz/status/sqlite", "@optz/analytics", "@optz/analytics/sqlite", "@optz/analytics/posthog", "@optz/db"]) {
+    for (const name of ["@sxnistxr/optz-auth", "@sxnistxr/optz-auth/sqlite", "@sxnistxr/optz-auth/delivery", "@sxnistxr/optz-auth/plugins", "optz/env", "optz/cdn", "@sxnistxr/optz-uploads", "@sxnistxr/optz-uploads/s3", "@sxnistxr/optz-uploads/sqlite", "@sxnistxr/optz-status", "@sxnistxr/optz-status/sqlite", "@sxnistxr/optz-analytics", "@sxnistxr/optz-analytics/sqlite", "@sxnistxr/optz-analytics/posthog", "@sxnistxr/optz-db"]) {
       await Bun.write(join(root,"client.ts"),`import * as secret from ${JSON.stringify(name)}; console.log(secret)`);
       const blocked = await Bun.build({entrypoints:[join(root,"client.ts")],target:"browser",plugins:[serverBoundaries()]}).catch(error=>error);
       expect(blocked.success === false || blocked instanceof Error).toBe(true);

@@ -1,7 +1,7 @@
 import { join } from "node:path";
-import { createAuth } from "@optz/auth";
-import { openAuthDatabase, migrateAuth, sqliteBudget } from "@optz/auth/sqlite";
-import { resend, twilio } from "@optz/auth/delivery";
+import { createAuth } from "@sxnistxr/optz-auth";
+import { openAuthDatabase, migrateAuth, sqliteBudget } from "@sxnistxr/optz-auth/sqlite";
+import { resend, twilio } from "@sxnistxr/optz-auth/delivery";
 
 const providerNames = ["google", "github", "microsoft", "apple", "discord", "facebook", "twitter", "linkedin", "gitlab", "twitch", "spotify", "slack"] as const;
 export function features() {

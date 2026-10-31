@@ -21,8 +21,10 @@ Composable application services for OPTZ. All provider work is opt-in.
 | [Analytics](ANALYTICS.md) | Consent-gated capture, trends, funnels, cohorts, local export/delete and injected PostHog adapter | Optional small helper |
 | [Database integrations](DATABASES.md) | Native ORM recipes and parameterized/session adapters | None |
 
-The four `@optz/*` packages are workspace source packages under `packages/`, alongside
-`@optz/auth`. Use `workspace:*` dependencies here; package publication is a separate release.
+The four `@sxnistxr/optz-*` packages are workspace source packages under `packages/`, alongside
+`@sxnistxr/optz-auth`. Use `workspace:*` dependencies here. Outside this repository, install them from npm
+next to the framework, which is imported as `optz`: `bun add optz@npm:@sxnistxr/optz @sxnistxr/optz-db`.
+Publishing steps are in [PUBLISHING.md](PUBLISHING.md).
 The cache integration stays in `optz/cdn` and environment contracts in `optz/env` rather than
 adding packages that only re-export existing primitives.
 
@@ -46,8 +48,8 @@ The [recorded browser check](../bench/module-bundles.json) finds the portfolio's
 
 | Helper | Minified bytes | Gzip bytes |
 |---|---:|---:|
-| `@optz/analytics/client` | 1,009 | 628 |
-| `@optz/uploads/client` | 2,408 | 1,255 |
+| `@sxnistxr/optz-analytics/client` | 1,009 | 628 |
+| `@sxnistxr/optz-uploads/client` | 2,408 | 1,255 |
 
 These are standalone helper builds, not whole-page transfer totals; shared Preact, navigation
 and application code are separate. AWS/PostHog/auth SDKs, SQLite and Doppler secrets are absent

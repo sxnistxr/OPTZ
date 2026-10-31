@@ -9,7 +9,7 @@
     "check": "optz check"
   },
   "dependencies": {
-    "optz": "workspace:*",
+    "optz": "workspace:@sxnistxr/optz@*",
     "react": "19.3.1",
     "react-dom": "19.3.1"
   },

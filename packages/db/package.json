@@ -1,5 +1,5 @@
 {
-  "name": "@optz/db",
+  "name": "@sxnistxr/optz-db",
   "version": "0.1.0",
   "type": "module",
   "description": "Optional parameterized SQL and ORM session adapters for OPTZ",
@@ -16,7 +16,7 @@
     "check": "tsc --noEmit"
   },
   "peerDependencies": {
-    "optz": "*"
+    "optz": "npm:@sxnistxr/optz@>=0.4.0"
   },
   "devDependencies": {
     "@types/bun": "1.4.4",
@@ -24,5 +24,17 @@
     "typescript": "7.0.2"
   },
   "sideEffects": false,
-  "license": "MIT"
+  "license": "MIT",
+  "publishConfig": {
+    "access": "public"
+  },
+  "engines": {
+    "bun": ">=1.4.4"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/sxnistxr/OPTZ.git",
+    "directory": "packages/db"
+  },
+  "homepage": "https://dihlabs.lol/docs"
 }

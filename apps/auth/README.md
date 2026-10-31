@@ -1,6 +1,6 @@
 # OPTZ Auth example
 
-An executable OPTZ application using the separate `@optz/auth` workspace package. The public
+An executable OPTZ application using the separate `@sxnistxr/optz-auth` workspace package. The public
 landing page is static. The interactive login/account panels load only on pages with auth islands.
 Authentication state initializes lazily; no schema migrations run in request handlers.
 

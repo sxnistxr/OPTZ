@@ -9,7 +9,7 @@ for (const name of ["analytics", "uploads"]) {
   const text = await build.outputs[0].text();
   if (/DOPPLER_TOKEN|@aws-sdk|better-auth|bun:sqlite|secretAccessKey/.test(text)) throw new Error(`Server code leaked into ${name} client`);
   if (new TextEncoder().encode(text).length > (name === "analytics" ? 2000 : 5000)) throw new Error(`${name} exceeded its optional browser-helper budget`);
-  clients.push({ package: `@optz/${name}/client`, minified_bytes: new TextEncoder().encode(text).length, gzip_bytes: Bun.gzipSync(text).length });
+  clients.push({ package: `@sxnistxr/optz-${name}/client`, minified_bytes: new TextEncoder().encode(text).length, gzip_bytes: Bun.gzipSync(text).length });
 }
 const assets = join(root, "portfolio/dist/static/assets");
 const entries = [...new Bun.Glob("entry-*.js").scanSync(assets)].map(file => {

@@ -7,5 +7,5 @@ for (const name of ["uploads", "status", "analytics", "db"]) {
   if (packed.exitCode) throw new Error(`${name} package dry-run failed`);
   const listing = packed.stdout.toString() + packed.stderr.toString();
   for (const line of listing.split("\n")) { const file = line.match(/^packed\s+\S+\s+(\S+)$/)?.[1]; if (file && !/^(src\/|README\.md$|LICENSE$|package\.json$)/.test(file)) throw new Error(`Unexpected file in ${name}: ${file}`); }
-  console.log(`@optz/${name}: exports and package dry-run passed`);
+  console.log(`@sxnistxr/optz-${name}: exports and package dry-run passed`);
 }

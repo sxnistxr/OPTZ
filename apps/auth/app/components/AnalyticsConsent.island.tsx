@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { createAnalyticsClient } from "@optz/analytics/client";
+import { createAnalyticsClient } from "@sxnistxr/optz-analytics/client";
 export const hydrate = "idle";
 export default function AnalyticsConsent() {
   const client = useRef<ReturnType<typeof createAnalyticsClient> | null>(null);

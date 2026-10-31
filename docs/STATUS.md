@@ -1,14 +1,14 @@
 # Status pages
 
-`@optz/status` provides component states, incident timelines and an authenticated update API.
+`@sxnistxr/optz-status` provides component states, incident timelines and an authenticated update API.
 Its public view is plain server-renderable React: no polling, status SDK or island is required.
 
 ## Store and render
 
 ```tsx
 import { openDatabase } from "optz/sqlite";
-import { sqliteStatusStore } from "@optz/status/sqlite";
-import { StatusPage } from "@optz/status/view";
+import { sqliteStatusStore } from "@sxnistxr/optz-status/sqlite";
+import { StatusPage } from "@sxnistxr/optz-status/view";
 
 const db = openDatabase(process.env.STATUS_DATABASE_PATH!);
 const store = sqliteStatusStore(db);
@@ -24,7 +24,7 @@ not automatic health probes.
 ## Protect updates
 
 ```ts
-import { createStatusHandler } from "@optz/status";
+import { createStatusHandler } from "@sxnistxr/optz-status";
 import { getAuth } from "./auth.server";
 
 const handler = createStatusHandler({

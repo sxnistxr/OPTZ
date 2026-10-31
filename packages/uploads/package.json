@@ -1,5 +1,5 @@
 {
-  "name": "@optz/uploads",
+  "name": "@sxnistxr/optz-uploads",
   "version": "0.1.0",
   "type": "module",
   "description": "Optional owned direct and multipart uploads for S3-compatible object storage",
@@ -19,7 +19,7 @@
     "check": "tsc --noEmit"
   },
   "peerDependencies": {
-    "optz": "*"
+    "optz": "npm:@sxnistxr/optz@>=0.4.0"
   },
   "devDependencies": {
     "@types/bun": "1.4.4",
@@ -31,5 +31,17 @@
   "dependencies": {
     "@aws-sdk/client-s3": "^3.1160.0",
     "@aws-sdk/s3-request-presigner": "^3.1160.0"
-  }
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "engines": {
+    "bun": ">=1.4.4"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/sxnistxr/OPTZ.git",
+    "directory": "packages/uploads"
+  },
+  "homepage": "https://dihlabs.lol/docs"
 }

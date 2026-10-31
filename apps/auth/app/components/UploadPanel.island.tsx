@@ -1,5 +1,5 @@
 import { useRef, useState } from "react";
-import { uploadFile } from "@optz/uploads/client";
+import { uploadFile } from "@sxnistxr/optz-uploads/client";
 export const hydrate = "idle";
 export default function UploadPanel() {
   const file = useRef<HTMLInputElement>(null), active = useRef<AbortController | null>(null);

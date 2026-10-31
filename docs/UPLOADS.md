@@ -1,21 +1,21 @@
 # Direct and multipart uploads
 
-`@optz/uploads` adds authenticated upload control APIs over S3-compatible storage. File bytes
+`@sxnistxr/optz-uploads` adds authenticated upload control APIs over S3-compatible storage. File bytes
 go directly from the browser to storage; OPTZ reserves quota, signs short-lived requests and
 approves a separate immutable copy. Existing small local uploads remain `optz/storage`.
 
 ## Compose the server
 
-The package is part of this workspace; add `"@optz/uploads": "workspace:*"` to an app's
+The package is part of this workspace; add `"@sxnistxr/optz-uploads": "workspace:*"` to an app's
 dependencies and run `bun install` at the repository root. Provider SDKs are confined to the
 server-only `/s3` export, never the optional `/client` helper.
 
 ```ts
 // app/lib/uploads.server.ts
 import { openDatabase } from "optz/sqlite";
-import { createUploads, createUploadHandler } from "@optz/uploads";
-import { sqliteUploadStore } from "@optz/uploads/sqlite";
-import { createS3Provider } from "@optz/uploads/s3";
+import { createUploads, createUploadHandler } from "@sxnistxr/optz-uploads";
+import { sqliteUploadStore } from "@sxnistxr/optz-uploads/sqlite";
+import { createS3Provider } from "@sxnistxr/optz-uploads/s3";
 import { getAuth } from "./auth.server";
 
 const db = openDatabase(process.env.UPLOAD_DATABASE_PATH!);
@@ -81,7 +81,7 @@ Unknown and cross-owner IDs both answer 404.
 ## Browser helper
 
 ```ts
-import { uploadFile } from "@optz/uploads/client";
+import { uploadFile } from "@sxnistxr/optz-uploads/client";
 
 const controller = new AbortController();
 const result = await uploadFile(selectedFile, {

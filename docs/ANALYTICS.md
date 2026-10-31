@@ -1,6 +1,6 @@
 # Consent-first analytics
 
-`@optz/analytics` supplies bounded event ingestion, local trends, ordered funnels and retention
+`@sxnistxr/optz-analytics` supplies bounded event ingestion, local trends, ordered funnels and retention
 cohorts. It adds no tracking code by default. The optional browser helper sends nothing until
 explicit consent and uses an in-memory identity, without cookies or local/session storage.
 
@@ -8,8 +8,8 @@ explicit consent and uses an in-memory identity, without cookies or local/sessio
 
 ```ts
 // app/lib/analytics.server.ts
-import { createAnalytics } from "@optz/analytics";
-import { sqliteAnalyticsStore } from "@optz/analytics/sqlite";
+import { createAnalytics } from "@sxnistxr/optz-analytics";
+import { sqliteAnalyticsStore } from "@sxnistxr/optz-analytics/sqlite";
 import { openDatabase } from "optz/sqlite";
 
 const db = openDatabase(process.env.ANALYTICS_DATABASE_PATH!);
@@ -43,7 +43,7 @@ export const POST = ({ request }: ApiContext) => analytics.ingest(request);
 
 ```ts
 // Optional browser code, loaded only where the product needs analytics.
-import { createAnalyticsClient } from "@optz/analytics/client";
+import { createAnalyticsClient } from "@sxnistxr/optz-analytics/client";
 
 const analytics = createAnalyticsClient({
   endpoint: "/api/analytics",
@@ -90,7 +90,7 @@ within the selected range, not a claim to first-ever lifetime acquisition.
 
 Reads are bounded to 100,000 events and a maximum 366-day range; narrow the range if exceeded.
 The SQLite adapter uses indexed time/subject access and an atomic event-capacity counter.
-`@optz/analytics/view` exports `TrendChart`, a server-rendered table with native meters and no
+`@sxnistxr/optz-analytics/view` exports `TrendChart`, a server-rendered table with native meters and no
 charting runtime. Insight routes must enforce administrator access; ingestion does not expose
 an unauthenticated dashboard.
 
@@ -111,7 +111,7 @@ Inject the official server SDK; the adapter does not make it a dependency of eve
 
 ```ts
 import { PostHog } from "posthog-node";
-import { posthogAdapter } from "@optz/analytics/posthog";
+import { posthogAdapter } from "@sxnistxr/optz-analytics/posthog";
 
 const posthog = new PostHog(process.env.POSTHOG_PROJECT_TOKEN!, {
   host: process.env.POSTHOG_HOST!,

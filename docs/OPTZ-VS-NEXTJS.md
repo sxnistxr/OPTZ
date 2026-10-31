@@ -195,12 +195,12 @@ figures above remain tied to their historical benchmark commit.
 | Server-sent event responses | [built-in] `optz/stream` | [integration] streaming route handler | OPTZ adds framing validation, event budgets, backpressure and cleanup |
 | Request observation hooks | [built-in] `optz/observe` | [built-in] instrumentation APIs | Different APIs; OPTZ adds request IDs, Server-Timing and callbacks |
 | Password accounts and private CRUD starter | [built-in] `--template fullstack` | [integration] starter / authentication library | OPTZ starter is executable on Bun and works without browser JS |
-| Verified email, recovery, OAuth, passkeys, MFA | [integration] optional `@optz/auth` / Better Auth | [integration] identity provider / auth library | OPTZ includes an executable auth app; neither framework is a hosted identity service |
-| Public status and incident timelines | [integration] optional `@optz/status` | [integration] app / service | OPTZ supplies SSR markup, a persistent adapter and authenticated mutations |
-| Consent-based analytics / PostHog | [integration] optional `@optz/analytics` | [integration] analytics library / provider | OPTZ includes bounded local insights and an injected PostHog adapter |
-| Direct and multipart object uploads | [integration] optional `@optz/uploads` | [integration] storage library / provider | S3-compatible presigning, owner quotas, checksums and immutable approval; configured limit up to 5 GiB |
+| Verified email, recovery, OAuth, passkeys, MFA | [integration] optional `@sxnistxr/optz-auth` / Better Auth | [integration] identity provider / auth library | OPTZ includes an executable auth app; neither framework is a hosted identity service |
+| Public status and incident timelines | [integration] optional `@sxnistxr/optz-status` | [integration] app / service | OPTZ supplies SSR markup, a persistent adapter and authenticated mutations |
+| Consent-based analytics / PostHog | [integration] optional `@sxnistxr/optz-analytics` | [integration] analytics library / provider | OPTZ includes bounded local insights and an injected PostHog adapter |
+| Direct and multipart object uploads | [integration] optional `@sxnistxr/optz-uploads` | [integration] storage library / provider | S3-compatible presigning, owner quotas, checksums and immutable approval; configured limit up to 5 GiB |
 | Environment validation / Doppler | [integration] `optz/env` and official Doppler CLI | [integration] schema / provider CLI | OPTZ validates before importing app config; explicit public allowlist, no request-time secret fetch |
-| ORM session storage | [integration] optional `@optz/db` | [integration] native ORM / auth adapter | Prisma, Drizzle and parameterized Kysely/TypeORM executor recipes; no default ORM |
+| ORM session storage | [integration] optional `@sxnistxr/optz-db` | [integration] native ORM / auth adapter | Prisma, Drizzle and parameterized Kysely/TypeORM executor recipes; no default ORM |
 | Durable jobs and distributed state | [integration] external services | [integration] external services | SSE and response lifecycle hooks do not provide durable work |
 
 See [Application APIs](../portfolio/content/docs/application-apis.md), the

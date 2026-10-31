@@ -1,7 +1,7 @@
 # Database and ORM integrations
 
 OPTZ does not wrap your application's query language or own its connection pool. Use Prisma,
-Drizzle, Kysely, TypeORM or native clients in server-only modules. `@optz/db` adds small session
+Drizzle, Kysely, TypeORM or native clients in server-only modules. `@sxnistxr/optz-db` adds small session
 store adapters where serialization, expiry units and parameter binding have real value.
 
 ## Shared rules
@@ -30,7 +30,7 @@ model OptzSession {
 
 ```ts
 import { createSessions } from "optz/sessions";
-import { prismaSessionStore } from "@optz/db";
+import { prismaSessionStore } from "@sxnistxr/optz-db";
 import { prisma } from "./database.server";
 
 export const sessions = createSessions<{ userId: string }>({
@@ -47,7 +47,7 @@ Pass native typed operations so your table and dialect stay inferred in the app:
 
 ```ts
 import { eq } from "drizzle-orm";
-import { drizzleSessionStore } from "@optz/db";
+import { drizzleSessionStore } from "@sxnistxr/optz-db";
 import { db, sessions } from "./database.server";
 
 const store = drizzleSessionStore<{ userId: string }>({
@@ -73,7 +73,7 @@ it is never automatically executed.
 ```ts
 // Kysely: db is an existing Kysely client and dialect/driver configured by the app.
 import { CompiledQuery } from "kysely";
-import { sqlSessionStore } from "@optz/db";
+import { sqlSessionStore } from "@sxnistxr/optz-db";
 
 const store = sqlSessionStore<{ userId: string }>(async (text, parameters) => {
   const result = await db.executeQuery<{ data: string; expires_at: string | number }>(
@@ -85,7 +85,7 @@ const store = sqlSessionStore<{ userId: string }>(async (text, parameters) => {
 
 ```ts
 // TypeORM: reuse an initialized DataSource, do not initialize it in each handler.
-import { sqlSessionStore } from "@optz/db";
+import { sqlSessionStore } from "@sxnistxr/optz-db";
 
 const store = sqlSessionStore<{ userId: string }>(
   (text, parameters) => dataSource.query(text, [...parameters]),
@@ -106,7 +106,7 @@ passwords or a whole user profile in a session. Schedule expiry-row cleanup in y
 
 For Bun-native SQLite, use the existing `sqliteSessionStore` from `optz/sqlite` instead of adding
 another adapter layer. A `SessionStore` for `createSessions` is not automatically a Better Auth
-database adapter: `@optz/auth` uses Better Auth's own supported ORM adapters.
+database adapter: `@sxnistxr/optz-auth` uses Better Auth's own supported ORM adapters.
 
 The local suite executes parameterized SQLite queries and fake native-operation delegates.
 Live PostgreSQL/MySQL pools, ORM generators and migrations must be verified in the consuming app.

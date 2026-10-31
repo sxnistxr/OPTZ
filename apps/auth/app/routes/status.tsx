@@ -1,5 +1,5 @@
 import type { PageProps } from "optz";
-import { StatusPage } from "@optz/status/view";
+import { StatusPage } from "@sxnistxr/optz-status/view";
 import { status } from "$lib/modules.server";
 export const config = { render: "dynamic" } as const;
 export const cache = { maxAge: 5, tags: ["module-status"] };

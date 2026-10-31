@@ -5,6 +5,15 @@ typed API routes, middleware, incremental static regeneration, i18n, image and f
 optimization, and a response cache. Pages are **HTML by default**: only the components you mark
 as islands ship JavaScript. Runs on Bun, as a single executable, or as an edge worker.
 
+Published on npm as `@sxnistxr/optz`. Apps import it as `optz` (and the build emits `optz/...`
+imports), so install it under that name:
+
+```sh
+bun add optz@npm:@sxnistxr/optz react react-dom
+```
+
+In this repository:
+
 ```sh
 bun framework/src/cli.ts create apps/my-app   # a starter that shows the basics
 cd apps/my-app && bun install
@@ -535,10 +544,10 @@ The default public serving and browser entry remain independent of these modules
 |---|---|---|
 | `optz/env` + `optz env` | Validated environment contracts and integrated Doppler startup/management | Explicit generated public JSON only |
 | `optz/cdn` | Existing page-cache integration, explicit Cloudflare purge and soft invalidation | None |
-| `@optz/uploads`, `/s3`, `/sqlite` | Owned direct/multipart uploads, quotas, immutable approval and private downloads | Optional `/client` helper; no AWS SDK |
-| `@optz/status`, `/sqlite`, `/view` | Components, incidents, authenticated API and public SSR view | None required |
-| `@optz/analytics`, `/sqlite`, `/posthog`, `/view` | Consent-aware ingestion, local insights and injected PostHog adapter | Optional `/client` helper |
-| `@optz/db` | Parameterized SQL and native Prisma/Drizzle session-store adapters | None |
+| `@sxnistxr/optz-uploads`, `/s3`, `/sqlite` | Owned direct/multipart uploads, quotas, immutable approval and private downloads | Optional `/client` helper; no AWS SDK |
+| `@sxnistxr/optz-status`, `/sqlite`, `/view` | Components, incidents, authenticated API and public SSR view | None required |
+| `@sxnistxr/optz-analytics`, `/sqlite`, `/posthog`, `/view` | Consent-aware ingestion, local insights and injected PostHog adapter | Optional `/client` helper |
+| `@sxnistxr/optz-db` | Parameterized SQL and native Prisma/Drizzle session-store adapters | None |
 
 [Module guides](../docs/MODULES.md), [Doppler workflow](../docs/DOPPLER.md), and the
 [auth/modules example](../apps/auth/README.md) cover setup and operational boundaries.

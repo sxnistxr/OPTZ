@@ -11,13 +11,13 @@
     "modules:maintenance": "bun scripts/modules-maintenance.ts"
   },
   "dependencies": {
-    "optz": "workspace:*",
+    "optz": "workspace:@sxnistxr/optz@*",
     "react": "19.3.1",
     "react-dom": "19.3.1",
-    "@optz/auth": "workspace:*",
-    "@optz/status": "workspace:*",
-    "@optz/analytics": "workspace:*",
-    "@optz/uploads": "workspace:*"
+    "@sxnistxr/optz-auth": "workspace:*",
+    "@sxnistxr/optz-status": "workspace:*",
+    "@sxnistxr/optz-analytics": "workspace:*",
+    "@sxnistxr/optz-uploads": "workspace:*"
   },
   "devDependencies": {
     "@types/bun": "1.4.4",

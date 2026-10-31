@@ -1,5 +1,5 @@
 import { redirect, type LoaderContext, type PageProps } from "optz";
-import { TrendChart } from "@optz/analytics/view";
+import { TrendChart } from "@sxnistxr/optz-analytics/view";
 import { administrator, analytics, status } from "$lib/modules.server";
 import { getAuth } from "$lib/auth.server";
 export const config = { render: "dynamic" } as const;

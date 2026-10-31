@@ -10,7 +10,7 @@
     "e2e": "node e2e.cjs http://127.0.0.1:3005"
   },
   "dependencies": {
-    "optz": "workspace:*",
+    "optz": "workspace:@sxnistxr/optz@*",
     "react": "19.3.1",
     "react-dom": "19.3.1"
   },

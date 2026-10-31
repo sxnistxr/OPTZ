@@ -1,5 +1,5 @@
 {
-  "name": "@optz/status",
+  "name": "@sxnistxr/optz-status",
   "version": "0.1.0",
   "type": "module",
   "description": "Optional server-rendered status pages and authenticated incident updates for OPTZ",
@@ -18,7 +18,7 @@
     "check": "tsc --noEmit"
   },
   "peerDependencies": {
-    "optz": "*",
+    "optz": "npm:@sxnistxr/optz@>=0.4.0",
     "react": "^19"
   },
   "devDependencies": {
@@ -27,5 +27,17 @@
     "typescript": "7.0.2"
   },
   "sideEffects": false,
-  "license": "MIT"
+  "license": "MIT",
+  "publishConfig": {
+    "access": "public"
+  },
+  "engines": {
+    "bun": ">=1.4.4"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/sxnistxr/OPTZ.git",
+    "directory": "packages/status"
+  },
+  "homepage": "https://dihlabs.lol/docs"
 }
