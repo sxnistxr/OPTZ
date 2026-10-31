@@ -28,7 +28,9 @@
     "src",
     "skills",
     "README.md",
-    "schema"
+    "schema",
+    "LICENSE",
+    "THIRD-PARTY.md"
   ],
   "bin": {
     "optz": "./src/cli.ts"
@@ -63,7 +65,8 @@
   },
   "scripts": {
     "test": "bun test",
-    "typecheck": "tsc --noEmit -p tsconfig.json"
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "prepack": "bun scripts/check-og-dependencies.ts"
   },
   "peerDependencies": {
     "react": "^19",
@@ -101,5 +104,8 @@
   "license": "MIT",
   "publishConfig": {
     "access": "public"
-  }
+  },
+  "bundledDependencies": [
+    "satori"
+  ]
 }

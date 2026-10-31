@@ -209,6 +209,9 @@
       },
     },
   },
+  "patchedDependencies": {
+    "satori@0.63.2": "patches/satori@0.63.2.patch",
+  },
   "overrides": {
     "fflate": "0.7.5",
   },
