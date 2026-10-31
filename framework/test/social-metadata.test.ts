@@ -3,6 +3,7 @@ import React from "react";
 import { createApp } from "../src/handler";
 import { compilePattern } from "../src/match";
 import type { Manifest } from "../src/manifest";
+import type { StaticEntry } from "../src/static";
 import { headTags, mergeHead, type RenderInput } from "../src/render";
 import { resolveConfig, type Head } from "../src/types";
 
@@ -230,3 +231,72 @@ test("inherited alt comparisons use the same metadata base as emitted image URLs
   fixture.layouts = [{ default: () => null, head: () => ({ twitter: { images: ["/image.png"], imageAlt: "Root image" } }) }];
   expect(mergeHead(fixture, null).twitter?.imageAlt).toBeUndefined();
 });
+
+test.each(["data", "dynamic", "unlisted"])("temporary producer fallback bypasses the %s response cache", async (kind) => {
+  const manifest: Manifest = {
+    version: 3, builtAt: 0, mode: "islands", entry: "/entry.js", css: [],
+    routes: [{ pattern: "/post/[id]", segments: compilePattern("/post/[id]"), file: "post.tsx", og: "post.og.tsx", kind: "page", render: kind === "unlisted" ? "static" : "dynamic", dynamicParams: true, hasLoader: true, layouts: [], preload: [] }],
+    islands: {}, rootLayouts: [], redirects: {}, slots: [], intercepts: [], actions: {}, fonts: [], apiStatic: {},
+  };
+  let release!: (value: unknown) => void;
+  const pending = new Promise(resolve => { release = resolve; });
+  let renders = 0;
+  const app = await createApp({
+    manifest, config: resolveConfig({ features: { streaming: false }, cache: { default: { maxAge: 60 } } }), files: new Map(),
+    platform: { load: async file => file === "post.og.tsx" ? pending : {
+      default: () => React.createElement("main", null, "Post"),
+      loader: () => { renders++; return null; }, head: () => ({ title: "Post" }), cache: { maxAge: 60 },
+    } },
+  });
+  const path = kind === "data" ? "/_optz/data/post/one.json" : "/post/one";
+  const request = () => app.fetch(new Request("https://example.com" + path));
+  const dimension = (width: number) => kind === "data" ? `"width":${width}` : `property="og:image:width" content="${width}"`;
+  try {
+    const first = await request();
+    expect(first.status).toBe(200);
+    expect(await first.text()).toContain(dimension(1200));
+    expect(first.headers.get("cache-control")).toContain("no-store");
+    expect(app.cache?.stats.entries).toBe(0);
+    release({ size: { width: 800, height: 800 }, default: () => null });
+    await pending;
+    const second = await request();
+    expect(second.status).toBe(200);
+    expect(await second.text()).toContain(dimension(800));
+    expect(app.cache?.stats.entries).toBe(1);
+    const third = await request();
+    expect(await third.text()).toContain(dimension(800));
+    expect(renders).toBe(2);
+    expect(app.cache?.stats.hits).toBe(1);
+  } finally { release({}); }
+}, 2000);
+
+test("ISR preserves its previous snapshot until the producer becomes available", async () => {
+  const manifest: Manifest = {
+    version: 3, builtAt: 0, mode: "islands", entry: "/entry.js", css: [],
+    routes: [{ pattern: "/post", segments: compilePattern("/post"), file: "post.tsx", og: "post.og.tsx", kind: "page", render: "static", revalidate: 60, hasLoader: false, layouts: [], preload: [] }],
+    islands: {}, rootLayouts: [], redirects: {}, slots: [], intercepts: [], actions: {}, fonts: [], apiStatic: {},
+  };
+  const page: StaticEntry = { body: new TextEncoder().encode("previous HTML"), type: "text/html", etag: '"previous-html"', cache: "no-cache" };
+  const data: StaticEntry = { body: new TextEncoder().encode("previous data"), type: "application/json", etag: '"previous-data"', cache: "no-cache" };
+  const files = new Map([["/post/index.html", page], ["/_optz/data/post.json", data]]);
+  let release!: (value: unknown) => void;
+  const pending = new Promise(resolve => { release = resolve; });
+  const app = await createApp({
+    manifest, config: resolveConfig({ features: { streaming: false } }), files,
+    platform: { load: async file => file === "post.og.tsx" ? pending : { default: () => React.createElement("main", null, "Post"), head: () => ({ title: "Post" }) } },
+  });
+  const tasks: Promise<unknown>[] = [];
+  const request = () => app.fetch(new Request("https://example.com/post"), { waitUntil: task => tasks.push(task) });
+  try {
+    expect(await (await request()).text()).toBe("previous HTML");
+    await Promise.all(tasks);
+    expect(files.get("/post/index.html")).toBe(page);
+    expect(files.get("/_optz/data/post.json")).toBe(data);
+    release({ size: { width: 800, height: 800 }, default: () => null });
+    await pending;
+    await request();
+    await Promise.all(tasks);
+    expect(new TextDecoder().decode(files.get("/post/index.html")!.body)).toContain('property="og:image:width" content="800"');
+    expect(JSON.parse(new TextDecoder().decode(files.get("/_optz/data/post.json")!.body)).head.openGraph.images[0]).toMatchObject({ width: 800, height: 800 });
+  } finally { release({}); }
+}, 2000);

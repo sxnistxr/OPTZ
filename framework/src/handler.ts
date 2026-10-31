@@ -460,6 +460,7 @@ export async function createApp({ manifest, config, files, platform, middleware 
     return { request: new Request(u), url: u, locals: {} as Locals };
   };
 
+  /** Regenerate anonymously and publish complete HTML/data together, keeping the old snapshot on failure. */
   function regenerate(trigger: MiddlewareContext, s: RequestStore, r: ManifestRoute, publicPath: string, inner: string, params: Record<string, string>, locale?: string) {
     if (regenerating.has(publicPath)) return;
     regenerating.add(publicPath);
@@ -476,7 +477,10 @@ export async function createApp({ manifest, config, files, platform, middleware 
         files.set(apiStaticPath(publicPath), { ...entryOf(new Uint8Array(await res.arrayBuffer()), res.headers.get("content-type") ?? "application/json", headers["cache-control"] ?? "no-cache"), headers });
       } else {
         const { renderPage, headTags } = await render();
-        const out = await renderPage(await renderInput(r, ctx, publicPath, inner, params, locale), assets(r), config);
+        const input = await renderInput(r, ctx, publicPath, inner, params, locale);
+        // Preserve the previous HTML/data snapshot until producer metadata is available.
+        if (input.ogUnavailable) return;
+        const out = await renderPage(input, assets(r), config);
         if (out.kind === "notFound") {
           files.delete(htmlPath(publicPath));
           files.delete(dataPath(publicPath));
@@ -552,6 +556,7 @@ export async function createApp({ manifest, config, files, platform, middleware 
       params,
       og: r.og ? ogPath(publicPath) : undefined,
       ogSize: (og as OgModule | undefined)?.size,
+      ogUnavailable: !!r.og && og === undefined,
       metadataBase: config.site?.url,
       i18n: localeInfo(locale),
       ctx: { url: ctx.url, request: trackRequest(ctx.request, als.getStore()), locals: ctx.locals, locale, draft },
@@ -659,6 +664,8 @@ export async function createApp({ manifest, config, files, platform, middleware 
       // The SPA router swaps the same head tags a full page load would have.
       return jsonRes({ ...r.payload, headHtml: headTags(r.payload.head, config, target, localeInfo(locale)), lang: locale ?? config.lang }, 200, extra);
     };
+    // Incomplete producer metadata must not survive in memory or a downstream cache.
+    if (input.ogUnavailable) return produce().then(privateResponse);
     // Draft data is per viewer: never from or into the shared cache.
     return draft ? produce() : withCache(ctx, input.page.cache, produce);
   }
@@ -942,14 +949,13 @@ export async function createApp({ manifest, config, files, platform, middleware 
       // cache). Shared by everyone, so rendered from an anonymous request.
       const input = await renderInput(r, anonymous(url, p), p, inner, m.params, locale);
       const anon = input.ctx;
-      return inStore(s, () =>
-        withCache(ctx, { maxAge: r.revalidate ?? 31536000, staleWhileRevalidate: r.revalidate ? 31536000 : undefined, tags: r.tags }, () =>
-          als.run(appStore({ request: anon.request!, url: anon.url, locals: anon.locals, locale, draft: false }), async () => {
-            const { renderPage } = await render();
-            return finish(await renderPage(input, assets(r), config), ctx);
-          }),
-        ),
-      );
+      const produce = () => als.run(appStore({ request: anon.request!, url: anon.url, locals: anon.locals, locale, draft: false }), async () => {
+        const { renderPage } = await render();
+        return finish(await renderPage(input, assets(r), config), ctx);
+      });
+      return inStore(s, () => input.ogUnavailable
+        ? produce().then(privateResponse)
+        : withCache(ctx, { maxAge: r.revalidate ?? 31536000, staleWhileRevalidate: r.revalidate ? 31536000 : undefined, tags: r.tags }, produce));
     }
     if (live && !draft && r.render === "client" && r.shell) {
       const f = files.get(r.shell);
@@ -965,7 +971,7 @@ export async function createApp({ manifest, config, files, platform, middleware 
       const { renderPage } = await render();
       return finish(await renderPage(input, assets(r), config, { stream }), ctx, draft ? { "Cache-Control": "private, no-store" } : undefined);
     };
-    return inStore(s, () => (rc ? withCache(ctx, rc, produce) : produce()));
+    return inStore(s, () => input.ogUnavailable ? produce().then(privateResponse) : rc ? withCache(ctx, rc, produce) : produce());
   }
 
   const hasIntercepts = !!(manifest.intercepts?.length || manifest.slots?.some((x) => x.intercepts.length));

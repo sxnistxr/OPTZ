@@ -38,6 +38,8 @@ export interface RenderInput {
   og?: string;
   /** The registered image producer's size; omitted means DEFAULT_OG_SIZE. */
   ogSize?: OgModule["size"];
+  /** The registered producer failed or exceeded the live metadata wait budget. */
+  ogUnavailable?: boolean;
   /** URL base used by headTags when resolving relative metadata URLs. */
   metadataBase?: string;
   i18n?: LocaleInfo;
