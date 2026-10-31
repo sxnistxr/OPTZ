@@ -2,7 +2,7 @@ import {
   WebGLRenderer, Scene, OrthographicCamera, BufferGeometry, Float32BufferAttribute,
   ShaderMaterial, LineSegments, Points, Group, Mesh, MeshStandardMaterial,
   ExtrudeGeometry, Shape, AmbientLight, DirectionalLight, CanvasTexture,
-  MeshBasicMaterial, PlaneGeometry, SRGBColorSpace,
+  MeshBasicMaterial, PlaneGeometry, SRGBColorSpace, Color, Vector2, Vector3,
 } from "three";
 import { trailPoint, trailCurveGLSL } from "./trail-geometry";
 
@@ -16,7 +16,8 @@ export interface TrailController {
 export function createTrail(host: HTMLElement, mode: "flow" | "speed", reduced: boolean,
   onRunning: (running: boolean) => void, onFailure: () => void): TrailController | null {
   let renderer: WebGLRenderer;
-  try { renderer = new WebGLRenderer({ alpha: true, antialias: true, powerPreference: "low-power" }); }
+  // Hairlines on a dense screen are already smooth; skip the multisample cost there.
+  try { renderer = new WebGLRenderer({ alpha: true, antialias: devicePixelRatio < 2, powerPreference: "low-power" }); }
   catch { return null; }
   renderer.setPixelRatio(Math.min(devicePixelRatio, 1.5));
   renderer.setClearColor(0x080808, 0);
@@ -30,40 +31,42 @@ export function createTrail(host: HTMLElement, mode: "flow" | "speed", reduced: 
   const mobile = host.clientWidth < 600;
   const count = mobile ? 64 : 112;
   const steps = 180;
+  // The shader computes every curve, so a vertex only carries (progress, lane); shared vertices are indexed.
   const geometry = keep(new BufferGeometry());
-  const vertices: number[] = [], lanes: number[] = [], progress: number[] = [];
+  const vertices = new Float32Array(count * (steps + 1) * 3), index: number[] = [];
   for (let lane = 0; lane < count; lane++) {
-    for (let j = 0; j < steps; j++) {
-      for (const k of [j, j + 1]) {
-        const t = k / steps, l = lane / (count - 1), p = trailPoint(t, l, mode);
-        vertices.push(p.x, p.y, -2); lanes.push(l); progress.push(t);
-      }
+    const base = lane * (steps + 1);
+    for (let j = 0; j <= steps; j++) {
+      vertices[(base + j) * 3] = j / steps; vertices[(base + j) * 3 + 1] = lane / (count - 1);
+      if (j < steps) index.push(base + j, base + j + 1);
     }
   }
   geometry.setAttribute("position", new Float32BufferAttribute(vertices, 3));
-  geometry.setAttribute("aLane", new Float32BufferAttribute(lanes, 1));
-  geometry.setAttribute("aProgress", new Float32BufferAttribute(progress, 1));
+  geometry.setIndex(index);
+  const ink = new Color(), spark = new Color();
   const uniforms = {
     uTime: { value: 0 }, uHead: { value: 1 }, uPhase: { value: 0 },
     uSeed: { value: 0 }, uHeightScale: { value: 1 }, uMode: { value: mode === "speed" ? 1 : 0 },
+    uTilt: { value: new Vector2() }, uPointer: { value: new Vector3(500, 200, 0) },
+    uInk: { value: ink }, uSpark: { value: spark }, uGain: { value: 1 },
   };
   const lines = keep(new ShaderMaterial({ transparent: true, depthWrite: false, uniforms,
-    vertexShader: `attribute float aLane; attribute float aProgress;
-      uniform float uTime; uniform float uSeed; uniform float uHeightScale; uniform float uMode;
+    vertexShader: `uniform float uTime; uniform float uSeed; uniform float uHeightScale; uniform float uMode;
       varying float vLane; varying float vProgress;
       ${trailCurveGLSL}
-      void main(){vLane=aLane;vProgress=aProgress;
-        vec2 p=trailPosition(aProgress,aLane,uMode,uSeed,uTime);
+      void main(){vProgress=position.x;vLane=position.y;
+        vec2 p=trailPosition(vProgress,vLane,uMode,uSeed,uTime);
         p.y=200.+(p.y-200.)*uHeightScale;
-        gl_Position=projectionMatrix*modelViewMatrix*vec4(p,-2.,1.);}`,
-    fragmentShader: `uniform float uHead; uniform float uPhase; varying float vLane; varying float vProgress;
+        gl_Position=projectionMatrix*modelViewMatrix*vec4(trailField(p,vLane),-2.,1.);}`,
+    fragmentShader: `uniform float uHead; uniform float uPhase; uniform vec3 uInk; uniform float uGain;
+      varying float vLane; varying float vProgress;
       void main(){
         float pulse=pow(max(0.,cos((vProgress-uPhase)*12.56637+vLane*.5)),16.);
         float ink=.14+.28*pow(sin(vLane*93.)*.5+.5,5.);
         float edge=smoothstep(0.,.06,vProgress)*(1.-smoothstep(.94,1.,vProgress));
         float lane=.45+.55*sin(vLane*3.14159);
         float head=1.-smoothstep(uHead-.015,uHead+.025,vProgress);
-        gl_FragColor=vec4(1.,.84,.32,(ink+pulse*.28)*edge*lane*head);}` }));
+        gl_FragColor=vec4(uInk,min(1.,(ink+pulse*.28)*edge*lane*head*uGain));}` }));
   const ribbons = new LineSegments(geometry, lines);
   ribbons.frustumCulled = false;
   scene.add(ribbons);
@@ -84,13 +87,13 @@ export function createTrail(host: HTMLElement, mode: "flow" | "speed", reduced: 
       ${trailCurveGLSL}
       void main(){float t=fract(aSeed.x+uPhase);float lane=aSeed.y;
         vec2 p=trailPosition(t,lane,uMode,uSeed,uTime);p.y=200.+(p.y-200.)*uHeightScale;
-        gl_Position=projectionMatrix*modelViewMatrix*vec4(p,2.,1.);
+        gl_Position=projectionMatrix*modelViewMatrix*vec4(trailField(p,lane),2.,1.);
         gl_PointSize=(1.5+pow(lane,5.)*2.)*uRatio;
         vAlpha=(.15+lane*.45)*smoothstep(0.,.08,t)*(1.-smoothstep(.9,1.,t))
           *(1.-smoothstep(uHead-.015,uHead+.025,t));}`,
-    fragmentShader: `varying float vAlpha;void main(){
+    fragmentShader: `uniform vec3 uSpark; uniform float uGain; varying float vAlpha;void main(){
       float alpha=1.-smoothstep(.12,.5,length(gl_PointCoord-vec2(.5)));
-      gl_FragColor=vec4(1.,.89,.48,vAlpha*alpha);}` }));
+      gl_FragColor=vec4(uSpark,min(1.,vAlpha*alpha*uGain));}` }));
   const points = new Points(particles, sparks);
   points.frustumCulled = false;
   scene.add(points);
@@ -114,6 +117,29 @@ export function createTrail(host: HTMLElement, mode: "flow" | "speed", reduced: 
     const light = new DirectionalLight(0xffffff, 2.5); light.position.set(200, 400, 500); scene.add(light);
   }
 
+  // Ink follows the theme through the viewport's CSS color: no filter on the canvas, which would cost a composite.
+  const theme = () => {
+    ink.setStyle(getComputedStyle(host).color);
+    const light = document.documentElement.dataset.theme === "light";
+    spark.copy(ink).offsetHSL(0, 0, light ? -.04 : .06);
+    uniforms.uGain.value = light ? 1.6 : 1;
+    render();
+  };
+  // Pointer: eased toward the target each frame, so the field settles instead of snapping.
+  const fine = matchMedia("(pointer: fine)").matches;
+  const tilt = { x: 0, y: 0 }, aim = { x: 0, y: 0, px: 500, py: 200, on: 0 };
+  const zone = host.closest("section") ?? host;
+  const move = (e: PointerEvent) => {
+    const r = host.getBoundingClientRect();
+    aim.x = Math.max(-1, Math.min(1, ((e.clientX - r.left) / r.width) * 2 - 1));
+    aim.y = Math.max(-1, Math.min(1, ((e.clientY - r.top) / r.height) * 2 - 1));
+    aim.px = (e.clientX - r.left) / r.width * 1000;
+    aim.py = 200 + (.5 - (e.clientY - r.top) / r.height) * 400 * uniforms.uHeightScale.value;
+    aim.on = e.clientY >= r.top && e.clientY <= r.bottom ? 1 : 0;
+  };
+  const leave = () => { aim.x = aim.y = 0; aim.on = 0; };
+  if (fine) { zone.addEventListener("pointermove", move as EventListener); zone.addEventListener("pointerleave", leave); }
+
   let frame = 0, active = false, paused = false, visible = true, disposed = false, lost = false;
   let elapsed = 0, clock = 0, particlePhase = 0, last = 0, seed = 0, seedFrom = 0, seedTo = 0;
   const duration = mode === "speed" ? 2400 : 1400;
@@ -129,10 +155,10 @@ export function createTrail(host: HTMLElement, mode: "flow" | "speed", reduced: 
     if (mode === "speed") {
       trailPoint(travel, .5, mode, 0, clock, p);
       trailPoint(travel + .002, .5, mode, 0, clock, n);
-      packet.position.set(p.x, 200 + (p.y - 200) * uniforms.uHeightScale.value, 8);
+      packet.position.set(p.x + tilt.x * 4, 200 + (p.y - 200) * uniforms.uHeightScale.value - tilt.y * 2, 8);
       packet.rotation.z = Math.atan2((n.y - p.y) * uniforms.uHeightScale.value, n.x - p.x);
-      packet.rotation.x = -.1 + Math.sin(clock * .55) * .025;
-      packet.rotation.y = Math.sin(clock * .4) * .035;
+      packet.rotation.x = -.1 + Math.sin(clock * .55) * .025 + tilt.y * .18;
+      packet.rotation.y = Math.sin(clock * .4) * .035 + tilt.x * .28;
     }
     renderer.render(scene, camera);
   };
@@ -145,6 +171,11 @@ export function createTrail(host: HTMLElement, mode: "flow" | "speed", reduced: 
     const t = active ? Math.min(elapsed / duration, 1) : 1;
     particlePhase = (particlePhase + delta * (.045 + (active && mode === "speed" ? Math.sin(t * Math.PI) * .1 : 0))) % 1;
     if (active && elapsed >= duration) { active = false; onRunning(false); }
+    const k = 1 - Math.exp(-delta * 4), pointer = uniforms.uPointer.value;
+    tilt.x += (aim.x - tilt.x) * k; tilt.y += (aim.y - tilt.y) * k;
+    uniforms.uTilt.value.set(tilt.x, tilt.y);
+    pointer.x += (aim.px - pointer.x) * k * 1.6; pointer.y += (aim.py - pointer.y) * k * 1.6;
+    pointer.z += (aim.on - pointer.z) * k;
     render();
     frame = requestAnimationFrame(tick);
   }
@@ -178,7 +209,8 @@ export function createTrail(host: HTMLElement, mode: "flow" | "speed", reduced: 
   const contextRestored = () => { lost = false; onRunning(active); fit(); host.classList.add("webgl-ready"); resume(); };
   renderer.domElement.addEventListener("webglcontextlost", contextLost);
   renderer.domElement.addEventListener("webglcontextrestored", contextRestored);
-  fit(); host.classList.add("webgl-ready"); if (!reduced) replay(); else onRunning(false);
+  const themeWatch = new MutationObserver(theme); themeWatch.observe(document.documentElement, { attributes: true, attributeFilter: ["data-theme"] });
+  theme(); fit(); host.classList.add("webgl-ready"); if (!reduced) replay(); else onRunning(false);
   return {
     replay,
     setReduced(value) {
@@ -187,7 +219,8 @@ export function createTrail(host: HTMLElement, mode: "flow" | "speed", reduced: 
     },
     setPaused(value) { paused = value; if (value) stop(); else resume(); },
     dispose() {
-      disposed = true; stop(); resize.disconnect(); observer.disconnect();
+      disposed = true; stop(); resize.disconnect(); observer.disconnect(); themeWatch.disconnect();
+      zone.removeEventListener("pointermove", move as EventListener); zone.removeEventListener("pointerleave", leave);
       document.removeEventListener("visibilitychange", visibility);
       renderer.domElement.removeEventListener("webglcontextlost", contextLost);
       renderer.domElement.removeEventListener("webglcontextrestored", contextRestored);

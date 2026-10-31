@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { Button } from "$components/ui/button";
 import { Replay } from "$components/Icons";
-import { trailPoint } from "$lib/trail-geometry";
+import { TrailLines } from "$components/TrailLines";
 import type { TrailController } from "$lib/trail-scene";
 
 export const hydrate = "visible";
@@ -27,15 +27,9 @@ export default function Trail({ mode }: { mode: "flow" | "speed" }) {
     }).catch(() => { if (!disposed) setState("fallback"); });
     return () => { disposed = true; preference.removeEventListener("change", sync); controller.current?.dispose(); controller.current = null; };
   }, [mode]);
-  const paths = Array.from({ length: 52 }, (_, lane) => Array.from({ length: 100 }, (_, step) => {
-    const p = trailPoint(step / 99, lane / 51, mode);
-    return `${step ? "L" : "M"}${p.x.toFixed(1)},${(400 - p.y).toFixed(1)}`;
-  }).join(" "));
   return <div className={`trail-scene trail-${mode}`} data-state={state}>
     <div className="trail-viewport" ref={host} aria-hidden="true">
-      <svg className="trail-fallback" viewBox="0 0 1000 400" preserveAspectRatio="none" fill="none">
-        {paths.map((d,i) => <path key={i} d={d} stroke="currentColor" strokeOpacity={i % 4 === 0 ? .7 : .25} strokeWidth=".8" />)}
-      </svg>
+      <TrailLines className="trail-fallback" mode={mode} />
     </div>
     <div className="trail-controls site-container">{mode === "flow" && <span>A small experiment in motion.</span>}
       <div className="trail-actions">
