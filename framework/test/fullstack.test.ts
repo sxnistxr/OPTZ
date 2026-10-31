@@ -132,15 +132,40 @@ test("browser build rejects direct and transitive server-only modules",async()=>
   }finally{rmSync(root,{recursive:true,force:true});}
 });
 
-test("SPA builds strip legitimate server-only loader and head imports",async()=>{
+test.each(["production","development"])("SPA builds strip legitimate server-only loader and head imports (%s)",async(mode)=>{
   const { build }=await import("../src/build");
   const { resolveConfig }=await import("../src/types");
-  const root=join(import.meta.dir,"../.tmp/server-boundary-"+process.pid);
+  const dev=mode==="development";
+  const root=join(import.meta.dir,`../.tmp/server-boundary-${process.pid}-${dev}`);
   mkdirSync(join(root,"app/routes"),{recursive:true});mkdirSync(join(root,"app/lib"),{recursive:true});
   writeFileSync(join(root,"app/lib/data.server.ts"),'const secret="SERVER_ONLY_SENTINEL"; export function label(){ return secret.length > 0 ? "public" : "empty"; }');
-  writeFileSync(join(root,"app/routes/index.tsx"),'import { label } from "../lib/data.server"; export const loader=()=>({ label:label() }); export const head=()=>({title:label()}); export default function Home(){return <h1>public</h1>;}');
+  writeFileSync(join(root,"app/lib/client.ts"),'globalThis.__optzClientSideEffect="CLIENT_SIDE_EFFECT_SENTINEL";');
+  writeFileSync(join(root,"app/routes/index.tsx"),'import "../lib/client"; import { label } from "../lib/data.server"; export const loader=()=>({ label:label() }); export const head=()=>({title:label()}); export default function Home(){return <h1>public</h1>;}');
   try{
-    await build({root,config:resolveConfig({client:{mode:"spa"}})});
-    const files=new Bun.Glob("**/*.js");for await(const file of files.scan(join(root,"dist/static/assets")))expect(await Bun.file(join(root,"dist/static/assets",file)).text()).not.toContain("SERVER_ONLY_SENTINEL");
+    await build({root,config:resolveConfig({client:{mode:"spa"}}),dev});
+    const assets=join(root,dev?".optz/dev/static/assets":"dist/static/assets");
+    const chunks:string[]=[];
+    const files=new Bun.Glob("**/*.js");for await(const file of files.scan(assets))chunks.push(await Bun.file(join(assets,file)).text());
+    expect(chunks.length).toBeGreaterThan(0);
+    expect(chunks.join("\n")).not.toContain("SERVER_ONLY_SENTINEL");
+    expect(chunks.join("\n")).toContain("CLIENT_SIDE_EFFECT_SENTINEL");
+  }finally{rmSync(root,{recursive:true,force:true});}
+});
+
+test.each([
+  'import { label } from "../lib/data.server"; export default function Home(){return <h1>{label()}</h1>;}',
+  'import "../lib/data.server"; export default function Home(){return <h1>public</h1>;}',
+])("SPA builds still reject server-only imports retained by the page: %s",async(source)=>{
+  const { build }=await import("../src/build");
+  const { resolveConfig }=await import("../src/types");
+  mkdirSync(join(import.meta.dir,"../.tmp"),{recursive:true});
+  const root=mkdtempSync(join(import.meta.dir,"../.tmp/server-boundary-retained-"));
+  mkdirSync(join(root,"app/routes"),{recursive:true});mkdirSync(join(root,"app/lib"),{recursive:true});
+  writeFileSync(join(root,"app/lib/data.server.ts"),'export const label=()=>"SERVER_ONLY_SENTINEL";');
+  writeFileSync(join(root,"app/routes/index.tsx"),source);
+  try{
+    const result=await build({root,config:resolveConfig({client:{mode:"spa"}})}).catch(error=>error);
+    expect(result).toBeInstanceOf(Error);
+    expect((result.logs??result.errors??[]).map((log:{message:string})=>log.message).join(" ")).toContain("Server-only");
   }finally{rmSync(root,{recursive:true,force:true});}
 });
