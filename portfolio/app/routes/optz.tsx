@@ -12,7 +12,7 @@ import benchmark from "../../../bench/results.json";
 import payload from "$content/optz-payload.json";
 import site from "$lib/site";
 
-export const head = (): Head => ({ title: "OPTZ — Blink. It’s served.", description: "A React framework for Bun. HTML first, tiny islands, and less work per request. Explore the architecture, documented benchmarks, and getting-started guide." });
+export const head = (): Head => ({ canonical: "/optz", title: "OPTZ — React framework for Bun", description: "A React framework for Bun. HTML first, tiny islands, and less work per request. Explore the architecture, documented benchmarks, and getting-started guide." });
 
 export const loader = () => {
   const post = getPost("sqlite-was-reparsing-my-query");

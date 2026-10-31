@@ -1,7 +1,7 @@
 import type { Head } from "optz";
 import site from "$lib/site";
 
-export const head = (): Head => ({ title: `Not found | ${site.title}` });
+export const head = (): Head => ({ robots: "noindex, follow", title: `Not found | ${site.title}` });
 
 export default function NotFound() {
   return (

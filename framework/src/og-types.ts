@@ -31,3 +31,6 @@ export interface OgModule<D = unknown> {
   /** Fonts to draw text with. Default: the families in config.fonts (or Inter). */
   fonts?: OgFont[];
 }
+
+/** Dimensions used when an Open Graph image producer does not export `size`. */
+export const DEFAULT_OG_SIZE = { width: 1200, height: 630 } as const;

@@ -1,4 +1,4 @@
-import { Link, type PageProps } from "optz";
+import { Link, type Head, type PageProps } from "optz";
 import { PostList } from "$components/PostList";
 import { Button } from "$components/ui/button";
 import { Arrow } from "$components/Icons";
@@ -7,9 +7,24 @@ import { TrailLines } from "$components/TrailLines";
 import { listPosts, type PostMeta } from "$lib/posts";
 import site from "$lib/site";
 
+export const head = (): Head => ({ canonical: "/" });
+
 export const loader = () => ({ posts: listPosts().slice(0, 5) });
+/**
+ * Render the lab's landing page and recent posts, with linked WebSite and Person
+ * structured data. SITE_URL overrides the content URL for deployment-specific IDs.
+ */
 export default function Home({ data }: PageProps<{ posts: PostMeta[] }, "/">) {
+  const url = process.env.SITE_URL ?? site.url;
+  const structuredData = {
+    "@context": "https://schema.org",
+    "@graph": [
+      { "@type": "WebSite", "@id": `${url}/#website`, url, name: site.name, description: site.about, inLanguage: "en", author: { "@id": `${url}/#author` } },
+      { "@type": "Person", "@id": `${url}/#author`, name: site.author, url, sameAs: ["https://github.com/sxnistxr"] },
+    ],
+  };
   return <>
+    <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(structuredData).replace(/</g, "\\u003c") }} />
     <section className="home-hero dark-surface" aria-labelledby="home-title">
       <div className="site-container home-intro">
         <h1 id="home-title">Curiosity,<br /> in progress.</h1>

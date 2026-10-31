@@ -58,6 +58,7 @@ export interface Locals {
 
 export interface OpenGraphImage {
   url: string;
+  type?: string;
   width?: number;
   height?: number;
   alt?: string;
@@ -91,6 +92,7 @@ export interface Head {
     title?: string;
     description?: string;
     images?: string[];
+    imageAlt?: string;
   };
   /** hreflang alternates (added automatically with i18n) and feeds, e.g. { types: { "application/rss+xml": "/feed.xml" } } */
   alternates?: { languages?: Record<string, string>; types?: Record<string, string> };

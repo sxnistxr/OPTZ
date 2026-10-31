@@ -7,7 +7,7 @@ import ThemeToggle from "$components/ThemeToggle";
 import DocsSearch from "$components/DocsSearch.island";
 import site from "$lib/site";
 
-export const head = (): Head => ({ title: site.title, description: site.about, openGraph: { siteName: site.name } });
+export const head = (): Head => ({ title: site.title, description: site.about, robots: "index, follow, max-image-preview:large", themeColor: "#ffe46a", openGraph: { siteName: site.name, locale: "en_US", type: "website" }, twitter: { card: "summary_large_image" } });
 export default function Layout({ children }: { children: ReactNode }) {
   const { pathname } = useRouter();
   const docs = pathname === "/docs" || pathname.startsWith("/docs/");

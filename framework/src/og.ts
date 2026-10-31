@@ -3,7 +3,7 @@
 import { existsSync, readFileSync } from "node:fs";
 import { isAbsolute, join } from "node:path";
 import { cachedFetch } from "./net-cache";
-import type { OgFont, OgModule } from "./og-types";
+import { DEFAULT_OG_SIZE, type OgFont, type OgModule } from "./og-types";
 
 interface SatoriFont {
   name: string;
@@ -55,9 +55,10 @@ async function fontsFor(root: string, mod: OgModule): Promise<SatoriFont[]> {
   return p;
 }
 
+/** Rasterize an image producer at its exported size, or the shared default dimensions. */
 export async function renderOg(root: string, mod: OgModule, props: Record<string, unknown>): Promise<Uint8Array> {
   const [{ default: satori }, { Resvg }] = await Promise.all([import("satori"), import("@resvg/resvg-js")]);
-  const size = mod.size ?? { width: 1200, height: 630 };
+  const size = mod.size ?? DEFAULT_OG_SIZE;
   const svg = await satori(mod.default(props as never) as never, { ...size, fonts: await fontsFor(root, mod) });
   return new Uint8Array(new Resvg(svg, { fitTo: { mode: "width", value: size.width } }).render().asPng());
 }

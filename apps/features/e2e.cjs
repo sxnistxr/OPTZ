@@ -87,7 +87,9 @@ const check = (name, ok, detail = "") => results.push(`${ok ? "ok  " : "FAIL"} $
   check("the modal is a real modal dialog: named, focus inside, page behind inert", modal.modal && modal.name === "Photo 2" && modal.focusInside, JSON.stringify(modal));
   await pg.keyboard.press("Escape");
   await pg.waitForURL(base + "/gallery");
-  await pg.waitForTimeout(200);
+  // popstate updates the URL before the fetched gallery HTML is applied. Wait for
+  // the completed swap and focus restoration, including on a slow CI runner.
+  await pg.waitForFunction(() => !document.querySelector('[data-testid="photo-modal"]') && document.activeElement?.textContent === "Photo 2");
   const after = await pg.evaluate(() => ({ open: !!document.querySelector('[data-testid="photo-modal"]'), focused: document.activeElement?.textContent }));
   check("Escape closes the modal and returns focus to the photo's link", !after.open && after.focused === "Photo 2", JSON.stringify(after));
   await pg.goto(base + "/gallery/photo/2");
