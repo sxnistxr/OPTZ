@@ -24,6 +24,6 @@ export default function Home({ data }: PageProps<{ posts: PostMeta[] }, "/">) {
       <Link href="/blog" className="work-row"><div><h3>Development notes</h3><span>What I learn along the way</span></div><p>Debugging, benchmarks, and the small details that make software work better.</p><Arrow /></Link>
     </section>
     <section className="content-section site-container writing-section" aria-labelledby="writing"><div className="section-top"><h2 id="writing">Notes from the build</h2><Link href="/blog" className="text-link">All writing<Arrow /></Link></div><PostList posts={data.posts} /></section>
-    <section className="closing-section trail-echo site-container"><TrailLines className="trail-echo-lines" mode="flow" seed={2.1} lanes={28} segments={20} /><h2>Always something<br />worth figuring out.</h2><a className="text-link" href="https://github.com/sxnistxr">Follow the work on GitHub<Arrow /></a></section>
+    <section className="closing-section trail-echo site-container"><TrailLines className="trail-echo-lines" seed={2.1} lanes={28} segments={20} /><h2>Always something<br />worth figuring out.</h2><a className="text-link" href="https://github.com/sxnistxr">Follow the work on GitHub<Arrow /></a></section>
   </>;
 }

@@ -1,10 +1,8 @@
 import {
   WebGLRenderer, Scene, OrthographicCamera, BufferGeometry, Float32BufferAttribute,
-  ShaderMaterial, LineSegments, Points, Group, Mesh, MeshStandardMaterial,
-  ExtrudeGeometry, Shape, AmbientLight, DirectionalLight, CanvasTexture,
-  MeshBasicMaterial, PlaneGeometry, SRGBColorSpace, Color, Vector2, Vector3,
+  ShaderMaterial, LineSegments, Points, Color, Vector2, Vector3, LinearSRGBColorSpace,
 } from "three";
-import { trailPoint, trailCurveGLSL } from "./trail-geometry";
+import { trailCurveGLSL } from "./trail-geometry";
 
 export interface TrailController {
   replay(): void;
@@ -13,7 +11,7 @@ export interface TrailController {
   dispose(): void;
 }
 
-export function createTrail(host: HTMLElement, mode: "flow" | "speed", reduced: boolean,
+export function createTrail(host: HTMLElement, reduced: boolean,
   onRunning: (running: boolean) => void, onFailure: () => void): TrailController | null {
   let renderer: WebGLRenderer;
   // Hairlines on a dense screen are already smooth; skip the multisample cost there.
@@ -45,28 +43,27 @@ export function createTrail(host: HTMLElement, mode: "flow" | "speed", reduced: 
   geometry.setIndex(index);
   const ink = new Color(), spark = new Color();
   const uniforms = {
-    uTime: { value: 0 }, uHead: { value: 1 }, uPhase: { value: 0 },
-    uSeed: { value: 0 }, uHeightScale: { value: 1 }, uMode: { value: mode === "speed" ? 1 : 0 },
+    uTime: { value: 0 }, uPhase: { value: 0 },
+    uSeed: { value: 0 }, uHeightScale: { value: 1 },
     uTilt: { value: new Vector2() }, uPointer: { value: new Vector3(500, 200, 0) },
     uInk: { value: ink }, uSpark: { value: spark }, uGain: { value: 1 },
   };
   const lines = keep(new ShaderMaterial({ transparent: true, depthWrite: false, uniforms,
-    vertexShader: `uniform float uTime; uniform float uSeed; uniform float uHeightScale; uniform float uMode;
+    vertexShader: `uniform float uTime; uniform float uSeed; uniform float uHeightScale; 
       varying float vLane; varying float vProgress;
       ${trailCurveGLSL}
       void main(){vProgress=position.x;vLane=position.y;
-        vec2 p=trailPosition(vProgress,vLane,uMode,uSeed,uTime);
+        vec2 p=trailPosition(vProgress,vLane,uSeed,uTime);
         p.y=200.+(p.y-200.)*uHeightScale;
         gl_Position=projectionMatrix*modelViewMatrix*vec4(trailField(p,vLane),-2.,1.);}`,
-    fragmentShader: `uniform float uHead; uniform float uPhase; uniform vec3 uInk; uniform float uGain;
+    fragmentShader: `uniform float uPhase; uniform vec3 uInk; uniform float uGain;
       varying float vLane; varying float vProgress;
       void main(){
         float pulse=pow(max(0.,cos((vProgress-uPhase)*12.56637+vLane*.5)),16.);
         float ink=.14+.28*pow(sin(vLane*93.)*.5+.5,5.);
         float edge=smoothstep(0.,.06,vProgress)*(1.-smoothstep(.94,1.,vProgress));
         float lane=.45+.55*sin(vLane*3.14159);
-        float head=1.-smoothstep(uHead-.015,uHead+.025,vProgress);
-        gl_FragColor=vec4(uInk,min(1.,(ink+pulse*.28)*edge*lane*head*uGain));}` }));
+        gl_FragColor=vec4(uInk,min(1.,(ink+pulse*.28)*edge*lane*uGain));}` }));
   const ribbons = new LineSegments(geometry, lines);
   ribbons.frustumCulled = false;
   scene.add(ribbons);
@@ -82,15 +79,14 @@ export function createTrail(host: HTMLElement, mode: "flow" | "speed", reduced: 
   const sparks = keep(new ShaderMaterial({ transparent: true, depthWrite: false,
     uniforms: { ...uniforms, uRatio: { value: renderer.getPixelRatio() } },
     vertexShader: `attribute vec2 aSeed; uniform float uTime; uniform float uPhase;
-      uniform float uSeed; uniform float uMode; uniform float uHeightScale; uniform float uRatio; uniform float uHead;
+      uniform float uSeed; uniform float uHeightScale; uniform float uRatio;
       varying float vAlpha;
       ${trailCurveGLSL}
       void main(){float t=fract(aSeed.x+uPhase);float lane=aSeed.y;
-        vec2 p=trailPosition(t,lane,uMode,uSeed,uTime);p.y=200.+(p.y-200.)*uHeightScale;
+        vec2 p=trailPosition(t,lane,uSeed,uTime);p.y=200.+(p.y-200.)*uHeightScale;
         gl_Position=projectionMatrix*modelViewMatrix*vec4(trailField(p,lane),2.,1.);
         gl_PointSize=(1.5+pow(lane,5.)*2.)*uRatio;
-        vAlpha=(.15+lane*.45)*smoothstep(0.,.08,t)*(1.-smoothstep(.9,1.,t))
-          *(1.-smoothstep(uHead-.015,uHead+.025,t));}`,
+        vAlpha=(.15+lane*.45)*smoothstep(0.,.08,t)*(1.-smoothstep(.9,1.,t));}`,
     fragmentShader: `uniform vec3 uSpark; uniform float uGain; varying float vAlpha;void main(){
       float alpha=1.-smoothstep(.12,.5,length(gl_PointCoord-vec2(.5)));
       gl_FragColor=vec4(uSpark,min(1.,vAlpha*alpha*uGain));}` }));
@@ -98,28 +94,10 @@ export function createTrail(host: HTMLElement, mode: "flow" | "speed", reduced: 
   points.frustumCulled = false;
   scene.add(points);
 
-  const packet = new Group();
-  if (mode === "speed") {
-    const shape = new Shape(); const w = 93, h = 40, r = 9;
-    shape.moveTo(-w / 2 + r, -h / 2); shape.lineTo(w / 2 - r, -h / 2); shape.quadraticCurveTo(w / 2, -h / 2, w / 2, -h / 2 + r);
-    shape.lineTo(w / 2, h / 2 - r); shape.quadraticCurveTo(w / 2, h / 2, w / 2 - r, h / 2); shape.lineTo(-w / 2 + r, h / 2);
-    shape.quadraticCurveTo(-w / 2, h / 2, -w / 2, h / 2 - r); shape.lineTo(-w / 2, -h / 2 + r); shape.quadraticCurveTo(-w / 2, -h / 2, -w / 2 + r, -h / 2);
-    const body = keep(new ExtrudeGeometry(shape, { depth: 6, bevelEnabled: true, bevelSegments: 3, steps: 1, bevelSize: 1.5, bevelThickness: 1.5, curveSegments: 12 }));
-    packet.add(new Mesh(body, keep(new MeshStandardMaterial({ color: 0xffdf51, roughness: .45, metalness: .08 }))));
-    const label = document.createElement("canvas"); label.width = 512; label.height = 160;
-    const ctx = label.getContext("2d")!;
-    ctx.fillStyle = "#171717"; ctx.font = "600 52px monospace"; ctx.textBaseline = "middle"; ctx.fillText("200 OK", 23, 82);
-    ctx.beginPath(); ctx.ellipse(385, 80, 6, 11, 0, 0, Math.PI * 2); ctx.ellipse(425, 80, 6, 11, 0, 0, Math.PI * 2); ctx.fill();
-    const texture = keep(new CanvasTexture(label)); texture.colorSpace = SRGBColorSpace;
-    const face = new Mesh(keep(new PlaneGeometry(86, 29)), keep(new MeshBasicMaterial({ map: texture, transparent: true })));
-    face.position.z = 8; packet.add(face); scene.add(packet);
-    scene.add(new AmbientLight(0xffffff, 2));
-    const light = new DirectionalLight(0xffffff, 2.5); light.position.set(200, 400, 500); scene.add(light);
-  }
-
   // Ink follows the theme through the viewport's CSS color: no filter on the canvas, which would cost a composite.
   const theme = () => {
-    ink.setStyle(getComputedStyle(host).color);
+    // Raw shader output is written as-is, so keep the CSS color's sRGB numbers instead of converting to linear.
+    ink.setStyle(getComputedStyle(host).color, LinearSRGBColorSpace);
     const light = document.documentElement.dataset.theme === "light";
     spark.copy(ink).offsetHSL(0, 0, light ? -.04 : .06);
     uniforms.uGain.value = light ? 1.6 : 1;
@@ -142,24 +120,13 @@ export function createTrail(host: HTMLElement, mode: "flow" | "speed", reduced: 
 
   let frame = 0, active = false, paused = false, visible = true, disposed = false, lost = false;
   let elapsed = 0, clock = 0, particlePhase = 0, last = 0, seed = 0, seedFrom = 0, seedTo = 0;
-  const duration = mode === "speed" ? 2400 : 1400;
-  const p = { x: 0, y: 0 }, n = { x: 0, y: 0 };
+  const duration = 1400;
   const ease = (t: number) => t * t * t * (t * (t * 6 - 15) + 10);
   const render = () => {
     if (disposed || lost) return;
     const t = active ? Math.min(elapsed / duration, 1) : 1;
-    const travel = active ? -.045 + .875 * ease(t) : .83;
     uniforms.uSeed.value = seedFrom + (seedTo - seedFrom) * ease(t);
-    uniforms.uHead.value = mode === "speed" ? Math.max(0, travel + .025) : 1;
     uniforms.uTime.value = clock; uniforms.uPhase.value = particlePhase;
-    if (mode === "speed") {
-      trailPoint(travel, .5, mode, 0, clock, p);
-      trailPoint(travel + .002, .5, mode, 0, clock, n);
-      packet.position.set(p.x + tilt.x * 4, 200 + (p.y - 200) * uniforms.uHeightScale.value - tilt.y * 2, 8);
-      packet.rotation.z = Math.atan2((n.y - p.y) * uniforms.uHeightScale.value, n.x - p.x);
-      packet.rotation.x = -.1 + Math.sin(clock * .55) * .025 + tilt.y * .18;
-      packet.rotation.y = Math.sin(clock * .4) * .035 + tilt.x * .28;
-    }
     renderer.render(scene, camera);
   };
   function tick(now: number) {
@@ -168,8 +135,7 @@ export function createTrail(host: HTMLElement, mode: "flow" | "speed", reduced: 
     const delta = Math.min(now - last, 50) / 1000; last = now;
     clock += delta;
     if (active) elapsed += delta * 1000;
-    const t = active ? Math.min(elapsed / duration, 1) : 1;
-    particlePhase = (particlePhase + delta * (.045 + (active && mode === "speed" ? Math.sin(t * Math.PI) * .1 : 0))) % 1;
+    particlePhase = (particlePhase + delta * .045) % 1;
     if (active && elapsed >= duration) { active = false; onRunning(false); }
     const k = 1 - Math.exp(-delta * 4), pointer = uniforms.uPointer.value;
     tilt.x += (aim.x - tilt.x) * k; tilt.y += (aim.y - tilt.y) * k;
@@ -188,7 +154,7 @@ export function createTrail(host: HTMLElement, mode: "flow" | "speed", reduced: 
   function replay() {
     if (disposed || lost || paused) return;
     elapsed = 0;
-    if (mode === "flow") { seedFrom = uniforms.uSeed.value; seedTo = ++seed * .7; }
+    seedFrom = uniforms.uSeed.value; seedTo = ++seed * .7;
     active = !reduced; onRunning(active); render(); resume();
   }
   function fit() {
@@ -198,8 +164,6 @@ export function createTrail(host: HTMLElement, mode: "flow" | "speed", reduced: 
     camera.top = 200 + worldHeight / 2; camera.bottom = 200 - worldHeight / 2;
     camera.updateProjectionMatrix();
     uniforms.uHeightScale.value = worldHeight / 400;
-    const packetHeight = width < 600 ? 29 : 36;
-    packet.scale.setScalar(packetHeight / 40 * 1000 / width);
     renderer.setSize(width, height, false); render();
   }
   const resize = new ResizeObserver(fit); resize.observe(host);
