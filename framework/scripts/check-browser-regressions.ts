@@ -26,15 +26,16 @@ const html = (text: string, css = "") => `<!doctype html><html lang="en"><head><
 
 const browser = await chromium.launch();
 try {
-  // Query strings reach loaders on navigation, hash navigation, prefetch, and cached variants.
+  // Query strings reach loaders and static payloads stay fresh after prefetch and revisits.
   const spa = await browser.newPage();
   const requests: string[] = [];
+  let version = "";
   const spaHtml = `<!doctype html><title>initial</title><div id="__optz"><main id="main"><h1>initial</h1><a href="/static?q=prefetched">Next</a><div id="target"></div></main></div><script id="__optz_boot" type="application/json">{"pattern":"/search","params":{},"data":{"q":"initial"}}</script>`;
   await spa.route(origin + "/**", async route => {
     const url = new URL(route.request().url());
     if (url.pathname.startsWith("/_optz/data/")) {
       requests.push(url.pathname + url.search);
-      const q = url.searchParams.get("q") ?? "missing";
+      const q = (url.searchParams.get("q") ?? "missing") + version;
       await route.fulfill({ contentType: "application/json", body: JSON.stringify({ data: { q }, head: { title: q } }) });
     } else await route.fulfill({ contentType: "text/html", body: spaHtml });
   });
@@ -52,18 +53,22 @@ try {
   await spa.evaluate(() => window.__optz.navigate("/search?q=second#target"));
   await spa.waitForFunction(() => document.querySelector("h1")?.textContent === "second");
   assert(requests.includes("/_optz/data/search.json?q=second"));
+  const hoverResponse = spa.waitForResponse(response => response.url().endsWith('/_optz/data/static.json?q=prefetched'));
   await spa.locator("a").hover();
-  await spa.waitForFunction(() => document.querySelector("a"));
+  await (await hoverResponse).finished();
+  version = " after hover";
   await spa.locator("a").click();
-  await spa.waitForFunction(() => document.querySelector("h1")?.textContent === "prefetched");
-  assert.equal(requests.filter(url => url === "/_optz/data/static.json?q=prefetched").length, 1);
+  await spa.waitForFunction(() => document.querySelector("h1")?.textContent === "prefetched after hover");
+  const afterClick = requests.filter(url => url === "/_optz/data/static.json?q=prefetched").length;
+  assert(afterClick >= 2);
   await spa.evaluate(() => window.__optz.navigate("/static?q=other"));
-  await spa.waitForFunction(() => document.querySelector("h1")?.textContent === "other");
+  await spa.waitForFunction(() => document.querySelector("h1")?.textContent === "other after hover");
+  version = " updated";
   await spa.evaluate(() => window.__optz.navigate("/static?q=prefetched"));
-  await spa.waitForFunction(() => document.querySelector("h1")?.textContent === "prefetched");
-  assert.equal(requests.filter(url => url === "/_optz/data/static.json?q=prefetched").length, 1);
+  await spa.waitForFunction(() => document.querySelector("h1")?.textContent === "prefetched updated");
+  assert.equal(requests.filter(url => url === "/_optz/data/static.json?q=prefetched").length, afterClick + 1);
   await spa.close();
-  console.log("ok SPA queries survive navigation, hash changes, prefetch and cached variants");
+  console.log("ok SPA queries survive navigation and static payloads update on revisits");
 
   // A superseded page must not commit after its stylesheet finally loads.
   const islands = await browser.newPage();
@@ -95,6 +100,23 @@ try {
   assert.equal(new URL(islands.url()).pathname, "/fast");
   assert.deepEqual(await islands.evaluate(() => window.events), [origin + "/fast"]);
   assert.equal(await islands.evaluate(() => document.documentElement.classList.contains("optz-navigating")), false);
+
+  // Even a private/no-store response fetched on hover must not be replayed on click.
+  let content = "before", hoverRequests = 0;
+  await islands.route(origin + "/hovered", route => {
+    hoverRequests++;
+    return route.fulfill({ contentType: "text/html", headers: { "Cache-Control": "private, no-store" }, body: html(content) });
+  });
+  await islands.evaluate(() => window.testPrefetch("/hovered"));
+  content = "after";
+  await islands.evaluate(() => window.nav("/hovered"));
+  assert.equal(await islands.locator("main").textContent(), "after");
+  assert.equal(hoverRequests, 2);
+  await islands.evaluate(() => window.nav("/fast"));
+  content = "latest";
+  await islands.evaluate(() => window.nav("/hovered"));
+  assert.equal(await islands.locator("main").textContent(), "latest");
+  assert.equal(hoverRequests, 3);
 
   await islands.evaluate(async () => {
     await Promise.all(Array.from({length:100}, (_,i) => window.testPrefetch(`/page-${i}`)));

@@ -101,16 +101,18 @@ function hydrateAll(registry: Record<string, IslandEntry>, root: ParentNode) {
 let registryRef: Record<string, IslandEntry> = {};
 let seq = 0;
 
-function fetchHtml(href: string, fresh = false): Promise<string | null> {
+function fetchHtml(href: string, mode: "prefetch" | "navigate" | "refresh" = "prefetch"): Promise<string | null> {
   trimPrefetch();
   // Intercepting routes answer differently depending on where navigation starts.
   const key = `${location.pathname}|${href}`;
-  const hit = fresh ? undefined : prefetched.get(key);
+  // Hover results deduplicate prefetches only. A click must validate current content,
+  // including responses marked private/no-store and changes since the hover.
+  const hit = mode === "prefetch" ? prefetched.get(key) : undefined;
   if (hit && Date.now() - hit.at < 30_000) return hit.html;
-  const html = fetch(href, { headers: { Accept: "text/html", "X-Optz-Swap": "1", "X-Optz-From": location.pathname }, cache: fresh ? "no-store" : "default" })
+  const html = fetch(href, { headers: { Accept: "text/html", "X-Optz-Swap": "1", "X-Optz-From": location.pathname }, cache: mode === "refresh" ? "no-store" : "no-cache" })
     .then((r) => ((r.ok || r.status === 404) && (r.headers.get("content-type") ?? "").includes("text/html") ? r.text() : null))
     .catch(() => null);
-  if (!fresh) {
+  if (mode === "prefetch") {
     const entry = { at: Date.now(), size: 0, html };
     prefetched.set(key, entry);
     trimPrefetch();
@@ -191,7 +193,7 @@ export async function navigate(href: string, opts: { pop?: boolean; replace?: bo
   const id = ++seq;
   rememberOpener();
   document.documentElement.classList.add("optz-navigating");
-  const html = await fetchHtml(url.pathname + url.search);
+  const html = await fetchHtml(url.pathname + url.search, "navigate");
   if (id !== seq) return;
   prefetched.delete(`${location.pathname}|${url.pathname + url.search}`);
   // A short cross-fade where the browser supports same-document view transitions.
@@ -208,7 +210,7 @@ export async function refresh() {
   const id = ++seq;
   prefetched.clear();
   const url = new URL(location.href);
-  const html = await fetchHtml(url.pathname + url.search, true);
+  const html = await fetchHtml(url.pathname + url.search, "refresh");
   if (id !== seq) return;
   await applyHtml(html, url, { keep: true, scroll: false }, id);
   if (id === seq) document.documentElement.classList.remove("optz-navigating");

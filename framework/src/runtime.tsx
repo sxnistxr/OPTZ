@@ -277,22 +277,17 @@ function Root({ routes, initial, urlParams }: { routes: ClientRoute[]; initial: 
     if (urlParams) setState((s) => ({ ...s, params: urlParams }));
   }, [urlParams]);
   const [navigating, setNavigating] = useState(false);
-  const cache = useRef(new Map<string, Promise<Payload | null>>());
   const seq = useRef(0);
 
   const fetchPayload = useCallback((pathname: string, search: string, route: ClientRoute): Promise<Payload | null> => {
     // Every built page has a payload (its data, if any, and its head tags); client-rendered
     // shells have neither.
     if (route.render === "client") return Promise.resolve({});
-    // Dynamic pages are fetched fresh each time; static ones are cached for the session.
-    const key = pathname + search;
-    const hit = route.render === "static" ? cache.current.get(key) : undefined;
-    if (hit) return hit;
-    const p = fetch(dataPath(pathname) + search, { headers: { Accept: "application/json" } })
+    // Revalidate on every navigation: static data can change through ISR or deployment.
+    // Let the HTTP cache retain validators instead of keeping payloads for the session.
+    return fetch(dataPath(pathname) + search, { headers: { Accept: "application/json" }, cache: "no-cache" })
       .then((r) => (r.ok ? (r.json() as Promise<Payload>) : null))
       .catch(() => null);
-    if (route.render === "static") cache.current.set(key, p);
-    return p;
   }, []);
 
   const prefetch = useCallback(
@@ -364,7 +359,6 @@ function Root({ routes, initial, urlParams }: { routes: ClientRoute[]; initial: 
     (globalThis as { __optz?: unknown }).__optz = {
       navigate: (href: string) => navigate(href),
       refresh: () => {
-        cache.current.clear();
         return navigate(location.href, { replace: true, scroll: false });
       },
     };
