@@ -27,27 +27,27 @@ colors:
 typography:
   display:
     fontFamily: '"Schibsted Grotesk", "Schibsted Grotesk Fallback", ui-sans-serif, system-ui, sans-serif'
-    fontSize: clamp(2.7rem, 6.2vw, 5.7rem)
+    fontSize: clamp(3rem, 7vw, 6rem)
     fontWeight: 600
-    lineHeight: 1.1
-    letterSpacing: -0.04em
+    lineHeight: 1
+    letterSpacing: -0.045em
   display-optz:
     fontFamily: '"Schibsted Grotesk", "Schibsted Grotesk Fallback", ui-sans-serif, system-ui, sans-serif'
-    fontSize: clamp(3rem, 7.4vw, 6rem)
+    fontSize: clamp(3rem, 7vw, 6rem)
     fontWeight: 600
-    lineHeight: 1.07
-    letterSpacing: -0.04em
+    lineHeight: 1
+    letterSpacing: -0.045em
   headline:
     fontFamily: '"Schibsted Grotesk", "Schibsted Grotesk Fallback", ui-sans-serif, system-ui, sans-serif'
-    fontSize: clamp(1.9rem, 3.1vw, 2.75rem)
+    fontSize: clamp(2rem, 3.6vw, 3rem)
     fontWeight: 600
-    lineHeight: 1.15
+    lineHeight: 1.1
     letterSpacing: -0.035em
   page-title:
     fontFamily: '"Schibsted Grotesk", "Schibsted Grotesk Fallback", ui-sans-serif, system-ui, sans-serif'
-    fontSize: clamp(2.75rem, 6vw, 4.5rem)
+    fontSize: clamp(2.5rem, 5vw, 3.5rem)
     fontWeight: 600
-    lineHeight: 1.12
+    lineHeight: 1.08
     letterSpacing: -0.04em
   body:
     fontFamily: '"Schibsted Grotesk", "Schibsted Grotesk Fallback", ui-sans-serif, system-ui, sans-serif'
@@ -58,16 +58,16 @@ typography:
     fontFamily: '"Schibsted Grotesk", "Schibsted Grotesk Fallback", ui-sans-serif, system-ui, sans-serif'
     fontSize: 1rem
     fontWeight: 400
-    lineHeight: 1.85
+    lineHeight: 1.75
   docs-title:
     fontFamily: '"Schibsted Grotesk", "Schibsted Grotesk Fallback", ui-sans-serif, system-ui, sans-serif'
     fontSize: 2.5rem
     fontWeight: 600
-    lineHeight: 1.2
-    letterSpacing: -0.035em
+    lineHeight: 1.15
+    letterSpacing: -0.04em
   docs-navigation:
     fontFamily: '"Schibsted Grotesk", "Schibsted Grotesk Fallback", ui-sans-serif, system-ui, sans-serif'
-    fontSize: 0.8125rem
+    fontSize: 0.875rem
     fontWeight: 400
     lineHeight: 1.6
   post-body:
@@ -188,11 +188,25 @@ The `dark-*` values replace their matching semantic tokens across the entire web
 
 ## Typography
 
-Schibsted Grotesk carries display, interface, and documentation text. Newsreader carries long-form posts. The system monospace stack is reserved for code, measurements, and technical annotations. Font configuration supplies size-matched fallbacks; do not substitute an unrelated display face.
+Schibsted Grotesk carries display, interface, and documentation text. Newsreader carries long-form posts. The system monospace stack is reserved for code. Font configuration supplies size-matched fallbacks; do not substitute an unrelated display face.
 
-The frontmatter records the implemented roles rather than a fixed modular scale. Display and section headings use fluid sizing and tight tracking. Standard headings use medium-to-semibold weight. Documentation uses a 40px title (32px below 800px), 17px introductory copy, 16px prose at 1.85 line height, 22px ruled section headings at weight 600, and compact 13px navigation. Lower documentation subheads and prose emphasis retain weight 650. Posts cap at 36rem; documentation prose caps at 68ch while tables and code may use the full column.
+One role-based scale lives in `app/styles.css` as `--text-*` tokens, calibrated against measured Vercel, Next.js, Raycast, Bun and Apple pages. Each step is a role, so a size means the same thing on every page:
 
-At the narrow layout breakpoint, OPTZ's display becomes 3.2rem with a 9ch measure; the DihLabs heading caps at 10ch. Keep headline wrapping intentional and labels in sentence case.
+| role | size | use |
+|---|---|---|
+| display | clamp(3rem, 7vw, 6rem), 1.0, -0.045em | the one headline that opens a landing page |
+| title | clamp(2.5rem, 5vw, 3.5rem), -0.04em | inner page names: Projects, Writing, errors |
+| heading | clamp(2rem, 3.6vw, 3rem), -0.035em | a section of a landing page |
+| subheading | 1.5rem | a block inside a section; docs h2 |
+| lead | 1.25rem (1.125rem on phones) | the sentence that introduces a hero or page |
+| item | 1.25rem, weight 600 | the name of a row in a list |
+| body | 1rem, 1.65 | reading text and row descriptions, in Muted |
+| ui | 0.875rem | navigation, buttons, dates, metadata, captions, docs sidebar |
+| fine | 0.75rem | keyboard hints and code-block labels only |
+
+Documentation uses a 40px title (32px below 900px), 18px introduction, 16px prose at 1.75, 24px ruled section headings, 20px subheads, a 14px sidebar and a 13px contents rail. Posts set a 36–52px title over 19px Newsreader capped at 36rem.
+
+Hierarchy rules: a headline, its introduction and its action sit together. Rows carry a name and one sentence, nothing between. Do not add captions under artwork, taglines floating beside content, or stacked sub-labels; if a fact matters, it belongs in the sentence. Supporting text steps down in color (Muted) before it steps down in size. Schibsted's tabular figures space commas widely, so dates and single figures use proportional numerals; only aligned table columns use tabular ones.
 
 ## Layout
 
@@ -224,7 +238,7 @@ On small screens, hero actions remain at least 48px tall and trail controls at l
 
 ### Navigation
 
-Site navigation uses restrained 13px text links and an underlined current page with a seven-pixel underline offset. DIHLabs exposes Projects, Writing, and an OPTZ product disclosure. Its panel links to Explore OPTZ, Documentation, and Benchmarks; clicking outside, following a link, or pressing Escape closes it, with Escape returning focus to its summary. OPTZ and docs expose Overview, Docs, and Benchmarks. GitHub and the theme switch sit in the action cluster; the DIHLabs return link moves into the navigation row below 1100px. Preserve the longest matching current route, `aria-current`, skip link, and mobile wrapping.
+Site navigation uses restrained 14px text links and an underlined current page with a seven-pixel underline offset. DIHLabs exposes Projects, Writing, and an OPTZ product disclosure. Its panel links to Explore OPTZ, Documentation, and Benchmarks; clicking outside, following a link, or pressing Escape closes it, with Escape returning focus to its summary. OPTZ and docs expose Overview, Docs, and Benchmarks. GitHub and the theme switch sit in the action cluster; the DIHLabs return link moves into the navigation row below 1100px. Preserve the longest matching current route, `aria-current`, skip link, and mobile wrapping.
 
 The DihLabs identity refines the user-supplied ring-and-slash reference through a generated image traced into editable SVG paths. The full lockup is 148px wide in the header and 116px in the footer; the emblem is optically balanced with the mixed-case wordmark. Source image and prompt provenance live in `branding/`. OPTZ uses a geometric SVG wordmark and slanted speed mark, 120px wide in the header. Docs add a divider and Docs label beside it. All identity artwork inherits the active ink color. Docs use the selected global theme, a filled active sidebar item, and a one-pixel left rule for the current contents heading. The thin page navigation progress indicator is monochrome.
 
@@ -238,13 +252,19 @@ The island loads the index on first focus and returns at most eight results. `/`
 
 ### Editorial rows and panels
 
-Work rows combine title, technical context, description, and arrow; hover underlines the title. Writing rows pair title and summary with a quiet date. Both use rules and spacing instead of elevation. Architecture panels use Panel with the panel radius and distinct build-time/request stages. Documentation next/previous links use restrained borders that darken on hover. Code, tables, and prose preserve their separate reading treatments. Docs code blocks have a Rule border, theme-aware Code surface, and a Panel language/copy toolbar; code text is 13px with 1.25rem inner padding. Copy shows Copied or Select to copy for two seconds before resetting. The contents rail tracks the current section during scroll.
+Work rows combine a title, one sentence, and an arrow; hover underlines the title. Writing rows pair title and summary with a right-aligned date. The footer repeats the header's destinations beside the mark. Both use rules and spacing instead of elevation. Architecture panels use Panel with the panel radius and distinct build-time/request stages. Documentation next/previous links use restrained borders that darken on hover. Code, tables, and prose preserve their separate reading treatments. Docs code blocks have a Rule border, theme-aware Code surface, and a Panel language/copy toolbar; code text is 13px with 1.25rem inner padding. Copy shows Copied or Select to copy for two seconds before resetting. The contents rail tracks the current section during scroll.
+
+### OPTZ page sections
+
+After the hero, the OPTZ page follows a product-page rhythm (the Next.js homepage is the structural reference, not the identity). Three illustrated pillars (rendered before the request, islands, typed routes) sit in 3:2 ruled frames with a one-line title and arrow; a grid of one-sentence features follows, ending in the one inverted Ink tile for the current release. Then the benchmark, the request path, a foundation row of three ruled cards (Bun, React, Preact islands) with the live status line, and Get started: the copyable install command beside four example apps drawn as folded-corner file cards. The page closes on a ruled band with one line and two buttons; it has no artwork behind it.
+
+The illustrations live in `app/components/OptzIllustrations.tsx` and draw only with theme tokens; a single Trail Yellow detail marks the point of each. `bun scripts/export-illustrations.tsx` exports them as light and dark SVG files to `branding/illustrations/`.
 
 ### Three.js trails
 
 The shared Trail island has `flow` and `speed` modes. DihLabs shows the flowing field and a Reseed control. OPTZ adds an extruded yellow `200 OK` character and Send a request control. This is illustrative artwork, never a live benchmark.
 
-The visible island dynamically imports the renderer; documentation does not load Three.js. The request arrives over 2400ms with quintic easing; flow reseeds by smoothly morphing its deterministic curve over 1400ms. GPU trails and sparks share the same curve and continue ambient motion after completion. A compact pause control preserves the current phase and resumes from it. Replay is disabled while paused. The aspect-correct camera keeps the request character proportional at every width. Animation pauses offscreen and while the document is hidden. Pixel ratio is capped at 1.5; mobile uses fewer lines. ResizeObserver keeps the canvas fitted.
+The visible island dynamically imports the renderer; documentation does not load Three.js. The request arrives over 2400ms with quintic easing; flow reseeds by smoothly morphing its deterministic curve over 1400ms. Each trail quad is sized to hold its whole head flare, and every glow and flare falloff is windowed to zero at the quad edge, with half-step dithering against banding; light never ends on a straight line. GPU trails and sparks share the same curve and continue ambient motion after completion. A compact pause control preserves the current phase and resumes from it. Replay is disabled while paused. The aspect-correct camera keeps the request character proportional at every width. Animation pauses offscreen and while the document is hidden. Pixel ratio is capped at 1.5; mobile uses fewer lines. ResizeObserver keeps the canvas fitted.
 
 Reduced motion produces a static render, and OPTZ's disabled control reads Reduced motion. Flow may still reseed without animation. Loading, running, and unavailable states disable replay; fallback reads Static preview. The deterministic SVG is present before hydration and remains usable without JavaScript or WebGL. Context loss restores that fallback. Unmount removes observers, listeners, animation frames, canvas, geometry, materials, textures, and the renderer. Preserve the screen-reader status outside the hidden artwork.
 

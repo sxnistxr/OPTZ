@@ -28,7 +28,7 @@ const check = (name, ok, detail = "") => results.push(`${ok ? "ok  " : "FAIL"} $
   // ---- home ----
   await pg.goto(base + "/");
   await pg.waitForTimeout(1200);
-  check("home: brand and tagline", (await pg.textContent("h1")) === "Curiosity, in progress." && (await pg.textContent("main")).includes("A dev lab by sxnistxr"));
+  check("home: brand and tagline", (await pg.textContent("h1")) === "Curiosity, in progress." && (await pg.textContent("main")).includes("I build software"));
   check("home: decorative Three.js island present", await pg.locator(".trail-flow").count() === 1);
   check("home: developer focus", (await pg.textContent("main")).includes("The $12 Server Challenge") && !(await pg.textContent("main")).includes("SDXL"));
   check("home: no social feed left", !(await pg.textContent("main")).includes("Latest on the feed"));
@@ -60,7 +60,7 @@ const check = (name, ok, detail = "") => results.push(`${ok ? "ok  " : "FAIL"} $
   await pg.click("nav[aria-label=Site] >> text=OPTZ");
   await pg.locator('.product-menu a[href="/optz"]').click();
   await pg.waitForURL(base + "/optz");
-  check("OPTZ has its own page and navigation", (await pg.textContent("h1")) === "Blink. It’s served." && await pg.locator('nav a[href="/docs/vs-nextjs"]').count() === 1);
+  check("OPTZ has its own page and navigation", (await pg.textContent("h1")) === "Blink. It’s served." && await pg.locator('nav[aria-label=Site] a[href="/docs/vs-nextjs"]').count() === 1);
   await pg.waitForSelector('.trail-speed[data-state="ready"]', { timeout: 15000 });
   check("Three.js rendered the request scene", await pg.locator('.webgl-ready canvas').count() === 1);
   await pg.getByRole('button', { name: 'Send a request' }).click();

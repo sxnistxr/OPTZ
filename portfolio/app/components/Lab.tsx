@@ -12,15 +12,13 @@ export function LabList({ items, detail = false }: { items: Experiment[]; detail
           <div>
             <h3 className="lab-title">
               {x.href ? (
-                <Link href={x.href as Href} className="hover:underline hover:decoration-rule hover:underline-offset-4">
-                  {x.name}
-                </Link>
+                <Link href={x.href as Href}>{x.name}</Link>
               ) : (
                 x.name
               )}
             </h3>
             <p className="lab-summary">{x.summary}</p>
-            {detail && x.notes && <p className="mt-2 text-sm text-muted">{x.notes}</p>}
+            {detail && x.notes && <p className="lab-summary">{x.notes}</p>}
           </div>
           <div className="lab-meta">
             <span className="lab-area">{x.area}</span>

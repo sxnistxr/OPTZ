@@ -35,7 +35,7 @@ export default function Trail({ mode }: { mode: "flow" | "speed" }) {
     <div className="trail-viewport" ref={host} aria-hidden="true">
       {mode === "speed" ? <SpeedLines className="trail-fallback" mark /> : <TrailLines className="trail-fallback" />}
     </div>
-    <div className="trail-controls site-container">{mode === "flow" && <span>A small experiment in motion.</span>}
+    <div className="trail-controls site-container">
       <div className="trail-actions">
       {!reduced && <Button variant="ghost" size="sm" className="trail-pause" aria-label={isPaused ? "Resume animation" : "Pause animation"} disabled={state === "loading" || state === "fallback"} onClick={() => { paused.current = !paused.current; setPaused(paused.current); controller.current?.setPaused(paused.current); }}><svg viewBox="0 0 16 16" fill="currentColor" aria-hidden="true">{isPaused ? <path d="m5 3 8 5-8 5V3Z" /> : <path d="M4 3h3v10H4V3Zm5 0h3v10H9V3Z" />}</svg></Button>}
       <Button variant="ghost" size="sm" disabled={state === "loading" || state === "running" || state === "fallback" || isPaused || (reduced && mode === "speed")} onClick={() => controller.current?.replay()}><Replay />{state === "fallback" ? "Static preview" : isPaused ? "Paused" : state === "running" ? (mode === "speed" ? "Serving…" : "Reseeding…") : mode === "speed" ? (reduced ? "Reduced motion" : "Send a request") : "Reseed"}</Button>

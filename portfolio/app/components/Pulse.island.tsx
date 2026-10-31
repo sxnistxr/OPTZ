@@ -35,10 +35,7 @@ export default function Pulse() {
   const ms = s.state === "live" ? `${s.ms < 10 ? s.ms.toFixed(1) : Math.round(s.ms)} ms` : "—";
   return (
     <section aria-label="Live server status" className="server-status">
-      <div className="server-connection">
-        <p className="server-response"><span className="signal-dot" data-state={s.state === "checking" ? "idle" : s.state} aria-hidden="true" /><span role="status">{s.state === "live" ? "Server online" : s.state === "down" ? "Connection unavailable" : "Connecting to server"}</span></p>
-        <p className="server-caption">{s.state === "down" ? "Retrying every 15 seconds" : "Live check from your browser"}</p>
-      </div>
+      <p className="server-response"><span className="signal-dot" data-state={s.state === "checking" ? "idle" : s.state} aria-hidden="true" /><span role="status">{s.state === "live" ? "Server online" : s.state === "down" ? "Server unreachable, retrying" : "Checking the server"}</span></p>
       <dl className="server-metrics">
         <div><dt>Round trip</dt><dd>{ms}</dd></div>
         <div><dt>Uptime</dt><dd>{s.state === "live" ? duration(s.uptime) : "—"}</dd></div>

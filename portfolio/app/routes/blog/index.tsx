@@ -9,9 +9,9 @@ export const head = (): Head => ({ title: `Writing | ${site.title}`, description
 export default function Blog({ data }: PageProps<{ posts: PostMeta[] }, "/blog">) {
   return (
     <>
-      <h1 className="text-4xl font-semibold tracking-[-0.02em] md:text-5xl">Writing</h1>
-      <p className="mt-4 max-w-[36rem] text-muted">Notes from building fast things on small machines.</p>
-      <div className="mt-12">
+      <h1 className="page-heading">Writing</h1>
+      <p className="page-description">Notes from building fast things on small machines.</p>
+      <div className="page-list">
         <PostList posts={data.posts} />
       </div>
     </>
