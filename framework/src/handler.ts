@@ -138,7 +138,8 @@ export async function createApp({ manifest, config, files, platform, middleware 
     return m as Promise<T>;
   };
   /**
-   * Bound optional metadata loading to 100 ms without cancelling a shared import.
+   * Bound live metadata loading to 100 ms without cancelling a shared import.
+   * Prerenders await dimensions so saved HTML matches the generated PNG.
    * Evict only the rejected promise observed here so later requests can retry;
    * a timed-out import stays cached and may supply dimensions once it settles.
    */
@@ -150,6 +151,7 @@ export async function createApp({ manifest, config, files, platform, middleware 
         if (modules.get(file) === pending) modules.delete(file);
         return undefined;
       });
+      if (prerender) return await optional;
       return await Promise.race([
         optional,
         new Promise<undefined>((resolve) => { timer = setTimeout(resolve, 100); }),
@@ -550,6 +552,7 @@ export async function createApp({ manifest, config, files, platform, middleware 
       params,
       og: r.og ? ogPath(publicPath) : undefined,
       ogSize: (og as OgModule | undefined)?.size,
+      metadataBase: config.site?.url,
       i18n: localeInfo(locale),
       ctx: { url: ctx.url, request: trackRequest(ctx.request, als.getStore()), locals: ctx.locals, locale, draft },
     };

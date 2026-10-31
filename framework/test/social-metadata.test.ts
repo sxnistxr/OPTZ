@@ -11,7 +11,7 @@ function input(head: Head, og?: string): RenderInput {
   return {
     page: { default: () => null, head: () => head },
     layouts: [{ default: () => null, head: () => ({ openGraph: { siteName: "Lab", locale: "en_US" }, twitter: { card: "summary_large_image" } }) }],
-    pattern: "/post", pathname: "/post", params: {}, ctx: {} as RenderInput["ctx"], og,
+    pattern: "/post", pathname: "/post", params: {}, ctx: {} as RenderInput["ctx"], og, metadataBase: config.site?.url,
   };
 }
 
@@ -117,14 +117,14 @@ test.each(["reject", "throw"])("producer load failures are optional for pages, b
 });
 
 /** Build an uncached dynamic route so every request exercises producer metadata loading. */
-async function appWithProducer(loadProducer: () => Promise<unknown>) {
+async function appWithProducer(loadProducer: () => Promise<unknown>, prerender = false) {
   const manifest: Manifest = {
     version: 3, builtAt: 0, mode: "islands", entry: "/entry.js", css: [],
-    routes: [{ pattern: "/post", segments: compilePattern("/post"), file: "post.tsx", og: "post.og.tsx", kind: "page", render: "dynamic", hasLoader: false, layouts: [], preload: [] }],
+    routes: [{ pattern: "/post", segments: compilePattern("/post"), file: "post.tsx", og: "post.og.tsx", kind: "page", render: prerender ? "static" : "dynamic", hasLoader: false, layouts: [], preload: [] }],
     islands: {}, rootLayouts: [], redirects: {}, slots: [], intercepts: [], actions: {}, fonts: [], apiStatic: {},
   };
   return createApp({
-    manifest, config: resolveConfig({ site: { url: "https://example.com" }, features: { streaming: false, cache: false } }), files: new Map(),
+    prerender, manifest, config: resolveConfig({ site: { url: "https://example.com" }, features: { streaming: false, cache: false } }), files: new Map(),
     platform: {
       load: (file) => file === "post.og.tsx" ? loadProducer() : Promise.resolve({ default: () => React.createElement("main", null, "Post"), head: () => ({ title: "Post" }) }),
       og: async () => new Uint8Array(),
@@ -177,3 +177,56 @@ test.each(["immediate", "after timeout"])("failed optional producers can be retr
     expect(loads).toBe(2);
   } finally { reject(new Error("Test cleanup")); }
 }, 2000);
+
+test("prerenders await slow producer dimensions for both HTML and data", async () => {
+  let release!: (value: unknown) => void;
+  const pending = new Promise(resolve => { release = resolve; });
+  const app = await appWithProducer(() => pending, true);
+  let completed = 0;
+  const responses = Promise.all(["/post", "/_optz/data/post.json"].map(async path => {
+    const response = await app.fetch(new Request("https://example.com" + path));
+    completed++;
+    return response;
+  }));
+  try {
+    // Exceed the live-request budget before allowing this build-time import to finish.
+    await new Promise(resolve => setTimeout(resolve, 150));
+    expect(completed).toBe(0);
+    release({ size: { width: 800, height: 800 }, default: () => null });
+    const [page, data] = await responses;
+    const html = await page.text();
+    expect(html).toContain('property="og:image:width" content="800"');
+    expect(html).toContain('property="og:image:height" content="800"');
+    expect((await data.json()).head.openGraph.images[0]).toMatchObject({ width: 800, height: 800 });
+  } finally { release({}); await responses; }
+}, 2000);
+
+test.each([
+  [{ twitter: { images: ["/child.png"] } }, undefined],
+  [{ twitter: { images: ["/parent.png"] } }, "Parent image"],
+  [{ twitter: { images: ["https://example.com/parent.png"] } }, "Parent image"],
+  [{ twitter: { images: ["/child.png"], imageAlt: "Child image" } }, "Child image"],
+  [{ twitter: { images: ["/child.png"], imageAlt: "" } }, ""],
+  [{ openGraph: { images: ["/child.png"] } }, undefined],
+])("Twitter alt inheritance follows the effective image (%j)", (child, expected) => {
+  const fixture = input(child as Head);
+  fixture.layouts = [{ default: () => null, head: () => ({ openGraph: { images: ["/parent.png"] }, twitter: { imageAlt: "Parent image" } }) }];
+  const head = mergeHead(fixture, null);
+  expect(head.twitter?.imageAlt).toBe(expected);
+  const tags = headTags(head, config, "/post");
+  if (expected !== undefined) expect(tags).toContain(`name="twitter:image:alt" content="${expected}"`);
+  else expect(tags).not.toContain('name="twitter:image:alt"');
+});
+
+test("Open Graph overrides preserve alt text when Twitter keeps its own image", () => {
+  const fixture = input({ openGraph: { images: ["/child.png"] } });
+  fixture.layouts = [{ default: () => null, head: () => ({ twitter: { images: ["/twitter.png"], imageAlt: "Twitter image" } }) }];
+  expect(mergeHead(fixture, null).twitter?.imageAlt).toBe("Twitter image");
+});
+
+test("inherited alt comparisons use the same metadata base as emitted image URLs", () => {
+  const fixture = input({ twitter: { images: ["image.png"] } });
+  fixture.metadataBase = "https://example.com/app/";
+  fixture.layouts = [{ default: () => null, head: () => ({ twitter: { images: ["/image.png"], imageAlt: "Root image" } }) }];
+  expect(mergeHead(fixture, null).twitter?.imageAlt).toBeUndefined();
+});

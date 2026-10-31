@@ -38,6 +38,8 @@ export interface RenderInput {
   og?: string;
   /** The registered image producer's size; omitted means DEFAULT_OG_SIZE. */
   ogSize?: OgModule["size"];
+  /** URL base used by headTags when resolving relative metadata URLs. */
+  metadataBase?: string;
   i18n?: LocaleInfo;
   ctx: Omit<LoaderContext, "params">;
 }
@@ -88,12 +90,25 @@ const stripUndefined = <T extends object>(h: T): T => Object.fromEntries(Object.
  */
 export function mergeHead(input: RenderInput, data: unknown): Head {
   const locale = input.ctx.locale;
-  /** Apply defined child fields while retaining shared social metadata defaults. */
-  const merge = (parent: Head, child: Head): Head => ({
-    ...parent, ...stripUndefined(child),
-    ...(parent.openGraph || child.openGraph ? { openGraph: { ...parent.openGraph, ...stripUndefined(child.openGraph ?? {}) } } : {}),
-    ...(parent.twitter || child.twitter ? { twitter: { ...parent.twitter, ...stripUndefined(child.twitter ?? {}) } } : {}),
-  });
+  /** Resolve the selected Twitter image, including Open Graph and generated fallbacks. */
+  const selectedImage = (head: Head): string | undefined => {
+    const og = head.openGraph?.images?.[0];
+    const url = head.twitter?.images?.[0] ?? (typeof og === "string" ? og : og?.url)
+      ?? (head.openGraph?.images === undefined ? input.og : undefined);
+    return url && input.metadataBase ? new URL(url, input.metadataBase).href : url;
+  };
+  /** Inherit social fields, retaining alt text only while its selected image is unchanged. */
+  const merge = (parent: Head, child: Head): Head => {
+    const merged: Head = {
+      ...parent, ...stripUndefined(child),
+      ...(parent.openGraph || child.openGraph ? { openGraph: { ...parent.openGraph, ...stripUndefined(child.openGraph ?? {}) } } : {}),
+      ...(parent.twitter || child.twitter ? { twitter: { ...parent.twitter, ...stripUndefined(child.twitter ?? {}) } } : {}),
+    };
+    if (merged.twitter && child.twitter?.imageAlt === undefined && selectedImage(parent) !== selectedImage(merged)) {
+      delete merged.twitter.imageAlt;
+    }
+    return merged;
+  };
   let out: Head = { meta: [], links: [] };
   for (const l of input.layouts) out = merge(out, l.head?.({ params: input.params, locale }) ?? {});
   out = merge(out, input.page.head?.(data as never, { params: input.params, locale }) ?? {});
