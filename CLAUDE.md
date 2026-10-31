@@ -6,6 +6,11 @@
 - Commit and push to `main` (production deploys from it).
 - Author commits as `sxnistxr <sxnister@aster.cx>` (set `git config user.name`/`user.email` in the repo before committing).
 
+## RTK
+
+- Always use RTK and graphify. When `rtk` is on PATH, route shell commands through it (`rtk git status`, `rtk read <file>`, `rtk grep`, `rtk find`), and use `rtk bypass <command>` for unsupported commands or when you need exact output. Built-in Read, Grep and Glob don't pass through RTK. Check exit codes and recover full diagnostics when filtered output hides them.
+- If `rtk` is missing, say so; don't silently work without it. Put this rule in every subagent prompt along with the graphify rule.
+
 ## graphify
 
 This project has a knowledge graph at graphify-out/ with god nodes, community structure, and cross-file relationships.
