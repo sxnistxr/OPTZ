@@ -17,6 +17,7 @@ import { compilePattern, dataPath, fillDestination, inScope, matchRoute, matchSe
 import { fnv, prerenderHeaders, send, type StaticEntry } from "./static";
 import type { LocaleInfo } from "./runtime";
 import type { RenderInput, Rendered, SlotInput } from "./render";
+import type { OgModule } from "./og-types";
 import { DRAFT_COOKIE } from "./server-api";
 import type { ApiContext, ApiModule, ErrorModule, LayoutModule, Locals, Middleware, MiddlewareContext, PageModule, ResolvedConfig, RevalidationChange, RouteCache } from "./types";
 
@@ -116,6 +117,10 @@ export function pickLocale(header: string | null, locales: string[]): string | u
   return undefined;
 }
 
+/**
+ * Create the shared Bun/edge request handler from registered routes and platform services.
+ * Built pages are served from memory; routes needing rendering load their modules on demand.
+ */
 export async function createApp({ manifest, config, files, platform, middleware = [], dev, prerender }: AppOptions): Promise<App> {
   const F = config.features;
   const matchPage = createRouteMatcher(manifest.routes);
@@ -492,6 +497,7 @@ export async function createApp({ manifest, config, files, platform, middleware 
     );
   }
 
+  /** Load a route's render modules and its image producer's declared dimensions. */
   async function renderInput(
     r: ManifestRoute,
     ctx: MiddlewareContext,
@@ -502,8 +508,8 @@ export async function createApp({ manifest, config, files, platform, middleware 
     draft = false,
     slotOverride?: Parameters<typeof slotInputs>[2],
   ): Promise<RenderInput> {
-    const head: Promise<unknown>[] = [load(r.file), Promise.all(r.layouts.map((l) => load(l))), r.error ? load(r.error) : Promise.resolve(undefined), r.loading ? load(r.loading) : Promise.resolve(undefined)];
-    const [page, layouts, error, loading] = await Promise.all(head);
+    const head: Promise<unknown>[] = [load(r.file), Promise.all(r.layouts.map((l) => load(l))), r.error ? load(r.error) : Promise.resolve(undefined), r.loading ? load(r.loading) : Promise.resolve(undefined), r.og ? load(r.og) : Promise.resolve(undefined)];
+    const [page, layouts, error, loading, og] = await Promise.all(head);
     const input: RenderInput = {
       page: page as PageModule,
       layouts: layouts as LayoutModule[],
@@ -516,6 +522,7 @@ export async function createApp({ manifest, config, files, platform, middleware 
       pathname: publicPath,
       params,
       og: r.og ? ogPath(publicPath) : undefined,
+      ogSize: (og as OgModule | undefined)?.size,
       i18n: localeInfo(locale),
       ctx: { url: ctx.url, request: trackRequest(ctx.request, als.getStore()), locals: ctx.locals, locale, draft },
     };

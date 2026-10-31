@@ -6,6 +6,7 @@ import type { ComponentType, ReactNode } from "react";
 import { renderToReadableStream } from "react-dom/server";
 import { prerender } from "react-dom/static";
 import type { Segment } from "./match";
+import { DEFAULT_OG_SIZE, type OgModule } from "./og-types";
 import { ImageSizesContext } from "./image-component";
 import { NotFound } from "./index";
 import { StaticRouter, type LocaleInfo, type PageState } from "./runtime";
@@ -35,6 +36,8 @@ export interface RenderInput {
   skipLoader?: boolean;
   /** URL of this page's Open Graph image, if it has one. */
   og?: string;
+  /** The registered image producer's size; omitted means DEFAULT_OG_SIZE. */
+  ogSize?: OgModule["size"];
   i18n?: LocaleInfo;
   ctx: Omit<LoaderContext, "params">;
 }
@@ -75,10 +78,17 @@ const attrs = (o: Record<string, string | undefined>) =>
     .map(([k, v]) => ` ${k}="${esc(v!)}"`)
     .join("");
 
+/** Copy defined properties so omitted child metadata cannot erase inherited values. */
 const stripUndefined = <T extends object>(h: T): T => Object.fromEntries(Object.entries(h).filter(([, v]) => v !== undefined)) as T;
 
+/**
+ * Resolve layout metadata in nesting order, then apply the page's metadata.
+ * Open Graph and Twitter fields inherit individually; explicit image arrays replace
+ * inherited arrays. A generated PNG supplies image metadata only when images are absent.
+ */
 export function mergeHead(input: RenderInput, data: unknown): Head {
   const locale = input.ctx.locale;
+  /** Apply defined child fields while retaining shared social metadata defaults. */
   const merge = (parent: Head, child: Head): Head => ({
     ...parent, ...stripUndefined(child),
     ...(parent.openGraph || child.openGraph ? { openGraph: { ...parent.openGraph, ...stripUndefined(child.openGraph ?? {}) } } : {}),
@@ -88,7 +98,7 @@ export function mergeHead(input: RenderInput, data: unknown): Head {
   for (const l of input.layouts) out = merge(out, l.head?.({ params: input.params, locale }) ?? {});
   out = merge(out, input.page.head?.(data as never, { params: input.params, locale }) ?? {});
   if (input.og) {
-    out.openGraph = { ...out.openGraph, images: out.openGraph?.images ?? [{ url: input.og, width: 1200, height: 630, type: "image/png", alt: out.title }] };
+    out.openGraph = { ...out.openGraph, images: out.openGraph?.images ?? [{ url: input.og, ...(input.ogSize ?? DEFAULT_OG_SIZE), type: "image/png", alt: out.title }] };
     out.twitter = { card: "summary_large_image", ...out.twitter };
   }
   return out;
@@ -142,7 +152,7 @@ export function headTags(head: Head, config: ResolvedConfig, pathname: string, i
     if (img) {
       n("image", abs(img));
       const ogImage = og?.images?.[0];
-      n("image:alt", tw?.imageAlt ?? (typeof ogImage === "object" ? ogImage.alt : undefined));
+      n("image:alt", tw?.imageAlt ?? (typeof ogImage === "object" && abs(img) === abs(ogImage.url) ? ogImage.alt : undefined));
     }
   }
   for (const [lang, href] of Object.entries(head.alternates?.languages ?? {})) link({ rel: "alternate", hreflang: lang, href: abs(href) });

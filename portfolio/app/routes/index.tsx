@@ -10,6 +10,10 @@ import site from "$lib/site";
 export const head = (): Head => ({ canonical: "/" });
 
 export const loader = () => ({ posts: listPosts().slice(0, 5) });
+/**
+ * Render the lab's landing page and recent posts, with linked WebSite and Person
+ * structured data. SITE_URL overrides the content URL for deployment-specific IDs.
+ */
 export default function Home({ data }: PageProps<{ posts: PostMeta[] }, "/">) {
   const url = process.env.SITE_URL ?? site.url;
   const structuredData = {

@@ -6,6 +6,11 @@ import OptzLogo from "$components/OptzLogo";
 import { trailPath } from "./trail-geometry";
 import site from "./site";
 
+/**
+ * Render a 1200 × 630 social card with the site's wordmark, typography and trails.
+ * Kickers beginning with OPTZ select product branding; other cards use DihLabs.
+ * Long titles use smaller type, and the footer hostname follows the deployment URL.
+ */
 export function OgCard({ kicker, title, footer }: { kicker?: string; title: string; footer?: string }) {
   const product = kicker?.startsWith("OPTZ");
   const fontSize = title.length > 85 ? 54 : title.length > 55 ? 64 : title.length > 35 ? 76 : 96;
@@ -27,7 +32,7 @@ export function OgCard({ kicker, title, footer }: { kicker?: string; title: stri
       </div>
       <div style={{ display: "flex", position: "absolute", left: 72, top: 548, width: 1056, alignItems: "center", justifyContent: "space-between", gap: 32, borderTop: "1px solid #29292e", paddingTop: 22, fontSize: 24, color: "#c8c8cd" }}>
         <div style={{ display: "flex", maxWidth: 810 }}>{footer ?? site.tagline}</div>
-        <div style={{ display: "flex", color: "#a1a1aa" }}>{new URL(site.url).hostname}</div>
+        <div style={{ display: "flex", color: "#a1a1aa" }}>{new URL(process.env.SITE_URL ?? site.url).hostname}</div>
       </div>
     </div>
   );
