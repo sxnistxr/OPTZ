@@ -70,23 +70,24 @@ const check = (name, ok, detail = "") => results.push(`${ok ? "ok  " : "FAIL"} $
   await pg.click("nav[aria-label=Site] >> text=Docs");
   await pg.waitForURL(base + "/docs");
   // The URL can change before the HTML swap finishes. Wait for the actual index,
-  // and compare its sections and page links with the manifest instead of a fixed count.
+  // and compare the full directory's sections and page links with the manifest.
+  // Discovery cards and the guided Learn path are separate sections above it.
   const expectedSections = docSections.map(({ section, pages }) => ({
     section,
     links: pages.map(({ slug }) => `/docs/${slug}`),
   }));
   const indexComplete = await pg.waitForFunction((expected) => {
-    const actual = [...document.querySelectorAll("main section")].map((section) => ({
+    const actual = [...document.querySelectorAll(".docs-home-sections > section")].map((section) => ({
       section: section.getAttribute("aria-label"),
       links: [...section.querySelectorAll("a")].map((a) => a.getAttribute("href")),
     }));
     return JSON.stringify(actual) === JSON.stringify(expected);
   }, expectedSections, { timeout: 5000 }).then(() => true, () => false);
   check("docs index lists every section", docs.length === d0 && indexComplete,
-    JSON.stringify({ documents: docs, sections: await pg.locator("main section").evaluateAll((sections) => sections.map((s) => s.getAttribute("aria-label"))) }));
+    JSON.stringify({ documents: docs, sections: await pg.locator(".docs-home-sections > section").evaluateAll((sections) => sections.map((s) => s.getAttribute("aria-label"))) }));
 
   // ---- a docs page ----
-  await pg.click("main section >> text=Framework reference");
+  await pg.locator('.docs-home-sections a[href="/docs/framework"]').click();
   await pg.waitForURL(base + "/docs/framework");
   await pg.waitForTimeout(300);
   check("docs page via swap, sidebar marks it", docs.length === d0 && (await pg.getAttribute('nav[aria-label=Documentation] a[aria-current="page"]', "href")) === "/docs/framework");
