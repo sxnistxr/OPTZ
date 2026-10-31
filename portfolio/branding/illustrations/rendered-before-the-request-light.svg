@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="960" height="640" viewBox="0 0 480 320" role="img" aria-label="rendered before the request"><style>
+.ill-card{fill:#ffffff;stroke:#e5e5e8}.ill-card-front{stroke:#a8a8ab}
+.ill-soft{fill:#f4f4f5}.ill-ink{fill:#18181b}.ill-rule{fill:none;stroke:#e5e5e8}.ill-gridline{fill:none;stroke:#e5e5e8;stroke-width:1}
+.ill-island{fill:#ffffff;stroke:#18181b;stroke-width:1.5}.ill-accent{fill:#c98a00}
+.ill-accent-stroke{fill:none;stroke:#c98a00;stroke-width:2;stroke-linecap:round}
+.ill-link{fill:none;stroke:#68686f;stroke-dasharray:3 4;opacity:.7}.ill-link-hot{fill:none;stroke:#18181b;stroke-width:1.5}
+.ill-label{font-family:ui-monospace,"SF Mono",Menlo,Consolas,monospace;font-size:11px;fill:#68686f}
+.ill-label-body{fill:#424247}.ill-label-ink{fill:#18181b}
+</style><rect width="480" height="320" fill="#ffffff"/><g><rect class="ill-card" x="236" y="38" width="190" height="130" rx="5"></rect><text class="ill-label" x="412" y="58" text-anchor="end">page.html.gz</text><rect class="ill-soft" x="252" y="74" width="72" height="8" rx="2"></rect></g><g><rect class="ill-card" x="168" y="94" width="190" height="130" rx="5"></rect><text class="ill-label" x="344" y="114" text-anchor="end">page.html.br</text><rect class="ill-soft" x="184" y="130" width="72" height="8" rx="2"></rect></g><g><rect class="ill-card ill-card-front" x="100" y="150" width="190" height="130" rx="5"></rect><text class="ill-label ill-label-ink" x="276" y="170" text-anchor="end">page.html</text><rect class="ill-ink" x="116" y="186" width="72" height="8" rx="2"></rect><rect class="ill-soft" x="116" y="208" width="150" height="5" rx="2"></rect><rect class="ill-soft" x="116" y="222" width="128" height="5" rx="2"></rect><rect class="ill-soft" x="116" y="236" width="142" height="5" rx="2"></rect></g><g class="ill-accent-stroke"><path d="M302 236h96"></path><path d="M318 248h66"></path><path d="M330 224h44"></path></g></svg>

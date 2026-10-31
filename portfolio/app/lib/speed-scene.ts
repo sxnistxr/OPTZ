@@ -66,7 +66,7 @@ export function createSpeed(host: HTMLElement, reduced: boolean,
       uniform float uScale; uniform float uMarkY; uniform float uTextFrac;
       uniform float uAspect; uniform float uTanHalf; uniform float uCamZ; uniform float uViewH; uniform float uDpr;
       varying vec2 vP; varying float vHalfLen; varying float vHalfThick; varying float vGlowR;
-      varying float vTail; varying float vAlpha; varying float vHeat; varying float vFlare; varying float vMark;
+      varying float vTail; varying float vAlpha; varying float vHeat; varying float vFlare; varying float vMark; varying float vFlareR; varying float vRoomR;
       void main(){
         float z=aStream.y, height=2.*(uCamZ-z)*uTanHalf, span=height*uAspect+60.;
         float px=uViewH/height;                                   // device pixels per world unit at this depth
@@ -104,8 +104,10 @@ export function createSpeed(host: HTMLElement, reduced: boolean,
         }
         // Phone-wire: never thinner than a pixel; a thinner line is drawn at a pixel and fades instead.
         float thickPx=max(thick,1.); alpha*=min(1.,thick);
-        float glowR=(thickPx*2.2+2.*uDpr)*mix(1.,.5,isMark), lenPx=len*px;
-        vec2 quad=vec2(lenPx+glowR*2.,thickPx+glowR*2.);
+        float flareR=thickPx*1.25+1., glowR=(thickPx*2.2+2.*uDpr)*mix(1.,.5,isMark), lenPx=len*px;
+        // The quad has to hold the whole head flare, not just the glow. Light it clipped showed as a hard-edged block.
+        float roomR=max(glowR,flareR*4.*step(.001,flare));
+        vec2 quad=vec2(lenPx+roomR*2.,thickPx+roomR*2.);
         vec2 local=position.xy*quad/px; local.x+=aMeta.z*local.y;
         gl_Position=projectionMatrix*modelViewMatrix*vec4(centre+local,z,1.);
         // Dim behind the copy and toward the bottom of the hero; the landed mark stays whole.
@@ -113,24 +115,28 @@ export function createSpeed(host: HTMLElement, reduced: boolean,
         float screen=(1.-smoothstep(.86,1.,sy))*mix(.12,1.,smoothstep(uTextFrac-.1,uTextFrac+.03,sy));
         alpha*=mix(screen,1.,isMark);
         vP=position.xy*quad; vHalfLen=lenPx*.5; vHalfThick=thickPx*.5; vGlowR=glowR;
-        vTail=tail; vAlpha=alpha; vHeat=heat; vFlare=flare; vMark=isMark;
+        vTail=tail; vAlpha=alpha; vHeat=heat; vFlare=flare; vMark=isMark; vFlareR=flareR; vRoomR=roomR;
       }`,
     fragmentShader: `uniform vec3 uInk; uniform vec3 uHot; uniform float uGain; uniform float uGlow;
       varying vec2 vP; varying float vHalfLen; varying float vHalfThick; varying float vGlowR;
-      varying float vTail; varying float vAlpha; varying float vHeat; varying float vFlare; varying float vMark;
+      varying float vTail; varying float vAlpha; varying float vHeat; varying float vFlare; varying float vMark; varying float vFlareR; varying float vRoomR;
       void main(){
         // Capsule distance in pixels, an antialiased core, and a glow that falls off around it.
         float d=length(vec2(max(abs(vP.x)-vHalfLen,0.),vP.y));
         float core=1.-smoothstep(vHalfThick-.6,vHalfThick+.6,d);
-        float glow=exp(-d/(vGlowR*.42))*uGlow;
+        // Every falloff is windowed to reach zero at the quad's edge, so no light ends on a straight line.
+        float glow=exp(-d/(vGlowR*.42))*uGlow*(1.-smoothstep(.5*vGlowR,vGlowR,d));
         // 0 at the tail end, 1 at the head: the tail fraction of the length fades out.
         float along=clamp((vP.x+vHalfLen)/max(2.*vHalfLen,.001),0.,1.);
         float body=pow(clamp(along/max(vTail,.0001),0.,1.),1.6);
-        float flare=exp(-length(vP-vec2(vHalfLen,0.))/(vHalfThick*2.5+1.))*vFlare;
+        float fd=length(vP-vec2(vHalfLen,0.));
+        float flare=exp(-fd/vFlareR)*(1.-smoothstep(.5*vRoomR,vRoomR,fd))*vFlare;
         float light=(core+glow)*body+flare*.8;
         // Trails run white-hot in the core; the landed mark stays gold unless the flash or sweep lights it.
         vec3 c=mix(uInk,uHot,clamp(core*body*(mix(.25,.04,vMark)+vHeat)+flare,0.,1.));
-        float a=clamp(light*vAlpha*uGain,0.,1.);
+        // Half a step of noise breaks the 8-bit banding of soft additive glow.
+        float dither=(fract(sin(dot(gl_FragCoord.xy,vec2(12.9898,78.233)))*43758.5453)-.5)/255.;
+        float a=clamp(light*vAlpha*uGain+dither,0.,1.);
         if(a<.002) discard;
         gl_FragColor=vec4(c,a);
         #include <tonemapping_fragment>
