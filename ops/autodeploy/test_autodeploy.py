@@ -184,6 +184,19 @@ class MigrationTests(unittest.TestCase):
             self.assertEqual(list(root.iterdir()), before)
             self.assertIn("no files", out.getvalue())
 
+    def assert_installation_permissions(self, etc, lib, sudoers):
+        """Check private secrets and intentionally public deployment files on every install."""
+        # Only public helpers/authorized_keys are readable by other accounts.
+        for relative in ["github_ed25519", "github-token", "config.json", "deploy.yml",
+                         "github-secrets/DEPLOY_HOST", "github-secrets/DEPLOY_PORT",
+                         "github-secrets/DEPLOY_KEY", "github-secrets/DEPLOY_KNOWN_HOSTS"]:
+            self.assertEqual((etc / relative).stat().st_mode & 0o777, 0o600, relative)
+        for name in ["controller.py", "ssh-entry.py", "build.sh"]:
+            self.assertEqual((lib / name).stat().st_mode & 0o777, 0o755, name)
+        self.assertEqual(sudoers.stat().st_mode & 0o777, 0o440)
+        self.assertEqual((etc / "github-secrets").stat().st_mode & 0o777, 0o700)
+        self.assertEqual((etc / ".ssh/authorized_keys").stat().st_mode & 0o777, 0o644)
+
     @unittest.skipUnless(shutil.which("ssh-keygen"), "OpenSSH key tools required")
     def test_migration_reruns_preserve_key_and_never_restart_app_or_touch_database(self):
         """Verify repeat installs preserve keys, protect secrets, and leave app state alone."""
@@ -220,16 +233,15 @@ class MigrationTests(unittest.TestCase):
                 return original_subprocess(argv, **kwargs)
             stack.enter_context(patch.object(migration.subprocess, "run", side_effect=process))
             migration.migrate(args)
-            self.assertEqual((etc / "github-token").stat().st_mode & 0o777, 0o600)
+            self.assert_installation_permissions(etc, lib, sudoers)
             self.assertEqual((etc / "github-token").read_bytes(), token_file.read_bytes())
-            self.assertEqual((etc / "github-secrets").stat().st_mode & 0o777, 0o700)
             key = (etc / "github_ed25519").read_bytes()
             authorized_keys = etc / ".ssh/authorized_keys"
             self.assertEqual(authorized_keys.stat().st_mode & 0o777, 0o644)
             authorized_keys.chmod(0o600)  # Repair an installation made by the old installer.
             sudo_rule = sudoers.read_bytes()
             migration.migrate(args)
-            self.assertEqual((etc / "github-secrets").stat().st_mode & 0o777, 0o700)
+            self.assert_installation_permissions(etc, lib, sudoers)
             self.assertEqual((etc / "github-token").read_bytes(), token_file.read_bytes())
             snapshots = sorted((root / "backups").iterdir())
             self.assertEqual(len(snapshots), 2)
@@ -243,14 +255,6 @@ class MigrationTests(unittest.TestCase):
             self.assertEqual((etc / "github_ed25519").read_bytes(), key)
             self.assertEqual((etc / "github_ed25519").stat().st_mode & 0o777, 0o600)
             self.assertEqual(authorized_keys.stat().st_mode & 0o777, 0o644)
-            # Only public helpers/authorized_keys are readable by other accounts.
-            for relative in ["github_ed25519", "github-token", "config.json", "deploy.yml",
-                             "github-secrets/DEPLOY_HOST", "github-secrets/DEPLOY_PORT",
-                             "github-secrets/DEPLOY_KEY", "github-secrets/DEPLOY_KNOWN_HOSTS"]:
-                self.assertEqual((etc / relative).stat().st_mode & 0o777, 0o600, relative)
-            for name in ["controller.py", "ssh-entry.py", "build.sh"]:
-                self.assertEqual((lib / name).stat().st_mode & 0o777, 0o755, name)
-            self.assertEqual(sudoers.stat().st_mode & 0o777, 0o440)
             self.assertIn("[server.example]:2222", (etc / "github-secrets/DEPLOY_KNOWN_HOSTS").read_text())
             self.assertIn('restrict,command="/usr/bin/python3 -I', (etc / ".ssh/authorized_keys").read_text())
             self.assertEqual((etc / ".ssh").stat().st_mode & 0o777, 0o755)

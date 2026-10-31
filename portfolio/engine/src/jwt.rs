@@ -172,6 +172,7 @@ pub mod tests {
     use std::io::Read;
     use std::sync::OnceLock;
 
+    /// Read exactly 32 OS-random bytes; fail the test on I/O errors or short reads.
     fn random_key() -> [u8; 32] {
         let mut key = Vec::new();
         std::fs::File::open("/dev/urandom")
@@ -180,6 +181,7 @@ pub mod tests {
         key.try_into().expect("OS randomness must supply exactly 32 key bytes")
     }
 
+    /// Share one process-local random signing key across concurrent JWT tests.
     fn secret() -> &'static [u8; 32] {
         static SECRET: OnceLock<[u8; 32]> = OnceLock::new();
         SECRET.get_or_init(random_key)
