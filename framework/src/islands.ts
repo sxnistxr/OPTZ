@@ -157,6 +157,7 @@ export const navigate = createNavigation({
   onNavigate: (url) => dispatchEvent(new CustomEvent("optz:navigate", { detail: { url: url.href } })),
   pending: (active) => document.documentElement.classList.toggle("optz-navigating", active),
   afterRender: (effect) => effect(),
+  /** Fetch HTML and await new styles before offering a synchronous, guarded document swap. */
   async prepare(url, options, signal) {
     if (options.refresh) prefetched.clear();
     const key = `${location.pathname}|${url.pathname + url.search}`;

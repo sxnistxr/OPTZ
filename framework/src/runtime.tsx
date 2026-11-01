@@ -269,6 +269,7 @@ function applyHead(head: Head | undefined, headHtml?: string, lang?: string) {
   else if (head?.description !== undefined) replaceHeadTags(`<meta name="description" content="${head.description.replace(/[&"<]/g, (c) => `&#${c.charCodeAt(0)};`)}">`);
 }
 
+/** Hydrate SPA state and adapt route preparation to the shared navigation transaction. */
 function Root({ routes, initial, urlParams }: { routes: ClientRoute[]; initial: PageState; urlParams?: Params }) {
   const [state, setState] = useState(initial);
   // Client-rendered shells are built without params: hydrate exactly as rendered, then supply
@@ -305,6 +306,7 @@ function Root({ routes, initial, urlParams }: { routes: ClientRoute[]; initial: 
   const navigate = useMemo(() => createNavigation({
     pending: setNavigating,
     afterRender: (effect) => { requestAnimationFrame(effect); },
+    /** Load data, route code and metadata before offering a synchronous state commit. */
     async prepare(url) {
       const loc = splitLocale(url.pathname, initial.i18n);
       const m = matchRoute(routes, loc.path);

@@ -6,10 +6,12 @@ import type { OgModule } from "./og-types";
 export class PagePublication {
   constructor(readonly og: string | undefined, readonly ogSize: OgModule["size"], private readonly complete: boolean) {}
 
+  /** Temporary metadata is always rendered privately, bypassing the caller's shared cache. */
   respond(produce: () => Promise<Response>, share = produce): Promise<Response> {
     return this.complete ? share() : produce().then(privateResponse);
   }
 
+  /** Preserve the previous durable snapshot until producer metadata is complete. */
   async publish(update: () => Promise<void>): Promise<void> {
     if (this.complete) await update();
   }
@@ -21,18 +23,21 @@ export class PageModules {
 
   constructor(private readonly importModule: (file: string) => Promise<unknown>, private readonly prerender = false) {}
 
+  /** Reuse one import promise per project file across page and image requests. */
   load<T>(file: string): Promise<T> {
     let pending = this.modules.get(file);
     if (!pending) this.modules.set(file, (pending = this.importModule(file)));
     return pending as Promise<T>;
   }
 
+  /** Resolve image metadata and publication eligibility from the same producer readiness. */
   async publication(file: string | undefined, pathname: string): Promise<PagePublication> {
     if (!file) return new PagePublication(undefined, undefined, true);
     const producer = await this.optionalProducer(file);
     return new PagePublication(ogPath(pathname), producer?.size, producer !== undefined);
   }
 
+  /** Wait at most 100 ms live, await prerenders fully, and evict rejected imports for retry. */
   private async optionalProducer(file: string): Promise<OgModule | undefined> {
     let timer: number | ReturnType<typeof setTimeout> | undefined;
     try {

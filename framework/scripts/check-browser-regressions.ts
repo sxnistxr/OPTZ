@@ -231,6 +231,51 @@ try {
     } finally { release(); await page.close(); }
   }
 
+  // A throwing island cleanup must recover through full navigation, with or without animation.
+  for (const { transition, fail } of [{ transition: false, fail: true }, { transition: true, fail: true }, { transition: true, fail: false }]) {
+    const page = await browser.newPage({ reducedMotion: "no-preference" });
+    let documents = 0;
+    page.on("request", request => { if (request.isNavigationRequest()) documents++; });
+    await page.route(origin + "/**", route => route.fulfill({
+      contentType: "text/html",
+      body: new URL(route.request().url()).pathname === "/start"
+        ? html('start<optz-island data-id="broken" data-props="{}"></optz-island>')
+        : html("recovered"),
+    }));
+    try {
+      await page.goto(origin + "/start");
+      await page.addScriptTag({ content: await bundle(`
+        import {startIslands} from './framework/src/islands';
+        ${transition ? '' : 'document.startViewTransition=undefined;'}
+        startIslands({broken:{hydrate:'load',load:async()=>({default:()=>{
+          window.mounted=true;
+          return {unmount(){${fail ? "throw new Error('Broken island cleanup');" : ''}}};
+        }})}}, {navigation:true,prefetch:false});
+      `) });
+      await page.waitForFunction(() => window.mounted);
+      if (transition) assert.equal(await page.evaluate(() => typeof document.startViewTransition), "function");
+      if (fail) {
+        const reload = page.waitForRequest(request => request.isNavigationRequest() && request.url() === origin + "/target", { timeout: 3000 });
+        await page.evaluate(() => { void window.__optz.navigate("/target"); });
+        await reload;
+      } else {
+        await page.evaluate(async () => {
+          const startTransition = document.startViewTransition.bind(document);
+          document.startViewTransition = callback => {
+            const transition = startTransition(callback);
+            transition.skipTransition();
+            return transition;
+          };
+          await window.__optz.navigate("/target");
+        });
+        assert.equal(documents, 1, "skipping animation must not reload a successful commit");
+      }
+      await page.waitForFunction(() => document.querySelector("main")?.textContent === "recovered");
+      assert.equal(await page.title(), "recovered");
+      console.log(fail ? `ok throwing island commit recovers through document navigation (transition=${transition})` : "ok cancelled animation commits without document recovery");
+    } finally { await page.close(); }
+  }
+
   // A failed search index request can be retried without reloading the document.
   const search = await browser.newPage();
   let attempts = 0;

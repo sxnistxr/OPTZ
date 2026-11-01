@@ -20,6 +20,7 @@ interface NavigationAdapter {
 /** One owner for supersession, history and completion, across both rendering adapters. */
 export function createNavigation(adapter: NavigationAdapter) {
   let active: AbortController | undefined;
+  /** Prepare a page and commit only while current; failed commits recover by document navigation. */
   async function navigate(href: string, options: NavigationOptions = {}): Promise<void> {
     const url = new URL(href, location.href);
     // In-page and full-document moves also supersede unfinished preparation.
@@ -40,6 +41,7 @@ export function createNavigation(adapter: NavigationAdapter) {
       if (!current()) return;
       if (!page) return void location.assign(url.href);
       if ("redirect" in page) return await navigate(page.redirect, { replace: true });
+      /** Publish history and content together, then schedule guarded post-render effects. */
       const commit = () => {
         if (!current()) return;
         if (!options.pop && !options.refresh) {
@@ -58,7 +60,9 @@ export function createNavigation(adapter: NavigationAdapter) {
       };
       const vt = adapter.transition && !options.refresh && document.startViewTransition;
       if (vt && !matchMedia("(prefers-reduced-motion: reduce)").matches) {
-        await vt.call(document, commit).finished.catch(() => {});
+        const transition = vt.call(document, commit);
+        // Animation cancellation is harmless; a failed update must reach document recovery.
+        await Promise.all([transition.updateCallbackDone, transition.finished.catch(() => {})]);
       } else commit();
     } catch {
       if (current()) location.assign(url.href);
