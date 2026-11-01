@@ -65,7 +65,12 @@ export function createNavigation(adapter: NavigationAdapter) {
         await Promise.all([transition.updateCallbackDone, transition.finished.catch(() => {})]);
       } else commit();
     } catch {
-      if (current()) location.assign(url.href);
+      if (current()) {
+        // A failed commit may already have published this URL to history. Assigning the
+        // same fragment URL only scrolls; reload to replace the partially committed page.
+        if (location.href === url.href) location.reload();
+        else location.assign(url.href);
+      }
       return;
     } finally {
       if (current()) adapter.pending(false);

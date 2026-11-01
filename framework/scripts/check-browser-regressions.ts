@@ -232,7 +232,8 @@ try {
   }
 
   // A throwing island cleanup must recover through full navigation, with or without animation.
-  for (const { transition, fail } of [{ transition: false, fail: true }, { transition: true, fail: true }, { transition: true, fail: false }]) {
+  for (const { transition, fail, target } of ["/target", "/target#section"].flatMap(target =>
+    [{ transition: false, fail: true, target }, { transition: true, fail: true, target }, { transition: true, fail: false, target }])) {
     const page = await browser.newPage({ reducedMotion: "no-preference" });
     let documents = 0;
     page.on("request", request => { if (request.isNavigationRequest()) documents++; });
@@ -255,24 +256,25 @@ try {
       await page.waitForFunction(() => window.mounted);
       if (transition) assert.equal(await page.evaluate(() => typeof document.startViewTransition), "function");
       if (fail) {
-        const reload = page.waitForRequest(request => request.isNavigationRequest() && request.url() === origin + "/target", { timeout: 3000 });
-        await page.evaluate(() => { void window.__optz.navigate("/target"); });
+        const reload = page.waitForRequest(request => request.isNavigationRequest() && new URL(request.url()).pathname === "/target", { timeout: 3000 });
+        await page.evaluate(target => { void window.__optz.navigate(target); }, target);
         await reload;
       } else {
-        await page.evaluate(async () => {
+        await page.evaluate(async target => {
           const startTransition = document.startViewTransition.bind(document);
           document.startViewTransition = callback => {
             const transition = startTransition(callback);
             transition.skipTransition();
             return transition;
           };
-          await window.__optz.navigate("/target");
-        });
+          await window.__optz.navigate(target);
+        }, target);
         assert.equal(documents, 1, "skipping animation must not reload a successful commit");
       }
       await page.waitForFunction(() => document.querySelector("main")?.textContent === "recovered");
       assert.equal(await page.title(), "recovered");
-      console.log(fail ? `ok throwing island commit recovers through document navigation (transition=${transition})` : "ok cancelled animation commits without document recovery");
+      assert.equal(page.url(), origin + target);
+      console.log(fail ? `ok throwing island commit recovers through document navigation (transition=${transition}, target=${target})` : `ok cancelled animation commits without document recovery (${target})`);
     } finally { await page.close(); }
   }
 

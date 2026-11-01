@@ -613,6 +613,7 @@ export async function createApp({ manifest, config, files, platform, middleware 
     return new Response("Not found", { status: 404, headers: { "Content-Type": "text/plain" } });
   }
 
+  /** Serve navigation data with the same locale, metadata and publication policy as HTML. */
   async function data(ctx: MiddlewareContext, s: RequestStore): Promise<Response> {
     const p = ctx.url.pathname;
     const draft = s.draft;
@@ -758,6 +759,7 @@ export async function createApp({ manifest, config, files, platform, middleware 
   }
 
   // ---- Open Graph images for pages rendered at request time ------------------------------------
+  /** Serve built social images or render the registered producer with the page's current data. */
   async function og(ctx: MiddlewareContext): Promise<Response> {
     const f = files.get(ctx.url.pathname);
     if (f) return send(f, ctx.request);
@@ -778,6 +780,7 @@ export async function createApp({ manifest, config, files, platform, middleware 
   }
 
   // ---- routing ------------------------------------------------------------------------------
+  /** Dispatch a logical route, preserving draft privacy and page publication eligibility. */
   async function route(ctx: MiddlewareContext, s: RequestStore, rewrites = 0): Promise<Response> {
     const { request: req, url } = ctx;
     const p = url.pathname;
