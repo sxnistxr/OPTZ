@@ -8,14 +8,14 @@ import {
   useContext,
   useEffect,
   useMemo,
-  useRef,
   useState,
   type AnchorHTMLAttributes,
   type ComponentType,
   type MouseEvent,
   type ReactNode,
 } from "react";
-import { afterNavigation, focusHash, handleInPageLinks, replaceHeadTags } from "./a11y";
+import { handleInPageLinks, replaceHeadTags } from "./a11y";
+import { createNavigation } from "./navigation";
 import { dataPath, matchRoute, matchSegments, type Segment } from "./match";
 import { loadMarkedScripts } from "./script-loader";
 import type { ErrorModule, Head, Href, LayoutModule, PageModule, Params, RenderMode } from "./types";
@@ -277,7 +277,6 @@ function Root({ routes, initial, urlParams }: { routes: ClientRoute[]; initial: 
     if (urlParams) setState((s) => ({ ...s, params: urlParams }));
   }, [urlParams]);
   const [navigating, setNavigating] = useState(false);
-  const seq = useRef(0);
 
   const fetchPayload = useCallback((pathname: string, search: string, route: ClientRoute): Promise<Payload | null> => {
     // Every built page has a payload (its data, if any, and its head tags); client-rendered
@@ -303,50 +302,28 @@ function Root({ routes, initial, urlParams }: { routes: ClientRoute[]; initial: 
     [routes, fetchPayload, initial.i18n],
   );
 
-  const navigate = useCallback(
-    async (href: string, opts: { replace?: boolean; scroll?: boolean; pop?: boolean } = {}) => {
-      const url = new URL(href, location.href);
+  const navigate = useMemo(() => createNavigation({
+    pending: setNavigating,
+    afterRender: (effect) => { requestAnimationFrame(effect); },
+    async prepare(url) {
       const loc = splitLocale(url.pathname, initial.i18n);
-      const m = url.origin === location.origin ? matchRoute(routes, loc.path) : null;
-      if (!m) return void location.assign(url.href);
-      if (url.pathname === location.pathname && url.search === location.search && url.hash && !opts.pop) {
-        history.pushState(null, "", url.href);
-        return void focusHash(url.hash);
-      }
-      const id = ++seq.current;
-      setNavigating(true);
-      try {
-        const [payload, next] = await Promise.all([fetchPayload(url.pathname, url.search, m.route), loadState(m.route, url.pathname, m.params, undefined, loc.i18n)]);
-        if (id !== seq.current) return;
-        // No data (404, error, offline): let the server render the page properly.
-        if (!payload) return void location.assign(url.href);
-        if (payload.redirect) return void navigate(payload.redirect, { replace: true });
-        next.data = payload.data;
-        if (!opts.pop) {
-          history.replaceState({ ...history.state, scroll: scrollY }, "");
-          history[opts.replace ? "replaceState" : "pushState"]({ scroll: 0 }, "", url.href);
-        }
+      const m = matchRoute(routes, loc.path);
+      if (!m) return null;
+      const [payload, next] = await Promise.all([
+        fetchPayload(url.pathname, url.search, m.route),
+        loadState(m.route, url.pathname, m.params, undefined, loc.i18n),
+      ]);
+      if (!payload) return null;
+      if (payload.redirect) return { redirect: payload.redirect };
+      // Finish all asynchronous preparation before changing state, history or head.
+      const mod = await m.route.load();
+      next.data = payload.data;
+      return { afterRender: () => loadMarkedScripts(document), commit() {
         setState(next);
-        const mod = await m.route.load();
-        if (id !== seq.current) return;
         applyHead(payload.head ?? mod.head?.(undefined as never, { params: m.params }), payload.headHtml, payload.lang ?? loc.i18n?.locale);
-        requestAnimationFrame(() => {
-          if (id !== seq.current) return;
-          loadMarkedScripts(document);
-          if (opts.scroll === false) return;
-          if (opts.pop) scrollTo(0, history.state?.scroll ?? 0);
-          else if (!url.hash) scrollTo(0, 0);
-          // Focus and announce the new page like a full load would.
-          afterNavigation(opts.pop ? "" : url.hash);
-        });
-      } catch {
-        if (id === seq.current) location.assign(url.href);
-      } finally {
-        if (id === seq.current) setNavigating(false);
-      }
+      } };
     },
-    [routes, fetchPayload, initial.i18n],
-  );
+  }), [routes, fetchPayload, initial.i18n]);
 
   useEffect(() => {
     history.scrollRestoration = "manual";
@@ -359,7 +336,7 @@ function Root({ routes, initial, urlParams }: { routes: ClientRoute[]; initial: 
     (globalThis as { __optz?: unknown }).__optz = {
       navigate: (href: string) => navigate(href),
       refresh: () => {
-        return navigate(location.href, { replace: true, scroll: false });
+        return navigate(location.href, { refresh: true });
       },
     };
   }, [navigate]);

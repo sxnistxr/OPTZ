@@ -12,12 +12,12 @@ import { selectEncoding } from "./encoding";
 import { BOUND_FIELD, tagModule } from "./actions-runtime";
 import { cacheControl, privateResponse, ResponseCache } from "./cache";
 import { als, clearDataCaches, inStore, newStore, trackRequest, type AppServices, type RequestStore } from "./context";
-import { apiStaticPath, htmlPath, ogPath, type Manifest, type ManifestRoute, type ManifestSlot } from "./manifest";
+import { apiStaticPath, htmlPath, type Manifest, type ManifestRoute, type ManifestSlot } from "./manifest";
 import { compilePattern, dataPath, fillDestination, inScope, matchRoute, matchSegments, safeDecode } from "./match";
 import { fnv, prerenderHeaders, send, type StaticEntry } from "./static";
 import type { LocaleInfo } from "./runtime";
 import type { RenderInput, Rendered, SlotInput } from "./render";
-import type { OgModule } from "./og-types";
+import { PageModules, type PagePublication } from "./page-publication";
 import { DRAFT_COOKIE } from "./server-api";
 import type { ApiContext, ApiModule, ErrorModule, LayoutModule, Locals, Middleware, MiddlewareContext, PageModule, ResolvedConfig, RevalidationChange, RouteCache } from "./types";
 
@@ -131,37 +131,7 @@ export async function createApp({ manifest, config, files, platform, middleware 
   const live = !dev && !prerender;
   const hash = platform.hash ?? fnv;
   const cache = F.cache && !prerender ? new ResponseCache(config.cache.maxEntries, config.cache.maxBytes, { hash, gzip: platform.gzip, brotli: platform.brotli }) : null;
-  const modules = new Map<string, Promise<unknown>>();
-  const load = <T,>(f: string) => {
-    let m = modules.get(f);
-    if (!m) modules.set(f, (m = platform.load(f)));
-    return m as Promise<T>;
-  };
-  /**
-   * Bound live metadata loading to 100 ms without cancelling a shared import.
-   * Prerenders await dimensions so saved HTML matches the generated PNG.
-   * Evict only the rejected promise observed here so later requests can retry;
-   * a timed-out import stays cached and may supply dimensions once it settles.
-   */
-  async function loadOptionalProducer(file: string): Promise<OgModule | undefined> {
-    let timer: number | ReturnType<typeof setTimeout> | undefined;
-    try {
-      const pending = load<OgModule>(file);
-      const optional = pending.catch(() => {
-        if (modules.get(file) === pending) modules.delete(file);
-        return undefined;
-      });
-      if (prerender) return await optional;
-      return await Promise.race([
-        optional,
-        new Promise<undefined>((resolve) => { timer = setTimeout(resolve, 100); }),
-      ]);
-    } catch {
-      return undefined;
-    } finally {
-      if (timer !== undefined) clearTimeout(timer);
-    }
-  }
+  const modules = new PageModules((file) => platform.load(file), prerender);
   // Loaded on first use: a fully static site never pays for React's server renderer.
   let renderMod: Promise<typeof import("./render")> | undefined;
   const render = () => (renderMod ??= import("./render"));
@@ -227,7 +197,7 @@ export async function createApp({ manifest, config, files, platform, middleware 
   const i18n = config.i18n;
 
   // Server Actions are tagged up front so pages that render <form action={fn}> get real URLs.
-  if (F.actions) for (const [id, a] of Object.entries(manifest.actions ?? {})) await tagModule((await load<Record<string, unknown>>(a.file)) as Record<string, unknown>, id, a);
+  if (F.actions) for (const [id, a] of Object.entries(manifest.actions ?? {})) await tagModule((await modules.load<Record<string, unknown>>(a.file)) as Record<string, unknown>, id, a);
 
   // HTML pages: speculation rules (prerender on hover in Chromium) and the CDN cache policy.
   const SPECULATION = '"/_optz/speculation.json"';
@@ -263,7 +233,7 @@ export async function createApp({ manifest, config, files, platform, middleware 
       createMcpServer({
         config,
         dev,
-        modules: await Promise.all((manifest.mcp ?? []).map(async (file) => ({ file, mod: await load(file) }))),
+        modules: await Promise.all((manifest.mcp ?? []).map(async (file) => ({ file, mod: await modules.load(file) }))),
         pages: () => sitePages([...files].map(([u, e]): [string, Uint8Array] => [u, e.body]), (config.llms || undefined)?.exclude),
         // With middleware, a page is only readable over MCP if a GET for it, with the caller's
         // cookies and credentials, gets through: what the middleware protects stays protected.
@@ -469,31 +439,32 @@ export async function createApp({ manifest, config, files, platform, middleware 
     // Its own request store, too: headers() and cookies() in the loader see the anonymous request.
     const task = als.run(appStore({ request: ctx.request, url: ctx.url, locals: ctx.locals, locale, draft: false, env: s.env, waitUntil: s.waitUntil }), () => (async () => {
       if (r.kind === "api") {
-        const mod = await load<Record<string, unknown>>(r.file);
+        const mod = await modules.load<Record<string, unknown>>(r.file);
         const res = await (mod.GET as (c: ApiContext) => Promise<Response>)({ ...ctx, params });
         if (res.status !== 200) return;
         if (als.getStore()!.setCookies.length) throw new Error("Prerendered API responses must not set cookies");
         const headers = prerenderHeaders(res.headers);
         files.set(apiStaticPath(publicPath), { ...entryOf(new Uint8Array(await res.arrayBuffer()), res.headers.get("content-type") ?? "application/json", headers["cache-control"] ?? "no-cache"), headers });
+        renderedAt.set(publicPath, started);
       } else {
         const { renderPage, headTags } = await render();
         const input = await renderInput(r, ctx, publicPath, inner, params, locale);
-        // Preserve the previous HTML/data snapshot until producer metadata is available.
-        if (input.ogUnavailable) return;
-        const out = await renderPage(input, assets(r), config);
-        if (out.kind === "notFound") {
-          files.delete(htmlPath(publicPath));
-          files.delete(dataPath(publicPath));
-        }
-        if (out.kind !== "page" || out.status !== 200) return;
-        const payload = JSON.stringify({ ...out.payload, headHtml: headTags(out.payload.head, config, publicPath, localeInfo(locale)), lang: locale ?? config.lang });
-        const page = { ...entryOf(new TextEncoder().encode(out.html), "text/html; charset=utf-8", htmlCache), headers: pageHeadersFor(publicPath) };
-        const data = entryOf(new TextEncoder().encode(payload), "application/json", "no-cache");
-        // Publish the two representations together, with no asynchronous work between them.
-        files.set(htmlPath(publicPath), page);
-        files.set(dataPath(publicPath), data);
+        await input.publication.publish(async () => {
+          const out = await renderPage(input, assets(r), config);
+          if (out.kind === "notFound") {
+            files.delete(htmlPath(publicPath));
+            files.delete(dataPath(publicPath));
+          }
+          if (out.kind !== "page" || out.status !== 200) return;
+          const payload = JSON.stringify({ ...out.payload, headHtml: headTags(out.payload.head, config, publicPath, localeInfo(locale)), lang: locale ?? config.lang });
+          const page = { ...entryOf(new TextEncoder().encode(out.html), "text/html; charset=utf-8", htmlCache), headers: pageHeadersFor(publicPath) };
+          const data = entryOf(new TextEncoder().encode(payload), "application/json", "no-cache");
+          // Publish the two representations together, with no asynchronous work between them.
+          files.set(htmlPath(publicPath), page);
+          files.set(dataPath(publicPath), data);
+          renderedAt.set(publicPath, started);
+        });
       }
-      renderedAt.set(publicPath, started);
     })()
       .catch((e) => console.error(`optz: regenerating ${publicPath} failed (serving the previous version):`, e))
       .finally(() => regenerating.delete(publicPath)));
@@ -514,12 +485,12 @@ export async function createApp({ manifest, config, files, platform, middleware 
         const out: Record<string, SlotInput | null> = {};
         for (const s of slots) {
           if (override?.slot === s) {
-            out[s.name] = { page: await load<PageModule>(override.route.file), params: override.params };
+            out[s.name] = { page: await modules.load<PageModule>(override.route.file), params: override.params };
             continue;
           }
           const m = matchRoute(s.routes, inner);
-          if (m) out[s.name] = { page: await load<PageModule>(m.route.file), params: m.params };
-          else out[s.name] = s.default ? { page: await load<PageModule>(s.default), params: {} } : null;
+          if (m) out[s.name] = { page: await modules.load<PageModule>(m.route.file), params: m.params };
+          else out[s.name] = s.default ? { page: await modules.load<PageModule>(s.default), params: {} } : null;
         }
         return out;
       }),
@@ -539,24 +510,29 @@ export async function createApp({ manifest, config, files, platform, middleware 
     locale?: string,
     draft = false,
     slotOverride?: Parameters<typeof slotInputs>[2],
-  ): Promise<RenderInput> {
-    const producer = r.og ? loadOptionalProducer(r.og) : Promise.resolve(undefined);
-    const head: Promise<unknown>[] = [load(r.file), Promise.all(r.layouts.map((l) => load(l))), r.error ? load(r.error) : Promise.resolve(undefined), r.loading ? load(r.loading) : Promise.resolve(undefined), producer];
-    const [page, layouts, error, loading, og] = await Promise.all(head);
-    const input: RenderInput = {
-      page: page as PageModule,
-      layouts: layouts as LayoutModule[],
-      error: error as ErrorModule | undefined,
-      loading: loading as RenderInput["loading"],
+  ): Promise<RenderInput & { publication: PagePublication }> {
+    const producer = modules.publication(r.og, publicPath);
+    const [page, layouts, error, loading, publication] = await Promise.all([
+      modules.load<PageModule>(r.file),
+      Promise.all(r.layouts.map((l) => modules.load<LayoutModule>(l))),
+      r.error ? modules.load<ErrorModule>(r.error) : undefined,
+      r.loading ? modules.load<RenderInput["loading"]>(r.loading) : undefined,
+      producer,
+    ]);
+    const input: RenderInput & { publication: PagePublication } = {
+      page,
+      layouts,
+      error,
+      loading,
       slots: await slotInputs(r, inner, slotOverride),
       pattern: r.pattern,
       segments: r.segments,
       render: r.render,
       pathname: publicPath,
       params,
-      og: r.og ? ogPath(publicPath) : undefined,
-      ogSize: (og as OgModule | undefined)?.size,
-      ogUnavailable: !!r.og && og === undefined,
+      og: publication.og,
+      ogSize: publication.ogSize,
+      publication,
       metadataBase: config.site?.url,
       i18n: localeInfo(locale),
       ctx: { url: ctx.url, request: trackRequest(ctx.request, als.getStore()), locals: ctx.locals, locale, draft },
@@ -625,8 +601,8 @@ export async function createApp({ manifest, config, files, platform, middleware 
     if (f) return send(f, ctx.request, 404);
     if (manifest.notFound) {
       const { renderPage } = await render();
-      const page = await load<PageModule>(manifest.notFound);
-      const layouts = await Promise.all(manifest.rootLayouts.map((l) => load<LayoutModule>(l)));
+      const page = await modules.load<PageModule>(manifest.notFound);
+      const layouts = await Promise.all(manifest.rootLayouts.map((l) => modules.load<LayoutModule>(l)));
       const r = await renderPage(
         { page, layouts, pattern: "/_404", pathname: ctx.url.pathname, params: {}, i18n: localeInfo(locale), ctx: { url: ctx.url, locals: ctx.locals, locale } },
         assets(),
@@ -664,10 +640,7 @@ export async function createApp({ manifest, config, files, platform, middleware 
       // The SPA router swaps the same head tags a full page load would have.
       return jsonRes({ ...r.payload, headHtml: headTags(r.payload.head, config, target, localeInfo(locale)), lang: locale ?? config.lang }, 200, extra);
     };
-    // Incomplete producer metadata must not survive in memory or a downstream cache.
-    if (input.ogUnavailable) return produce().then(privateResponse);
-    // Draft data is per viewer: never from or into the shared cache.
-    return draft ? produce() : withCache(ctx, input.page.cache, produce);
+    return input.publication.respond(produce, () => draft ? produce() : withCache(ctx, input.page.cache, produce));
   }
 
   function splitLocale(path: string): { locale?: string; inner: string; prefixed: boolean } {
@@ -739,7 +712,7 @@ export async function createApp({ manifest, config, files, platform, middleware 
     try { body = await readBody(req.body, config.server.maxRequestBodySize); }
     catch { return jsonRes({ ok: false, error: "Action body exceeds its limit or timed out." }, 413); }
     const input = new Response(body as BodyInit, { headers: { "Content-Type": req.headers.get("content-type") ?? "" } });
-    const fn = (await load<Record<string, unknown>>(def.file))[name] as (...a: unknown[]) => unknown;
+    const fn = (await modules.load<Record<string, unknown>>(def.file))[name] as (...a: unknown[]) => unknown;
     let args: unknown[];
     if (mode === "json") {
       args = (await input.json().catch(() => null)) as unknown[];
@@ -796,10 +769,10 @@ export async function createApp({ manifest, config, files, platform, middleware 
     if (!m?.route.og) return notFound(ctx);
     const route = m.route;
     return withCache(ctx, { maxAge: 3600, staleWhileRevalidate: 86400 }, async () => {
-      const page = await load<PageModule>(route.file);
+      const page = await modules.load<PageModule>(route.file);
       let data: unknown = null;
       if (page.loader) data = await page.loader({ url: ctx.url, request: ctx.request, locals: ctx.locals, params: m.params, locale });
-      const png = await platform.og!(await load(route.og!), { params: m.params, data, locale });
+      const png = await platform.og!(await modules.load(route.og!), { params: m.params, data, locale });
       return new Response(png as BodyInit, { headers: { "Content-Type": "image/png", "Cache-Control": "public, max-age=3600" } });
     });
   }
@@ -913,7 +886,7 @@ export async function createApp({ manifest, config, files, platform, middleware 
           return send(f, req);
         }
       }
-      const mod = await load<Record<string, unknown> & ApiModule>(r.file);
+      const mod = await modules.load<Record<string, unknown> & ApiModule>(r.file);
       const handler = (mod[req.method] ?? (req.method === "HEAD" ? mod.GET : undefined)) as ((c: ApiContext) => Response | Promise<Response>) | undefined;
       if (typeof handler !== "function") {
         const allow = ["GET", "HEAD", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"].filter((k) => typeof mod[k] === "function" || (k === "HEAD" && typeof mod.GET === "function")).join(", ");
@@ -953,9 +926,8 @@ export async function createApp({ manifest, config, files, platform, middleware 
         const { renderPage } = await render();
         return finish(await renderPage(input, assets(r), config), ctx);
       });
-      return inStore(s, () => input.ogUnavailable
-        ? produce().then(privateResponse)
-        : withCache(ctx, { maxAge: r.revalidate ?? 31536000, staleWhileRevalidate: r.revalidate ? 31536000 : undefined, tags: r.tags }, produce));
+      return inStore(s, () => input.publication.respond(produce, () =>
+        withCache(ctx, { maxAge: r.revalidate ?? 31536000, staleWhileRevalidate: r.revalidate ? 31536000 : undefined, tags: r.tags }, produce)));
     }
     if (live && !draft && r.render === "client" && r.shell) {
       const f = files.get(r.shell);
@@ -971,7 +943,7 @@ export async function createApp({ manifest, config, files, platform, middleware 
       const { renderPage } = await render();
       return finish(await renderPage(input, assets(r), config, { stream }), ctx, draft ? { "Cache-Control": "private, no-store" } : undefined);
     };
-    return inStore(s, () => input.ogUnavailable ? produce().then(privateResponse) : rc ? withCache(ctx, rc, produce) : produce());
+    return inStore(s, () => input.publication.respond(produce, () => rc ? withCache(ctx, rc, produce) : produce()));
   }
 
   const hasIntercepts = !!(manifest.intercepts?.length || manifest.slots?.some((x) => x.intercepts.length));
