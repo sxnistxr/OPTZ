@@ -135,6 +135,149 @@ try {
   await islands.close();
   console.log("ok islands ignore superseded stylesheet waits and bound prefetch age, count and size");
 
+  // The same transaction contract must hold for both rendering adapters.
+  for (const mode of ["spa", "islands"]) {
+    const page = await browser.newPage();
+    let version = "first", release!: () => void, seen!: () => void;
+    let gate = new Promise<void>(resolve => { release = resolve; });
+    let requested = new Promise<void>(resolve => { seen = resolve; });
+    const markup = (title: string) => `<!doctype html><html lang="en"><head><title>${title}</title><meta name="description" content="${title}"></head><body><div id="__optz"><main id="main" style="min-height:2400px"><h1>${title}</h1>${mode === "islands" ? '<optz-island data-id="keep" data-props="{}"><input aria-label="Keep focus"></optz-island>' : '<input aria-label="Keep focus">'}<div id="target" style="margin-top:1400px">Target</div></main></div><script id="__optz_boot" type="application/json">{"pattern":"/start","params":{},"data":{"q":"start"}}</script></body></html>`;
+    await page.route(origin + "/**", async route => {
+      const url = new URL(route.request().url());
+      const path = url.pathname.replace("/_optz/data", "").replace(".json", "");
+      if (path === "/slow") { seen(); await gate; }
+      const title = `${path.slice(1)} ${version}`;
+      return route.fulfill(url.pathname.startsWith("/_optz/data/")
+        ? { contentType: "application/json", body: JSON.stringify({ data: { q: title }, head: { title }, headHtml: `<meta name="description" content="${title}">` }) }
+        : { contentType: "text/html", body: markup(path === "/start" ? "start" : title) });
+    });
+    try {
+      await page.goto(origin + "/start");
+      await page.addScriptTag({ content: await bundle(mode === "spa" ? `
+        import React from 'react';
+        import {start} from './framework/src/runtime';
+        import {compilePattern} from './framework/src/match';
+        document.startViewTransition=undefined;
+        const Page=({data})=><main id="main" style={{minHeight:2400}}><h1>{data.q}</h1><input aria-label="Keep focus"/><div id="target" style={{marginTop:1400}}>Target</div></main>;
+        start(['/start','/fast','/slow','/second'].map(pattern=>({pattern,segments:compilePattern(pattern),render:'dynamic',hasLoader:true,load:async()=>({default:Page}),layouts:[]})));
+      ` : `
+        import {startIslands} from './framework/src/islands';
+        document.startViewTransition=undefined;
+        startIslands({keep:{hydrate:"load",load:async()=>({default:(el)=>({unmount(){}})})}}, {navigation:true,prefetch:false});
+      `) });
+      await page.waitForFunction(() => !!window.__optz);
+      await page.evaluate(() => { window.slow = window.__optz.navigate("/slow"); });
+      await requested;
+      await page.evaluate(() => window.__optz.navigate("/fast"));
+      release();
+      await page.evaluate(() => window.slow);
+      assert.equal(await page.title(), "fast first");
+      assert.equal(await page.locator("h1").textContent(), "fast first");
+      assert.equal(new URL(page.url()).pathname, "/fast");
+      assert.equal(await page.locator('meta[name="description"]').getAttribute("content"), "fast first");
+      // Refresh updates content and metadata without adding history or moving scroll.
+      await page.evaluate(() => scrollTo(0, 500));
+      await page.getByRole("textbox", {name:"Keep focus"}).fill("retained state");
+      await page.evaluate(() => { window.focused = document.activeElement; scrollTo(0, 500); });
+      const historyLength = await page.evaluate(() => history.length);
+      version = "refreshed";
+      await page.evaluate(() => window.__optz.refresh());
+      await page.waitForFunction(() => document.querySelector("h1")?.textContent === "fast refreshed");
+      assert.equal(await page.title(), "fast refreshed");
+      assert.equal(await page.evaluate(() => history.length), historyLength);
+      assert.equal(await page.evaluate(() => document.activeElement === window.focused), true);
+      assert.equal(await page.getByRole("textbox", {name:"Keep focus"}).inputValue(), "retained state");
+      assert.equal(await page.evaluate(() => scrollY), 500);
+      // Leaving saves this page's scroll; popstate restores it in either adapter.
+      await page.evaluate(() => window.__optz.navigate("/second"));
+      await page.waitForFunction(() => scrollY === 0);
+      await page.goBack();
+      await page.waitForFunction(() => location.pathname === "/fast" && scrollY === 500);
+      await page.goForward();
+      await page.waitForFunction(() => location.pathname === "/second" && scrollY === 0);
+      await page.evaluate(() => window.__optz.navigate("/second#target"));
+      await page.waitForFunction(() => document.activeElement?.id === "target");
+      assert.equal(new URL(page.url()).hash, "#target");
+      assert.equal(await page.title(), "second refreshed");
+      // A same-page hash also supersedes a pending document fetch.
+      gate = new Promise<void>(resolve => { release = resolve; });
+      requested = new Promise<void>(resolve => { seen = resolve; });
+      await page.evaluate(() => { window.slow = window.__optz.navigate("/slow"); });
+      await requested;
+      await page.evaluate(() => window.__optz.navigate("/second#target"));
+      release();
+      await page.evaluate(() => window.slow);
+      assert.equal(await page.title(), "second refreshed");
+      assert.equal(new URL(page.url()).pathname, "/second");
+      if (mode === "islands") {
+        // Supersession can happen after preparation, while a transition queues its commit.
+        await page.evaluate(() => {
+          document.startViewTransition = callback => ({finished:new Promise(resolve => {
+            window.finishTransition = () => { callback(); resolve(); };
+          })});
+          window.transition = window.__optz.navigate("/fast");
+        });
+        await page.waitForFunction(() => !!window.finishTransition);
+        await page.evaluate(async () => {
+          document.startViewTransition = undefined;
+          await window.__optz.navigate("/second");
+          window.finishTransition();
+          await window.transition;
+        });
+        assert.equal(await page.title(), "second refreshed");
+        assert.equal(new URL(page.url()).pathname, "/second");
+      }
+      console.log(`ok ${mode} transaction supersession, head, refresh, history, scroll and hash focus`);
+    } finally { release(); await page.close(); }
+  }
+
+  // A throwing island cleanup must recover through full navigation, with or without animation.
+  for (const { transition, fail, target } of ["/target", "/target#section"].flatMap(target =>
+    [{ transition: false, fail: true, target }, { transition: true, fail: true, target }, { transition: true, fail: false, target }])) {
+    const page = await browser.newPage({ reducedMotion: "no-preference" });
+    let documents = 0;
+    page.on("request", request => { if (request.isNavigationRequest()) documents++; });
+    await page.route(origin + "/**", route => route.fulfill({
+      contentType: "text/html",
+      body: new URL(route.request().url()).pathname === "/start"
+        ? html('start<optz-island data-id="broken" data-props="{}"></optz-island>')
+        : html("recovered"),
+    }));
+    try {
+      await page.goto(origin + "/start");
+      await page.addScriptTag({ content: await bundle(`
+        import {startIslands} from './framework/src/islands';
+        ${transition ? '' : 'document.startViewTransition=undefined;'}
+        startIslands({broken:{hydrate:'load',load:async()=>({default:()=>{
+          window.mounted=true;
+          return {unmount(){${fail ? "throw new Error('Broken island cleanup');" : ''}}};
+        }})}}, {navigation:true,prefetch:false});
+      `) });
+      await page.waitForFunction(() => window.mounted);
+      if (transition) assert.equal(await page.evaluate(() => typeof document.startViewTransition), "function");
+      if (fail) {
+        const reload = page.waitForRequest(request => request.isNavigationRequest() && new URL(request.url()).pathname === "/target", { timeout: 3000 });
+        await page.evaluate(target => { void window.__optz.navigate(target); }, target);
+        await reload;
+      } else {
+        await page.evaluate(async target => {
+          const startTransition = document.startViewTransition.bind(document);
+          document.startViewTransition = callback => {
+            const transition = startTransition(callback);
+            transition.skipTransition();
+            return transition;
+          };
+          await window.__optz.navigate(target);
+        }, target);
+        assert.equal(documents, 1, "skipping animation must not reload a successful commit");
+      }
+      await page.waitForFunction(() => document.querySelector("main")?.textContent === "recovered");
+      assert.equal(await page.title(), "recovered");
+      assert.equal(page.url(), origin + target);
+      console.log(fail ? `ok throwing island commit recovers through document navigation (transition=${transition}, target=${target})` : `ok cancelled animation commits without document recovery (${target})`);
+    } finally { await page.close(); }
+  }
+
   // A failed search index request can be retried without reloading the document.
   const search = await browser.newPage();
   let attempts = 0;

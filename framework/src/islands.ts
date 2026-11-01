@@ -3,8 +3,9 @@
 // link clicks into HTML swaps: fetch the next page, replace #__optz, hydrate its islands.
 // `refresh()` (after a Server Action revalidates, or `useRouter().refresh()`) re-fetches the
 // current page and keeps every island whose props didn't change mounted, state and all.
-import { afterNavigation, enhanceDialogs, focusHash, handleInPageLinks, rememberOpener, replaceHeadTags } from "./a11y";
+import { enhanceDialogs, handleInPageLinks, replaceHeadTags } from "./a11y";
 import { matchSegments, type Segment } from "./match";
+import { createNavigation } from "./navigation";
 import { loadMarkedScripts } from "./script-loader";
 import type { LocaleInfo } from "./runtime";
 import type { Hydrate, Params } from "./types";
@@ -99,7 +100,6 @@ function hydrateAll(registry: Record<string, IslandEntry>, root: ParentNode) {
 }
 
 let registryRef: Record<string, IslandEntry> = {};
-let seq = 0;
 
 function fetchHtml(href: string, mode: "prefetch" | "navigate" | "refresh" = "prefetch"): Promise<string | null> {
   trimPrefetch();
@@ -129,6 +129,7 @@ function fetchHtml(href: string, mode: "prefetch" | "navigate" | "refresh" = "pr
 /** Puts the new page's content in place. Islands with the same id and props as a mounted one
  *  keep the mounted one (and its state); the rest unmount or hydrate. */
 function swap(here: HTMLElement, next: HTMLElement, keep: boolean) {
+  const focused = keep && document.activeElement instanceof HTMLElement ? document.activeElement : null;
   const kept = new Set<Element>();
   if (keep) {
     const pool = new Map<string, Element[]>();
@@ -147,73 +148,48 @@ function swap(here: HTMLElement, next: HTMLElement, keep: boolean) {
   }
   here.replaceChildren(...next.childNodes);
   hydrateAll(registryRef, here);
+  // Moving a retained island through the parsed document temporarily detaches its focus.
+  if (focused?.isConnected && document.activeElement !== focused) focused.focus({ preventScroll: true });
 }
 
-async function applyHtml(html: string | null, url: URL, opts: { pop?: boolean; replace?: boolean; keep?: boolean; scroll?: boolean }, id: number) {
-  if (id !== seq) return;
-  const doc = html ? new DOMParser().parseFromString(html, "text/html") : null;
-  const next = doc?.getElementById("__optz");
-  const here = document.getElementById("__optz");
-  if (!doc || !next || !here) return void location.assign(url.href);
-  // New stylesheets (rare: hashed CSS changes only on deploy) load before the swap.
-  const have = new Set([...document.querySelectorAll<HTMLLinkElement>('link[rel="stylesheet"]')].map((l) => l.href));
-  await Promise.all(
-    [...doc.querySelectorAll<HTMLLinkElement>('link[rel="stylesheet"]')]
-      .filter((l) => !have.has(l.href))
-      .map((l) => new Promise((r) => document.head.append(Object.assign(document.createElement("link"), { rel: "stylesheet", href: l.href, onload: r, onerror: r })))),
-  );
-  // A newer navigation may finish while this page's stylesheets are loading.
-  if (id !== seq) return;
-  if (!opts.pop && !opts.keep) {
-    history.replaceState({ ...history.state, scroll: scrollY }, "");
-    history[opts.replace ? "replaceState" : "pushState"]({ scroll: 0 }, "", url.href);
-  }
-  document.title = doc.title;
-  document.documentElement.lang = doc.documentElement.lang;
-  // Per-page head tags follow the page: description, canonical, Open Graph, Twitter, hreflang.
-  replaceHeadTags(doc.head);
-  const boot = doc.getElementById("__optz_boot");
-  const myBoot = document.getElementById("__optz_boot");
-  if (boot && myBoot) myBoot.textContent = boot.textContent;
-  swap(here, next, !!opts.keep);
-  if (opts.scroll === false) return;
-  if (opts.pop) scrollTo(0, history.state?.scroll ?? 0);
-  else if (!url.hash) scrollTo(0, 0);
-  // Focus and announce the new page like a full load would (a refresh keeps focus where it is).
-  if (!opts.keep) afterNavigation(opts.pop ? "" : url.hash);
-}
+export const navigate = createNavigation({
+  transition: true,
+  onNavigate: (url) => dispatchEvent(new CustomEvent("optz:navigate", { detail: { url: url.href } })),
+  pending: (active) => document.documentElement.classList.toggle("optz-navigating", active),
+  afterRender: (effect) => effect(),
+  /** Fetch HTML and await new styles before offering a synchronous, guarded document swap. */
+  async prepare(url, options, signal) {
+    if (options.refresh) prefetched.clear();
+    const key = `${location.pathname}|${url.pathname + url.search}`;
+    const html = await fetchHtml(url.pathname + url.search, options.refresh ? "refresh" : "navigate");
+    if (signal.aborted) return null;
+    prefetched.delete(key);
+    const doc = html ? new DOMParser().parseFromString(html, "text/html") : null;
+    const next = doc?.getElementById("__optz");
+    const here = document.getElementById("__optz");
+    if (!doc || !next || !here) return null;
+    // Prepare styles before the transaction can commit; supersession is checked centrally.
+    const have = new Set([...document.querySelectorAll<HTMLLinkElement>('link[rel="stylesheet"]')].map((l) => l.href));
+    await Promise.all(
+      [...doc.querySelectorAll<HTMLLinkElement>('link[rel="stylesheet"]')]
+        .filter((l) => !have.has(l.href))
+        .map((l) => new Promise((r) => document.head.append(Object.assign(document.createElement("link"), { rel: "stylesheet", href: l.href, onload: r, onerror: r })))),
+    );
+    return { commit() {
+      document.title = doc.title;
+      document.documentElement.lang = doc.documentElement.lang;
+      replaceHeadTags(doc.head);
+      const boot = doc.getElementById("__optz_boot");
+      const myBoot = document.getElementById("__optz_boot");
+      if (boot && myBoot) myBoot.textContent = boot.textContent;
+      swap(here, next, !!options.refresh);
+    } };
+  },
+});
 
-export async function navigate(href: string, opts: { pop?: boolean; replace?: boolean } = {}) {
-  const url = new URL(href, location.href);
-  if (url.origin !== location.origin) return void location.assign(url.href);
-  if (!opts.pop && url.pathname === location.pathname && url.search === location.search && url.hash) {
-    history.pushState(null, "", url.href);
-    return void focusHash(url.hash);
-  }
-  const id = ++seq;
-  rememberOpener();
-  document.documentElement.classList.add("optz-navigating");
-  const html = await fetchHtml(url.pathname + url.search, "navigate");
-  if (id !== seq) return;
-  prefetched.delete(`${location.pathname}|${url.pathname + url.search}`);
-  // A short cross-fade where the browser supports same-document view transitions.
-  const vt = (document as { startViewTransition?: (cb: () => Promise<void>) => { finished: Promise<void> } }).startViewTransition;
-  if (vt && !matchMedia("(prefers-reduced-motion: reduce)").matches) await vt.call(document, () => applyHtml(html, url, opts, id)).finished.catch(() => {});
-  else await applyHtml(html, url, opts, id);
-  if (id !== seq) return;
-  document.documentElement.classList.remove("optz-navigating");
-  dispatchEvent(new CustomEvent("optz:navigate", { detail: { url: url.href } }));
-}
-
-/** Re-fetches the current page and updates it in place, keeping unchanged islands mounted. */
-export async function refresh() {
-  const id = ++seq;
-  prefetched.clear();
-  const url = new URL(location.href);
-  const html = await fetchHtml(url.pathname + url.search, "refresh");
-  if (id !== seq) return;
-  await applyHtml(html, url, { keep: true, scroll: false }, id);
-  if (id === seq) document.documentElement.classList.remove("optz-navigating");
+/** Re-fetches the current page, keeping unchanged islands mounted and focus in place. */
+export function refresh() {
+  return navigate(location.href, { refresh: true });
 }
 
 function eligible(a: HTMLAnchorElement | null): a is HTMLAnchorElement {
