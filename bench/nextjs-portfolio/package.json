@@ -9,7 +9,7 @@
     "start": "next start -p 3011 -H 127.0.0.1"
   },
   "dependencies": {
-    "next": "16.4.3",
+    "next": "16.4.5",
     "react": "19.3.1",
     "react-dom": "19.3.1",
     "marked": "18.1.1"
